@@ -105,12 +105,12 @@ func _make_hold_button(text: String, offset: Vector2, size: Vector2, direction: 
     b.anchor_top = 1.0
     b.anchor_bottom = 1.0
     b.position = offset
-    b.button_down.connect(func(): _set_mobile_direction(target, direction))
-    b.button_up.connect(func(): _set_mobile_direction(target, Vector2.ZERO))
+    b.button_down.connect(func(): _set_mobile_direction(is_move, direction))
+    b.button_up.connect(func(): _set_mobile_direction(is_move, Vector2.ZERO))
     hud.add_child(b)
 
-func _set_mobile_direction(target: Vector2, direction: Vector2) -> void:
-    if target == mobile_move:
+func _set_mobile_direction(is_move: bool, direction: Vector2) -> void:
+    if is_move:
         mobile_move = direction
     else:
         mobile_look = direction
