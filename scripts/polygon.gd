@@ -96,26 +96,60 @@ func _spawn_player() -> void:
 
 func _build_hud() -> void:
     hud = CanvasLayer.new()
+    hud.layer = 5
     add_child(hud)
+
     var top := Label.new()
     top.text = "FRONTLINE  |  POLYGON  |  " + team_name
-    top.position = Vector2(18, 12)
-    top.add_theme_font_size_override("font_size", 18)
+    top.position = Vector2(18, 10)
+    top.add_theme_font_size_override("font_size", 16)
+    top.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+    top.add_theme_constant_override("shadow_offset_x", 2)
+    top.add_theme_constant_override("shadow_offset_y", 2)
     hud.add_child(top)
+
     stats_label = Label.new()
     stats_label.text = "УБИЙСТВА: 0   СМЕРТИ: 0"
-    stats_label.position = Vector2(18, 42)
-    stats_label.add_theme_font_size_override("font_size", 16)
+    stats_label.position = Vector2(18, 34)
+    stats_label.add_theme_font_size_override("font_size", 15)
+    stats_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+    stats_label.add_theme_constant_override("shadow_offset_x", 2)
+    stats_label.add_theme_constant_override("shadow_offset_y", 2)
     hud.add_child(stats_label)
+
     var back := Button.new()
     back.text = "МЕНЮ"
-    back.position = Vector2(18, 78)
-    back.custom_minimum_size = Vector2(110, 42)
+    back.anchor_left = 1.0
+    back.anchor_right = 1.0
+    back.offset_left = -152.0
+    back.offset_right = -22.0
+    back.offset_top = 12.0
+    back.offset_bottom = 56.0
+    back.add_theme_font_size_override("font_size", 16)
     back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/MainMenu.tscn"))
     hud.add_child(back)
+
+    var board_btn := Button.new()
+    board_btn.text = "ТАБЛО"
+    board_btn.anchor_left = 1.0
+    board_btn.anchor_right = 1.0
+    board_btn.offset_left = -152.0
+    board_btn.offset_right = -22.0
+    board_btn.offset_top = 62.0
+    board_btn.offset_bottom = 102.0
+    board_btn.add_theme_font_size_override("font_size", 14)
+    board_btn.pressed.connect(func(): scoreboard.visible = not scoreboard.visible)
+    hud.add_child(board_btn)
+
     scoreboard = PanelContainer.new()
-    scoreboard.position = Vector2(350, 150)
-    scoreboard.size = Vector2(580, 360)
+    scoreboard.anchor_left = 0.5
+    scoreboard.anchor_right = 0.5
+    scoreboard.anchor_top = 0.5
+    scoreboard.anchor_bottom = 0.5
+    scoreboard.offset_left = -290.0
+    scoreboard.offset_right = 290.0
+    scoreboard.offset_top = -180.0
+    scoreboard.offset_bottom = 180.0
     scoreboard.visible = false
     hud.add_child(scoreboard)
     var sb := VBoxContainer.new()
@@ -138,5 +172,6 @@ func add_kill() -> void:
     score_kills += 1
     stats_label.text = "УБИЙСТВА: %d   СМЕРТИ: %d" % [score_kills, score_deaths]
 
-func _process(_delta: float) -> void:
-    scoreboard.visible = Input.is_key_pressed(KEY_TAB)
+func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
+        scoreboard.visible = not scoreboard.visible

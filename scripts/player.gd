@@ -1,30 +1,55 @@
 extends CharacterBody3D
 
+const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
+const CROSSHAIR = preload("res://scripts/crosshair.gd")
+const MOUSE_SENS := 0.0022
+const TOUCH_SENS := 0.0030
 const SPEED := 5.2
 const SPRINT_SPEED := 7.4
 const JUMP_VELOCITY := 5.4
-const MOUSE_SENS := 0.0022
+const MAG_SIZE := 30
+const RESERVE_START := 120
+const RELOAD_TIME := 2.2
+const FIRE_INTERVAL := 0.10
+
 var camera: Camera3D
+var weapon_root: Node3D
+var weapon_base := Vector3.ZERO
+var muzzle_flash: MeshInstance3D
+var muzzle_flash_time := 0.0
+var weapon_kick := 0.0
+
 var pitch := 0.0
 var yaw := 0.0
+var recoil := Vector2.ZERO
 var stance := 0
 var fire_cooldown := 0.0
-var ammo := 71
-var reserve_ammo := 213
+var ammo := MAG_SIZE
+var reserve_ammo := RESERVE_START
 var is_reloading := false
 var reload_timer := 0.0
+
 var hud: CanvasLayer
 var ammo_label: Label
 var notice_label: Label
+var crosshair
+var notice_timer := 0.0
+
+var mobile_controls
 var mobile_move := Vector2.ZERO
-var mobile_look := Vector2.ZERO
+var mobile_fire := false
+var sprint_hold := 0.0
 
 func _ready() -> void:
     floor_snap_length = 0.25
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
+    _build_weapon()
     _build_mobile_controls()
-    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+    _build_hud()
+    if not OS.has_feature("mobile"):
+        Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+    _apply_look()
 
 func _build_player() -> void:
     var collision := CollisionShape3D.new()
@@ -35,93 +60,112 @@ func _build_player() -> void:
     collision.position.y = 0.9
     add_child(collision)
     camera = Camera3D.new()
-    camera.position = Vector3(0,1.55,0)
+    camera.position = Vector3(0, 1.55, 0)
+    camera.fov = 75.0
     camera.current = true
     add_child(camera)
+
+func _build_weapon() -> void:
+    weapon_root = Node3D.new()
+    weapon_root.position = Vector3(0.27, -0.24, -0.46)
+    weapon_base = weapon_root.position
+    camera.add_child(weapon_root)
+    # Временная заглушка до подключения AK-47.
     var gun := MeshInstance3D.new()
     var gun_mesh := BoxMesh.new()
-    gun_mesh.size = Vector3(0.16,0.18,0.72)
+    gun_mesh.size = Vector3(0.10, 0.13, 0.66)
     gun.mesh = gun_mesh
-    gun.position = Vector3(0.28,-0.25,-0.55)
     var gun_mat := StandardMaterial3D.new()
-    gun_mat.albedo_color = Color(0.16,0.13,0.1)
+    gun_mat.albedo_color = Color(0.14, 0.12, 0.09)
+    gun_mat.roughness = 0.75
     gun.material_override = gun_mat
-    camera.add_child(gun)
-    var barrel := MeshInstance3D.new()
-    var barrel_mesh := CylinderMesh.new()
-    barrel_mesh.top_radius = 0.035
-    barrel_mesh.bottom_radius = 0.035
-    barrel_mesh.height = 0.5
-    barrel.mesh = barrel_mesh
-    barrel.rotation_degrees.x = 90
-    barrel.position = Vector3(0.28,-0.2,-1.08)
-    barrel.material_override = gun_mat
-    camera.add_child(barrel)
+    weapon_root.add_child(gun)
+    muzzle_flash = MeshInstance3D.new()
+    var flash_mesh := SphereMesh.new()
+    flash_mesh.radius = 0.07
+    flash_mesh.height = 0.14
+    muzzle_flash.mesh = flash_mesh
+    var flash_mat := StandardMaterial3D.new()
+    flash_mat.albedo_color = Color(1.0, 0.75, 0.25)
+    flash_mat.emission_enabled = true
+    flash_mat.emission = Color(1.0, 0.55, 0.12)
+    flash_mat.emission_energy_multiplier = 4.0
+    flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    muzzle_flash.material_override = flash_mat
+    muzzle_flash.position = Vector3(0.0, 0.02, -0.72)
+    muzzle_flash.visible = false
+    weapon_root.add_child(muzzle_flash)
 
 func _build_mobile_controls() -> void:
+    var layer := CanvasLayer.new()
+    layer.layer = 20
+    add_child(layer)
+    mobile_controls = MOBILE_CONTROLS.new()
+    layer.add_child(mobile_controls)
+    mobile_controls.move_changed.connect(_on_move_changed)
+    mobile_controls.look_delta.connect(_on_look_delta)
+    mobile_controls.fire_changed.connect(_on_fire_changed)
+    mobile_controls.reload_pressed.connect(_reload)
+    mobile_controls.stance_down_pressed.connect(_down_action)
+    mobile_controls.stance_up_pressed.connect(_up_action)
+
+func _build_hud() -> void:
     hud = CanvasLayer.new()
+    hud.layer = 10
     add_child(hud)
+    crosshair = CROSSHAIR.new()
+    hud.add_child(crosshair)
     ammo_label = Label.new()
-    ammo_label.position = Vector2(18, 18)
-    ammo_label.add_theme_font_size_override("font_size", 22)
+    ammo_label.anchor_left = 1.0
+    ammo_label.anchor_right = 1.0
+    ammo_label.anchor_top = 1.0
+    ammo_label.anchor_bottom = 1.0
+    ammo_label.offset_left = -310.0
+    ammo_label.offset_right = -24.0
+    ammo_label.offset_top = -238.0
+    ammo_label.offset_bottom = -200.0
+    ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+    ammo_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    ammo_label.add_theme_font_size_override("font_size", 24)
+    ammo_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+    ammo_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+    ammo_label.add_theme_constant_override("shadow_offset_x", 2)
+    ammo_label.add_theme_constant_override("shadow_offset_y", 2)
     hud.add_child(ammo_label)
     notice_label = Label.new()
-    notice_label.position = Vector2(18, 52)
-    notice_label.add_theme_font_size_override("font_size", 18)
+    notice_label.anchor_left = 0.0
+    notice_label.anchor_right = 1.0
+    notice_label.offset_left = 0.0
+    notice_label.offset_right = 0.0
+    notice_label.offset_top = 68.0
+    notice_label.offset_bottom = 102.0
+    notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    notice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    notice_label.add_theme_font_size_override("font_size", 20)
+    notice_label.add_theme_color_override("font_color", Color(1, 0.92, 0.65, 1.0))
+    notice_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+    notice_label.add_theme_constant_override("shadow_offset_x", 2)
+    notice_label.add_theme_constant_override("shadow_offset_y", 2)
     hud.add_child(notice_label)
-    _make_button("ОГОНЬ", Vector2(-165,-150), Vector2(135,90), func(): _shoot())
-    _make_button("ПЕРЕЗАРЯДКА", Vector2(-165,-250), Vector2(135,48), func(): _reload())
-    _make_button("ВВЕРХ", Vector2(-315,-150), Vector2(105,48), func(): _up_action())
-    _make_button("ВНИЗ", Vector2(-315,-95), Vector2(105,48), func(): _down_action())
-    _make_hold_button("W", Vector2(25,-165), Vector2(58,48), Vector2(0,-1), true)
-    _make_hold_button("A", Vector2(0,-110), Vector2(58,48), Vector2(-1,0), true)
-    _make_hold_button("S", Vector2(25,-55), Vector2(58,48), Vector2(0,1), true)
-    _make_hold_button("D", Vector2(85,-110), Vector2(58,48), Vector2(1,0), true)
-    _make_hold_button("◀", Vector2(-460,-110), Vector2(55,48), Vector2(-1,0), false)
-    _make_hold_button("▶", Vector2(-400,-110), Vector2(55,48), Vector2(1,0), false)
-    _make_hold_button("▲", Vector2(-430,-165), Vector2(55,48), Vector2(0,-1), false)
-    _make_hold_button("▼", Vector2(-430,-55), Vector2(55,48), Vector2(0,1), false)
+    _refresh_ammo()
 
-func _make_button(text: String, offset: Vector2, size: Vector2, action: Callable) -> void:
-    var b := Button.new()
-    b.text = text
-    b.size = size
-    b.anchor_left = 1.0
-    b.anchor_right = 1.0
-    b.anchor_top = 1.0
-    b.anchor_bottom = 1.0
-    b.position = offset
-    b.pressed.connect(action)
-    hud.add_child(b)
+func _on_move_changed(value: Vector2) -> void:
+    mobile_move = value
 
-func _make_hold_button(text: String, offset: Vector2, size: Vector2, direction: Vector2, is_move: bool) -> void:
-    var b := Button.new()
-    b.text = text
-    b.size = size
-    b.anchor_left = 0.0 if offset.x >= 0 else 1.0
-    b.anchor_right = 0.0 if offset.x >= 0 else 1.0
-    b.anchor_top = 1.0
-    b.anchor_bottom = 1.0
-    b.position = offset
-    b.button_down.connect(func(): _set_mobile_direction(is_move, direction))
-    b.button_up.connect(func(): _set_mobile_direction(is_move, Vector2.ZERO))
-    hud.add_child(b)
+func _on_look_delta(delta: Vector2) -> void:
+    yaw -= delta.x * TOUCH_SENS
+    pitch = clampf(pitch - delta.y * TOUCH_SENS, -1.35, 1.35)
 
-func _set_mobile_direction(is_move: bool, direction: Vector2) -> void:
-    if is_move:
-        mobile_move = direction
-    else:
-        mobile_look = direction
+func _on_fire_changed(pressed: bool) -> void:
+    mobile_fire = pressed
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
         yaw -= event.relative.x * MOUSE_SENS
-        pitch = clamp(pitch - event.relative.y * MOUSE_SENS, -1.35, 1.35)
-        rotation.y = yaw
-        camera.rotation.x = pitch
-    elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+        pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.35, 1.35)
+    elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
         _shoot()
-    elif event is InputEventKey and event.pressed:
+    elif event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_R:
             _reload()
         elif event.keycode == KEY_C:
@@ -133,32 +177,51 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
     fire_cooldown = maxf(0.0, fire_cooldown - delta)
+    weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
+    weapon_root.position = weapon_base + Vector3(0.0, weapon_kick * 0.25, weapon_kick)
+    if muzzle_flash_time > 0.0:
+        muzzle_flash_time -= delta
+        if muzzle_flash_time <= 0.0:
+            muzzle_flash.visible = false
+
     if is_reloading:
         reload_timer -= delta
         if reload_timer <= 0.0:
-            var need := 71 - ammo
+            var need := MAG_SIZE - ammo
             var take := mini(need, reserve_ammo)
             ammo += take
             reserve_ammo -= take
             is_reloading = false
-            notice_label.text = "Перезаряжено"
-    ammo_label.text = "ППШ-41   %d / %d" % [ammo, reserve_ammo]
+            _set_notice("ПЕРЕЗАРЯЖЕНО", 1.2)
+            _refresh_ammo()
+
+    if notice_timer > 0.0:
+        notice_timer -= delta
+        if notice_timer <= 0.0:
+            notice_label.text = ""
+
+    if mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
+        _shoot()
+
     var input_vec := mobile_move
     input_vec.x += float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
     input_vec.y += float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
     input_vec = input_vec.limit_length(1.0)
-    yaw -= mobile_look.x * delta * 1.8
-    pitch = clamp(pitch + mobile_look.y * delta * 1.4, -1.35, 1.35)
-    rotation.y = yaw
-    camera.rotation.x = pitch
-    var direction := (transform.basis * Vector3(input_vec.x,0,input_vec.y)).normalized()
+
+    if stance == 0 and input_vec.length() > 0.92:
+        sprint_hold += delta
+    else:
+        sprint_hold = 0.0
+
     var current_speed := SPEED
-    if Input.is_key_pressed(KEY_SHIFT) and stance == 0:
+    if (Input.is_key_pressed(KEY_SHIFT) or sprint_hold > 0.7) and stance == 0:
         current_speed = SPRINT_SPEED
     if stance == 1:
         current_speed *= 0.55
     elif stance == 2:
         current_speed *= 0.25
+
+    var direction := (transform.basis * Vector3(input_vec.x, 0.0, input_vec.y)).normalized()
     velocity.x = direction.x * current_speed
     velocity.z = direction.z * current_speed
     if not is_on_floor():
@@ -166,8 +229,19 @@ func _physics_process(delta: float) -> void:
     elif Input.is_key_pressed(KEY_SPACE) and stance == 0:
         velocity.y = JUMP_VELOCITY
     move_and_slide()
+
+    recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
     var target_y := 1.55 if stance == 0 else (1.05 if stance == 1 else 0.58)
     camera.position.y = lerpf(camera.position.y, target_y, delta * 10.0)
+    _apply_look()
+
+func _apply_look() -> void:
+    rotation.y = yaw
+    camera.rotation = Vector3(
+        clampf(pitch + recoil.y, -1.45, 1.45),
+        recoil.x,
+        0.0
+    )
 
 func _down_action() -> void:
     stance = mini(2, stance + 1)
@@ -181,20 +255,33 @@ func _up_action() -> void:
         velocity.y = JUMP_VELOCITY
 
 func _update_stance() -> void:
-    notice_label.text = ["СТОЯ", "ПРИСЕЛ", "ЛЁЖА"][stance]
+    _set_notice(["СТОЯ", "ПРИСЕЛ", "ЛЁЖА"][stance], 1.2)
 
 func _shoot() -> void:
     if is_reloading or fire_cooldown > 0.0:
         return
     if ammo <= 0:
-        notice_label.text = "Нет патронов — нажми ПЕРЕЗАРЯДКА"
+        _set_notice("НЕТ ПАТРОНОВ — ПЕРЕЗАРЯДКА", 1.4)
         return
     ammo -= 1
-    fire_cooldown = 0.095
-    pitch = clamp(pitch - 0.012, -1.35, 1.35)
-    camera.rotation.x = pitch
+    fire_cooldown = FIRE_INTERVAL
+    _refresh_ammo()
+    # Отдача: подброс вверх + лёгкий горизонтальный разброс.
+    recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
+    recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
+    weapon_kick = 0.07
+    muzzle_flash.visible = true
+    muzzle_flash_time = 0.045
+    _apply_look()
+
+    var spread := 0.0
+    if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
+        spread = 0.012
+    var dir := -camera.global_transform.basis.z
+    dir = dir.rotated(camera.global_transform.basis.y, randf_range(-spread, spread))
+    dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
     var from := camera.global_position
-    var to := from + (-camera.global_transform.basis.z * 100.0)
+    var to := from + dir * 120.0
     var query := PhysicsRayQueryParameters3D.create(from, to)
     query.exclude = [self]
     var hit := get_world_3d().direct_space_state.intersect_ray(query)
@@ -205,20 +292,29 @@ func _shoot() -> void:
             var dummy = body.get_meta("owner_dummy")
             var was_alive: bool = dummy.health > 0.0
             var damage: int = dummy.receive_hit(region)
-            notice_label.text = "ПОПАДАНИЕ: %s  -%d HP" % [region.to_upper(), damage]
+            _set_notice("ПОПАДАНИЕ: %s  −%d HP" % [region.to_upper(), damage], 1.1)
+            if crosshair != null:
+                crosshair.flash_hit()
             if was_alive and dummy.health <= 0.0:
                 var world = get_parent()
                 if world.has_method("add_kill"):
                     world.add_kill()
                 dummy.respawn()
         else:
-            notice_label.text = "ПОПАДАНИЕ"
+            _set_notice("ПОПАДАНИЕ В УКРЫТИЕ", 0.8)
     else:
-        notice_label.text = "ПРОМАХ"
+        _set_notice("ПРОМАХ", 0.7)
 
 func _reload() -> void:
-    if is_reloading or ammo >= 71 or reserve_ammo <= 0:
+    if is_reloading or ammo >= MAG_SIZE or reserve_ammo <= 0:
         return
     is_reloading = true
-    reload_timer = 2.6
-    notice_label.text = "ПЕРЕЗАРЯДКА..."
+    reload_timer = RELOAD_TIME
+    _set_notice("ПЕРЕЗАРЯДКА...", RELOAD_TIME)
+
+func _refresh_ammo() -> void:
+    ammo_label.text = "AK-47   %d / %d" % [ammo, reserve_ammo]
+
+func _set_notice(text: String, time: float = 1.5) -> void:
+    notice_label.text = text
+    notice_timer = time
