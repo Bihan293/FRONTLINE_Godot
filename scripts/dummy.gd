@@ -57,7 +57,7 @@ func receive_hit(region: String) -> int:
         "arm": damage = 15
         "leg": damage = 20
     health -= damage
-    if health <= 0:
-        health = 100.0
-        # Reset as a respawning paper target for repeated weapon tests.
     return damage
+
+func respawn() -> void:
+    health = 100.0

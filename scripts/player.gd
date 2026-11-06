@@ -7,7 +7,7 @@ const MOUSE_SENS := 0.0022
 var camera: Camera3D
 var pitch := 0.0
 var yaw := 0.0
-var stance := 0 # 0 standing, 1 crouched, 2 prone
+var stance := 0
 var fire_cooldown := 0.0
 var ammo := 71
 var reserve_ammo := 213
@@ -16,14 +16,12 @@ var reload_timer := 0.0
 var hud: CanvasLayer
 var ammo_label: Label
 var notice_label: Label
-var touch_move := Vector2.ZERO
-var fire_touch := false
-var look_touch := Vector2.ZERO
 var mobile_move := Vector2.ZERO
 var mobile_look := Vector2.ZERO
-var mobile_buttons := {}
 
 func _ready() -> void:
+    floor_snap_length = 0.25
+    floor_max_angle = deg_to_rad(48.0)
     _build_player()
     _build_mobile_controls()
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -34,12 +32,12 @@ func _build_player() -> void:
     capsule.radius = 0.38
     capsule.height = 1.8
     collision.shape = capsule
+    collision.position.y = 0.9
     add_child(collision)
     camera = Camera3D.new()
-    camera.position = Vector3(0,1.48,0)
+    camera.position = Vector3(0,1.55,0)
     camera.current = true
     add_child(camera)
-    # Simple first-person PPSh model
     var gun := MeshInstance3D.new()
     var gun_mesh := BoxMesh.new()
     gun_mesh.size = Vector3(0.16,0.18,0.72)
@@ -121,11 +119,8 @@ func _unhandled_input(event: InputEvent) -> void:
         pitch = clamp(pitch - event.relative.y * MOUSE_SENS, -1.35, 1.35)
         rotation.y = yaw
         camera.rotation.x = pitch
-    elif event is InputEventMouseButton and event.pressed:
-        if event.button_index == MOUSE_BUTTON_LEFT:
-            _shoot()
-        elif event.button_index == MOUSE_BUTTON_RIGHT:
-            pass
+    elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+        _shoot()
     elif event is InputEventKey and event.pressed:
         if event.keycode == KEY_R:
             _reload()
@@ -140,7 +135,7 @@ func _physics_process(delta: float) -> void:
     fire_cooldown = maxf(0.0, fire_cooldown - delta)
     if is_reloading:
         reload_timer -= delta
-        if reload_timer <= 0:
+        if reload_timer <= 0.0:
             var need := 71 - ammo
             var take := mini(need, reserve_ammo)
             ammo += take
@@ -148,9 +143,6 @@ func _physics_process(delta: float) -> void:
             is_reloading = false
             notice_label.text = "Перезаряжено"
     ammo_label.text = "ППШ-41   %d / %d" % [ammo, reserve_ammo]
-    if Input.is_key_pressed(KEY_TAB):
-        pass
-
     var input_vec := mobile_move
     input_vec.x += float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
     input_vec.y += float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
@@ -174,7 +166,7 @@ func _physics_process(delta: float) -> void:
     elif Input.is_key_pressed(KEY_SPACE) and stance == 0:
         velocity.y = JUMP_VELOCITY
     move_and_slide()
-    var target_y := 1.48 if stance == 0 else (0.95 if stance == 1 else 0.48)
+    var target_y := 1.55 if stance == 0 else (1.05 if stance == 1 else 0.58)
     camera.position.y = lerpf(camera.position.y, target_y, delta * 10.0)
 
 func _down_action() -> void:
@@ -192,7 +184,7 @@ func _update_stance() -> void:
     notice_label.text = ["СТОЯ", "ПРИСЕЛ", "ЛЁЖА"][stance]
 
 func _shoot() -> void:
-    if is_reloading or fire_cooldown > 0:
+    if is_reloading or fire_cooldown > 0.0:
         return
     if ammo <= 0:
         notice_label.text = "Нет патронов — нажми ПЕРЕЗАРЯДКА"
@@ -211,12 +203,14 @@ func _shoot() -> void:
         if body.is_in_group("damageable"):
             var region := str(body.get_meta("region", "chest"))
             var dummy = body.get_meta("owner_dummy")
+            var was_alive: bool = dummy.health > 0.0
             var damage: int = dummy.receive_hit(region)
             notice_label.text = "ПОПАДАНИЕ: %s  -%d HP" % [region.to_upper(), damage]
-            if dummy.health >= 100.0:
+            if was_alive and dummy.health <= 0.0:
                 var world = get_parent()
                 if world.has_method("add_kill"):
                     world.add_kill()
+                dummy.respawn()
         else:
             notice_label.text = "ПОПАДАНИЕ"
     else:
