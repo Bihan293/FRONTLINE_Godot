@@ -28,12 +28,13 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 - Physical static floor collider and corrected player capsule/spawn height
 - Team selection: IRON LEGION (black/grey) and RED FRONT (red/brown)
 - Low-poly polygon training range
-- Player controller with mouse + keyboard and on-screen action buttons
-- PPSh-inspired placeholder first-person weapon
-- Shooting, ammo, reload timer, basic recoil
-- T-pose target dummies with separate head/chest/stomach/arm/leg hit regions
-- Damage values: head 100, chest 45, stomach 35, arms 15, legs 20
-- TAB scoreboard overlay (local prototype)
+- Player controller: keyboard + mouse on desktop, virtual joystick + swipe-look on Android
+- AK-47 low-poly model (764 tris) with separate magazine, charging handle, `Muzzle` and `ShellEject` markers
+- Rigged soldiers (20-bone humanoid skeleton) with procedural walk/aim/idle, both IRON LEGION and RED FRONT
+- Shooting, 30-round magazine, reload timer, upward recoil with recovery and movement spread
+- Per-part hitboxes: head 100, chest 45, stomach 35, arms 15, legs 20
+- Crosshair with hitmarker; HUD split into non-overlapping zones
+- TAB / on-screen scoreboard overlay (local prototype)
 - Separate `maps/` directory for future maps
 
 ## Open
@@ -54,13 +55,23 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 - TAB: scoreboard
 - ESC: release mouse / return to menu using on-screen menu button
 
+## Controls (Android)
+- Left virtual joystick: move (push to the edge for ~0.7 s to sprint)
+- Swipe anywhere outside the controls: look around
+- ОГОНЬ: hold to fire
+- ПЕРЕЗАР.: reload
+- ПРИСЕСТЬ: stand -> crouch -> prone
+- ПРЫЖОК: rise / jump
+- МЕНЮ and ТАБЛО: top-right corner
+
 ## Android notes
 This is a prototype, not a finished commercial game. On-screen directional movement and look buttons plus fire/reload/stance buttons are included. They are functional prototype controls, but their layout and sensitivity still need testing and tuning on a real device. Exporting an APK requires Godot Android export templates and Android SDK/JDK setup.
 
 ## Current limitations
 - No multiplayer, bots, capture points, or online player counts yet.
 - Target dummies respawn their health when reduced to zero.
-- Weapon model, animations, sound effects, and soldier visuals are placeholder low-poly assets.
+- Sound effects are not wired up yet.
+- Weapon and soldier models are in place; death animations and hand IK are still basic.
 - Settings screen is a placeholder.
 - TAB scoreboard is local-only.
 

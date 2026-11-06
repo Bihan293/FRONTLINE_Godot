@@ -76,9 +76,9 @@ func _build_world() -> void:
     for i in range(7):
         var d = Node3D.new()
         d.set_script(DUMMY_SCRIPT)
-        d.position = Vector3(-18 + i * 6, 0.76, -19 - (i % 2) * 5)
-        d.team_color = Color(0.25,0.28,0.3) if i % 2 == 0 else Color(0.42,0.29,0.18)
-        d.dummy_name = "TARGET-%02d" % (i+1)
+        d.position = Vector3(-18 + i * 6, 0.0, -19 - (i % 2) * 5)
+        d.team_name = "RED FRONT" if i % 2 == 0 else "IRON LEGION"
+        d.dummy_name = "TARGET-%02d" % (i + 1)
         add_child(d)
     _box(self, Vector3(-34,0.1,24), Vector3(5,0.2,5), Color(0.18,0.2,0.22))
     _box(self, Vector3(34,0.1,24), Vector3(5,0.2,5), Color(0.55,0.12,0.12))

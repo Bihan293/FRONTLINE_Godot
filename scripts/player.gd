@@ -18,6 +18,7 @@ var weapon_base := Vector3.ZERO
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
+var bob_time := 0.0
 
 var pitch := 0.0
 var yaw := 0.0
@@ -41,6 +42,7 @@ var mobile_fire := false
 var sprint_hold := 0.0
 
 func _ready() -> void:
+    add_to_group("player")
     floor_snap_length = 0.25
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
@@ -67,34 +69,45 @@ func _build_player() -> void:
 
 func _build_weapon() -> void:
     weapon_root = Node3D.new()
-    weapon_root.position = Vector3(0.27, -0.24, -0.46)
+    weapon_root.position = Vector3(0.24, -0.20, -0.32)
     weapon_base = weapon_root.position
     camera.add_child(weapon_root)
-    # Временная заглушка до подключения AK-47.
-    var gun := MeshInstance3D.new()
-    var gun_mesh := BoxMesh.new()
-    gun_mesh.size = Vector3(0.10, 0.13, 0.66)
-    gun.mesh = gun_mesh
-    var gun_mat := StandardMaterial3D.new()
-    gun_mat.albedo_color = Color(0.14, 0.12, 0.09)
-    gun_mat.roughness = 0.75
-    gun.material_override = gun_mat
-    weapon_root.add_child(gun)
+
+    var packed = load("res://assets/models/ak47/ak47_lowpoly.glb")
+    var muzzle_anchor: Node3D = weapon_root
+    if packed != null:
+        var ak = packed.instantiate()
+        ak.rotation.y = PI  # ствол модели смотрит в +Z, в Godot вперёд — -Z
+        weapon_root.add_child(ak)
+        var muzzle_node = ak.find_child("Muzzle", true, false)
+        if muzzle_node is Node3D:
+            muzzle_anchor = muzzle_node
+    else:
+        push_error("FRONTLINE: cannot load AK-47 model")
+        var fallback := MeshInstance3D.new()
+        var box := BoxMesh.new()
+        box.size = Vector3(0.10, 0.13, 0.66)
+        fallback.mesh = box
+        var mat := StandardMaterial3D.new()
+        mat.albedo_color = Color(0.14, 0.12, 0.09)
+        fallback.material_override = mat
+        weapon_root.add_child(fallback)
+
     muzzle_flash = MeshInstance3D.new()
     var flash_mesh := SphereMesh.new()
-    flash_mesh.radius = 0.07
-    flash_mesh.height = 0.14
+    flash_mesh.radius = 0.055
+    flash_mesh.height = 0.11
     muzzle_flash.mesh = flash_mesh
     var flash_mat := StandardMaterial3D.new()
     flash_mat.albedo_color = Color(1.0, 0.75, 0.25)
     flash_mat.emission_enabled = true
     flash_mat.emission = Color(1.0, 0.55, 0.12)
-    flash_mat.emission_energy_multiplier = 4.0
+    flash_mat.emission_energy_multiplier = 5.0
     flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     muzzle_flash.material_override = flash_mat
-    muzzle_flash.position = Vector3(0.0, 0.02, -0.72)
+    muzzle_flash.position = Vector3.ZERO
     muzzle_flash.visible = false
-    weapon_root.add_child(muzzle_flash)
+    muzzle_anchor.add_child(muzzle_flash)
 
 func _build_mobile_controls() -> void:
     var layer := CanvasLayer.new()
@@ -178,7 +191,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
     fire_cooldown = maxf(0.0, fire_cooldown - delta)
     weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
-    weapon_root.position = weapon_base + Vector3(0.0, weapon_kick * 0.25, weapon_kick)
+    var planar_speed := Vector2(velocity.x, velocity.z).length()
+    if planar_speed > 0.4 and is_on_floor():
+        bob_time += delta * (6.0 + planar_speed * 0.7)
+    var bob_amount := clampf(planar_speed / SPEED, 0.0, 1.2)
+    var bob := Vector3(sin(bob_time) * 0.006, absf(cos(bob_time)) * 0.005, 0.0) * bob_amount
+    weapon_root.position = weapon_base + Vector3(0.0, weapon_kick * 0.25, weapon_kick) + bob
     if muzzle_flash_time > 0.0:
         muzzle_flash_time -= delta
         if muzzle_flash_time <= 0.0:
@@ -299,7 +317,6 @@ func _shoot() -> void:
                 var world = get_parent()
                 if world.has_method("add_kill"):
                     world.add_kill()
-                dummy.respawn()
         else:
             _set_notice("ПОПАДАНИЕ В УКРЫТИЕ", 0.8)
     else:

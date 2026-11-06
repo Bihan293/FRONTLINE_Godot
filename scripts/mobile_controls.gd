@@ -124,7 +124,7 @@ func _draw() -> void:
     # Джойстик
     draw_circle(l.joy, JOY_RADIUS, Color(0.04, 0.06, 0.07, 0.38))
     draw_arc(l.joy, JOY_RADIUS, 0.0, TAU, 64, Color(1, 1, 1, 0.28), 3.0, true)
-    var knob := l.joy + _joy_value * JOY_RADIUS
+    var knob: Vector2 = l.joy + _joy_value * JOY_RADIUS
     draw_circle(knob, JOY_RADIUS * 0.40, Color(0.85, 0.92, 1.0, 0.50))
     draw_arc(knob, JOY_RADIUS * 0.40, 0.0, TAU, 48, Color(1, 1, 1, 0.45), 2.0, true)
 
