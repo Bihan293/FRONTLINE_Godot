@@ -13,7 +13,7 @@ const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 
 const BLAST_RADIUS := 8.5
 const MAX_DAMAGE := 145.0
-const HITBOX_LAYER_MASK := 8 # Слой 4 (хитбоксы)
+const HITBOX_LAYER_MASK := 2 # Слой 2 (хитбоксы)
 
 var health := 40.0
 var is_burning := false
@@ -23,10 +23,14 @@ var _barrel_mesh: MeshInstance3D
 var _fire_particles: CPUParticles3D
 var _hitbox: Area3D
 var _fuse_timer := 0.0
+var _visual_details: Array[Node3D] = []
 
 func _ready() -> void:
 	add_to_group("explosive_barrels")
 	add_to_group("damageable")
+	set_meta("owner_actor", self)
+	set_meta("owner_dummy", self)
+	set_meta("region", "barrel")
 	collision_layer = 1
 	collision_mask = 1
 
@@ -74,6 +78,7 @@ func _build_visuals() -> void:
 	stripe.material_override = stripe_mat
 	stripe.position = Vector3(0, 0.60, 0)
 	add_child(stripe)
+	_visual_details.append(stripe)
 
 	# Чёрные стальные обода сверху и снизу
 	for rim_y in [0.08, 1.12]:
@@ -91,6 +96,7 @@ func _build_visuals() -> void:
 		rim.material_override = rim_mat
 		rim.position = Vector3(0, rim_y, 0)
 		add_child(rim)
+		_visual_details.append(rim)
 
 	# Верхняя крышка с пробкой
 	var cap := MeshInstance3D.new()
@@ -104,6 +110,7 @@ func _build_visuals() -> void:
 	cap_mat.albedo_color = Color(0.12, 0.12, 0.12)
 	cap.material_override = cap_mat
 	add_child(cap)
+	_visual_details.append(cap)
 
 func _build_hitbox() -> void:
 	_hitbox = Area3D.new()
@@ -161,6 +168,15 @@ func _ignite() -> void:
 
 	# Факел пламени из пробоины
 	_fire_particles = CPUParticles3D.new()
+	var flame_mesh := SphereMesh.new()
+	flame_mesh.radius = 0.08
+	flame_mesh.height = 0.16
+	var flame_mat := StandardMaterial3D.new()
+	flame_mat.albedo_color = Color(1.0, 0.6, 0.1)
+	flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flame_mesh.material = flame_mat
+	_fire_particles.mesh = flame_mesh
+
 	_fire_particles.amount = 24
 	_fire_particles.lifetime = 0.5
 	_fire_particles.direction = Vector3(randf_range(-0.4, 0.4), 1.0, randf_range(-0.4, 0.4)).normalized()
@@ -233,6 +249,9 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 
 	# Частицы взрыва и осколков бочки
 	var p := CPUParticles3D.new()
+	var p_mesh := BoxMesh.new()
+	p_mesh.size = Vector3(0.18, 0.18, 0.18)
+	p.mesh = p_mesh
 	p.one_shot = true
 	p.explosiveness = 1.0
 	p.lifetime = 1.2
@@ -284,6 +303,14 @@ func _play_metal_sfx(pos: Vector3) -> void:
 
 func _spawn_sparks(pos: Vector3) -> void:
 	var p := CPUParticles3D.new()
+	var spk_mesh := SphereMesh.new()
+	spk_mesh.radius = 0.025
+	spk_mesh.height = 0.05
+	var spk_mat := StandardMaterial3D.new()
+	spk_mat.albedo_color = Color(1.0, 0.85, 0.25)
+	spk_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spk_mesh.material = spk_mat
+	p.mesh = spk_mesh
 	p.one_shot = true
 	p.explosiveness = 1.0
 	p.lifetime = 0.35
@@ -349,6 +376,12 @@ func _turn_into_wreckage() -> void:
 	if _fire_particles != null:
 		_fire_particles.queue_free()
 
+	# Удаляем декоративные элементы (полосу, обода, крышку), чтобы они не висели в воздухе
+	for detail in _visual_details:
+		if detail != null and is_instance_valid(detail):
+			detail.queue_free()
+	_visual_details.clear()
+
 	# Сплюснутый обугленный корпус
 	if _barrel_mesh != null:
 		var wreck_mesh := CylinderMesh.new()
@@ -367,6 +400,16 @@ func _turn_into_wreckage() -> void:
 
 	# Стелющийся остаточный дым
 	var smoke := CPUParticles3D.new()
+	var smk_mesh := SphereMesh.new()
+	smk_mesh.radius = 0.22
+	smk_mesh.height = 0.44
+	var smk_mat := StandardMaterial3D.new()
+	smk_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smk_mat.albedo_color = Color(0.18, 0.18, 0.18, 0.5)
+	smk_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smk_mesh.material = smk_mat
+	smoke.mesh = smk_mesh
+
 	smoke.amount = 12
 	smoke.lifetime = 1.8
 	smoke.direction = Vector3.UP

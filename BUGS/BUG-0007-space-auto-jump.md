@@ -1,13 +1,13 @@
 # BUG-0007 — Удержание пробела вызывает повторные прыжки
 
-- **Status:** ready for retest
+- **Status:** fixed
 - **Severity:** minor
 - **Build / commit:** базовая версия `cbc1b42`
 - **Platform / device:** desktop
 - **Found by:** Codex QA
 - **Frequency:** каждый раз при удержании пробела до приземления
 - **Owner:** Codex
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

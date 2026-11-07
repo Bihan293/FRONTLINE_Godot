@@ -7,7 +7,7 @@
 - **Found by:** Antigravity & QA Subagent (Combat & Bot AI)
 - **Frequency:** 100%
 - **Owner:** Antigravity
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

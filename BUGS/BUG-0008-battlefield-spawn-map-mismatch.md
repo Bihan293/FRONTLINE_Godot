@@ -1,13 +1,13 @@
 # BUG-0008 — Выбор спавна Battlefield показывает карту Polygon
 
-- **Status:** ready for retest
+- **Status:** fixed
 - **Severity:** major
 - **Build / commit:** базовая версия `cbc1b42`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** каждый вход на экран Battlefield deployment
 - **Owner:** Codex
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

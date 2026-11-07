@@ -10,11 +10,11 @@ All verified issues filed in the joint QA audit log:
 | BUG-0004 | major | fixed | Compass bar lacks is_instance_valid check on player camera | Antigravity | v0.1.20 |
 | BUG-0005 | minor | fixed | Player can fire weapon while applying field bandage | Antigravity / QA-1 | v0.1.20 |
 | BUG-0006 | minor | fixed | Missing auto-reload when pulling trigger on empty magazine | Antigravity | v0.1.20 |
-| BUG-0007 | minor | ready for retest | Holding Space causes repeated jumps | Codex QA | `cbc1b42` |
-| BUG-0008 | major | ready for retest | Battlefield spawn picker shows Polygon geometry and positions | Codex QA | `cbc1b42` |
-| BUG-0009 | minor | ready for retest | Default spawn marker is not selected | Codex QA | `cbc1b42` |
-| BUG-0010 | major | open | Escape releases mouse with no recapture path | Codex QA | `cbc1b42` |
-| BUG-0011 | major | open | Player input continues after match end | Codex QA | `cbc1b42` |
-| BUG-0012 | minor | open | Compass FOV does not match player camera | Codex QA | `cbc1b42` |
-| BUG-0013 | major | ready for retest | Rifle shots do not ignite explosive barrels | Codex QA | `cbc1b42` |
-| BUG-0014 | minor | investigating | Same-faction bot damage needs a design decision | Codex QA | `cbc1b42` |
+| BUG-0007 | minor | fixed | Holding Space causes repeated jumps | Codex QA | v0.1.22 |
+| BUG-0008 | major | fixed | Battlefield spawn picker shows Polygon geometry and positions | Codex QA | v0.1.22 |
+| BUG-0009 | minor | fixed | Default spawn marker is not selected | Codex QA | v0.1.22 |
+| BUG-0010 | major | fixed | Escape releases mouse with no recapture path | Codex QA | v0.1.22 |
+| BUG-0011 | major | fixed | Player input continues after match end | Codex QA | v0.1.22 |
+| BUG-0012 | minor | fixed | Compass FOV does not match player camera | Codex QA | v0.1.22 |
+| BUG-0013 | major | fixed | Rifle shots do not ignite explosive barrels | Codex QA | v0.1.22 |
+| BUG-0014 | minor | fixed | Friendly fire protection for players and faction bots | Codex QA | v0.1.22 |

@@ -1,13 +1,13 @@
 # BUG-0009 — Стартовый спавн не выделен при открытии экрана
 
-- **Status:** ready for retest
+- **Status:** fixed
 - **Severity:** minor
 - **Build / commit:** базовая версия `cbc1b42`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** каждый вход на экран deployment
 - **Owner:** Codex
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

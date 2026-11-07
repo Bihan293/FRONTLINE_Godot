@@ -750,6 +750,12 @@ func _shoot() -> void:
 			actor = body
 		if actor == null or not actor.has_method("receive_hit"):
 			continue
+		var target_team: String = ""
+		if "team_name" in actor:
+			target_team = str(actor.team_name)
+		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		if target_team != "" and target_team == player_team:
+			continue
 		var damage := int(weapon.damage)
 		match region:
 			"head": damage = int(round(float(damage) * 2.2))

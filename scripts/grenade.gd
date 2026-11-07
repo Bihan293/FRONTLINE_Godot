@@ -174,6 +174,10 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 
 	# Частицы дыма и разлёта осколков
 	var p := CPUParticles3D.new()
+	var frag_mesh := SphereMesh.new()
+	frag_mesh.radius = 0.08
+	frag_mesh.height = 0.16
+	p.mesh = frag_mesh
 	p.one_shot = true
 	p.explosiveness = 1.0
 	p.lifetime = 0.8
@@ -222,6 +226,8 @@ func _apply_blast_damage(pos: Vector3) -> void:
 			continue
 		var bot = b as FRONTLINESoldierBot
 		if bot != null and not bot.is_dead:
+			if team_name != "" and bot.team_name == team_name:
+				continue
 			var dist := pos.distance_to(bot.global_position)
 			if dist <= BLAST_RADIUS:
 				var factor := 1.0 - (dist / BLAST_RADIUS)
@@ -250,12 +256,14 @@ func _apply_blast_damage(pos: Vector3) -> void:
 
 	# Поражение игрока
 	var player = get_tree().get_first_node_in_group("player") as Node3D
+	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	if player != null and is_instance_valid(player) and player.has_method("receive_hit"):
-		var dist := pos.distance_to(player.global_position)
-		if dist <= BLAST_RADIUS:
-			var factor := 1.0 - (dist / BLAST_RADIUS)
-			var dmg := int(round(MAX_DAMAGE * factor * factor * 0.85))
-			player.receive_hit(dmg, pos, "chest", thrower_name)
+		if team_name == "" or team_name != player_team or thrower_name == "Player":
+			var dist := pos.distance_to(player.global_position)
+			if dist <= BLAST_RADIUS:
+				var factor := 1.0 - (dist / BLAST_RADIUS)
+				var dmg := int(round(MAX_DAMAGE * factor * factor * 0.85))
+				player.receive_hit(dmg, pos, "chest", thrower_name)
 
 func _shake_player_camera(pos: Vector3) -> void:
 	var player = get_tree().get_first_node_in_group("player")

@@ -388,14 +388,36 @@ func _throw_bot_grenade(target_pt: Vector3) -> void:
 	g.team_name = team_name
 	get_parent().add_child(g)
 
-## Наступление и патрулирование в сторону вражеской базы
+## Наступление и тактический захват секторов A, B, C с продвижением к базе врага
 func _advance_behavior(delta: float) -> void:
 	stance = 0
-	# Направление к вражескому рубежу (Красные идут в +Z, Легион в -Z).
+	# Направление к рубежу противника (Красные идут в +Z, Легион в -Z).
 	var forward_z: float = 1.0 if team_name.contains("RED") else -1.0
-	var lane_x := float(int(get_instance_id() % 5) - 2) * 12.0
-	# Проходим за центр карты, иначе обе команды могут остановиться вне дальности друг друга.
-	var objective := Vector3(lane_x, 0.0, forward_z * 20.0)
+
+	# Распределение ботов по тактическим направлениям:
+	# 0: левый фланг к Сектору [A] (-52м)
+	# 1: центр к Сектору [B] (0м)
+	# 2: правый фланг к Сектору [C] (+52м)
+	var squad := int(get_instance_id() % 3)
+	var sector_x := 0.0
+	match squad:
+		0: sector_x = -52.0
+		1: sector_x = 0.0
+		2: sector_x = 52.0
+
+	var offset_x := float(int(get_instance_id() % 5) - 2) * 2.5
+	var target_sector := Vector3(sector_x + offset_x, 0.0, 0.0)
+
+	# Если бот уже вышел к линии секторов (Z около 0), развиваем наступление вглубь вражеских траншей
+	var current_z := global_position.z
+	var objective: Vector3
+	if (forward_z > 0.0 and current_z > 8.0) or (forward_z < 0.0 and current_z < -8.0):
+		# Продвижение на вражескую половину карты к передовым окопам
+		objective = Vector3(sector_x + offset_x, 0.0, forward_z * 56.0)
+	else:
+		# Штурм ключевого сектора
+		objective = target_sector
+
 	var forward_dir := _route_direction(objective, delta)
 
 	velocity.x = forward_dir.x * SPEED_SPRINT
@@ -513,6 +535,14 @@ func _fire_single_shot() -> void:
 			if actor == null and collider.has_method("receive_hit"):
 				actor = collider
 			if actor != null and actor != self and actor.has_method("receive_hit"):
+				var actor_team: String = ""
+				if "team_name" in actor:
+					actor_team = str(actor.team_name)
+				elif actor.is_in_group("player"):
+					actor_team = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+				# Защита от дружественного огня: сослуживцы не получают урон
+				if actor_team != "" and actor_team == team_name:
+					return
 				var dmg := 22
 				match region:
 					"head": dmg = 85
@@ -521,7 +551,8 @@ func _fire_single_shot() -> void:
 				actor.receive_hit(dmg, global_position, region, soldier_name)
 				HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
 		elif collider.is_in_group("player") or collider.name == "Player":
-			if collider.has_method("receive_hit"):
+			var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+			if player_team != team_name and collider.has_method("receive_hit"):
 				collider.receive_hit(24, global_position, "chest", soldier_name)
 				HIT_EFFECTS.spawn_directional_blood(collider, hit.position, shoot_dir, false, get_parent())
 		else:

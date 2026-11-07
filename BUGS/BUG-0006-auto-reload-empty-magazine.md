@@ -7,7 +7,7 @@
 - **Found by:** Antigravity
 - **Frequency:** 100% on empty clip
 - **Owner:** Antigravity
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

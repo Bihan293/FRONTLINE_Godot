@@ -1,13 +1,13 @@
 # BUG-0012 — Компас использует другой угол обзора, чем камера
 
-- **Status:** open
+- **Status:** fixed
 - **Severity:** minor
 - **Build / commit:** базовая версия `cbc1b42`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** когда метка сектора смещена от центра компаса
-- **Owner:** unassigned
-- **Fix commit:** none
+- **Owner:** Codex
+- **Fix commit:** 
 
 ## Reproduction
 
@@ -29,5 +29,5 @@
 
 ## Retest
 
-Ожидает исправления и проверки в игре.
+Компас теперь берёт текущий горизонтальный FOV камеры и перспективно размещает метки. Проверить на нескольких соотношениях сторон.
 

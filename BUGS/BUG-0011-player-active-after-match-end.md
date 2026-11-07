@@ -1,13 +1,13 @@
 # BUG-0011 — Игрок продолжает двигаться и стрелять после конца матча
 
-- **Status:** open
+- **Status:** fixed
 - **Severity:** major
 - **Build / commit:** базовая версия `cbc1b42`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** каждый показ экрана победы или поражения
-- **Owner:** unassigned
-- **Fix commit:** none
+- **Owner:** Codex
+- **Fix commit:** 
 
 ## Reproduction
 
@@ -28,5 +28,5 @@
 
 ## Retest
 
-Ожидает исправления и проверки на ПК и Android.
+Игрок переводится в input-locked состояние при конце матча. Проверить на ПК и Android.
 

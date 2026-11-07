@@ -7,7 +7,7 @@
 - **Found by:** Antigravity
 - **Frequency:** on player death / scene transition
 - **Owner:** Antigravity
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

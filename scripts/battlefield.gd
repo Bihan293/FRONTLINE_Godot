@@ -228,6 +228,9 @@ func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldi
 	bot.soldier_name = bot_name
 	bot.soldier_killed.connect(_on_soldier_killed)
 	bot.soldier_fired.connect(_on_bot_fired)
+	bot.tree_exiting.connect(func():
+		_active_bots.erase(bot)
+	)
 	add_child(bot)
 	_active_bots.append(bot)
 	return bot
@@ -406,6 +409,7 @@ func _end_match(winner: String) -> void:
 	var is_player_winner: bool = (team_name == winner)
 
 	victory_panel = PanelContainer.new()
+	victory_panel.process_mode = Node.PROCESS_MODE_ALWAYS
 	victory_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	victory_panel.offset_left = -280
 	victory_panel.offset_right = 280
@@ -450,6 +454,7 @@ func _end_match(winner: String) -> void:
 	restart_btn.custom_minimum_size = Vector2(140, 48)
 	restart_btn.add_theme_font_size_override("font_size", 16)
 	restart_btn.pressed.connect(func():
+		get_tree().paused = false
 		get_tree().reload_current_scene()
 	)
 	btn_box.add_child(restart_btn)
@@ -459,9 +464,11 @@ func _end_match(winner: String) -> void:
 	menu_btn.custom_minimum_size = Vector2(160, 48)
 	menu_btn.add_theme_font_size_override("font_size", 16)
 	menu_btn.pressed.connect(func():
+		get_tree().paused = false
 		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
 	)
 	btn_box.add_child(menu_btn)
+	get_tree().paused = true
 
 func _update_sector_captures() -> void:
 	for sec in sector_data:

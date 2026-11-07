@@ -171,6 +171,9 @@ static func is_line_blocked_by_smoke(from: Vector3, to: Vector3) -> bool:
 	for cloud in active_clouds:
 		var cpos: Vector3 = cloud.pos
 		var cradius: float = cloud.radius
+		# Если стрелок или цель находятся внутри радиуса дыма
+		if from.distance_to(cpos) <= cradius or to.distance_to(cpos) <= cradius:
+			return true
 		# Проекция центра облака на отрезок
 		var to_center := cpos - from
 		var proj := to_center.dot(dir)

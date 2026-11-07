@@ -1,13 +1,13 @@
 # BUG-0013 — Стрельба не зажигает взрывные бочки
 
-- **Status:** ready for retest
+- **Status:** fixed
 - **Severity:** major
-- **Build / commit:** базовая версия `cbc1b42`
+- **Build / commit:** базовая версия `cbc1b42`, исправлено в `v0.1.22`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** при каждом прямом попадании пули
-- **Owner:** Codex
-- **Fix commit:** pending
+- **Owner:** Codex & Antigravity
+- **Fix commit:** `ce0d962`
 
 ## Reproduction
 

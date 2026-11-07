@@ -7,7 +7,7 @@
 - **Found by:** Antigravity
 - **Frequency:** 100% when goal or bot is unreachable
 - **Owner:** Antigravity
-- **Fix commit:** pending
+- **Fix commit:** 
 
 ## Reproduction
 

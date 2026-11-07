@@ -1,13 +1,13 @@
 # BUG-0010 — После Escape нельзя снова захватить курсор
 
-- **Status:** open
+- **Status:** fixed
 - **Severity:** major
-- **Build / commit:** базовая версия `cbc1b42`
+- **Build / commit:** базовая версия `cbc1b42`, исправлено в `v0.1.22`
 - **Platform / device:** desktop
 - **Found by:** Codex QA
 - **Frequency:** при каждом нажатии Escape во время боя
-- **Owner:** unassigned
-- **Fix commit:** none
+- **Owner:** Codex & Antigravity
+- **Fix commit:** `ce0d962`
 
 ## Reproduction
 
@@ -29,5 +29,5 @@
 
 ## Retest
 
-Ожидает исправления и проверки на ПК.
+После Escape первый щелчок теперь снова захватывает курсор. Проверить на ПК.
 

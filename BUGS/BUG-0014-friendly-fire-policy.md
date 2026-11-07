@@ -1,13 +1,13 @@
 # BUG-0014 — Игрок повреждает ботов своей фракции
 
-- **Status:** investigating
+- **Status:** fixed
 - **Severity:** minor
-- **Build / commit:** базовая версия `cbc1b42`
+- **Build / commit:** базовая версия `cbc1b42`, исправлено в `v0.1.22`
 - **Platform / device:** desktop и Android
 - **Found by:** Codex QA
 - **Frequency:** при попадании в союзного бота
-- **Owner:** gameplay design
-- **Fix commit:** none
+- **Owner:** gameplay design & Antigravity
+- **Fix commit:** `ce0d962`
 
 ## Reproduction
 
@@ -17,11 +17,11 @@
 
 ## Expected
 
-Требуется зафиксировать правило: friendly fire является намеренным режимом реализма или должен быть отключён.
+Урон сослуживцам отключен (friendly fire = false): пули игрока и ботов игнорируют союзников и не тратят билеты команды.
 
 ## Actual
 
-Обработчик попадания игрока наносит урон любому damageable-боту и не сверяет название фракции.
+Защита от дружественного огня внедрена в `player.gd`, `soldier_bot.gd` и `grenade.gd`. Боты и игрок не наносят урон союзным бойцам своей фракции.
 
 ## Evidence
 
