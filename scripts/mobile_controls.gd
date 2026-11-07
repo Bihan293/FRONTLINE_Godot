@@ -10,6 +10,7 @@ class_name MobileControls
 signal move_changed(value: Vector2)
 signal look_delta(delta: Vector2)
 signal fire_changed(pressed: bool)
+signal aim_changed(pressed: bool)
 signal reload_pressed
 signal stance_down_pressed
 signal stance_up_pressed
@@ -38,6 +39,7 @@ func _layout() -> Dictionary:
         "joy": Vector2(150.0, s.y - 155.0),
         "fire": Vector2(s.x - 118.0, s.y - 122.0),
         "reload": Vector2(s.x - 118.0, s.y - 292.0),
+        "aim": Vector2(s.x - 118.0, s.y - 402.0),
         "crouch": Vector2(s.x - 288.0, s.y - 120.0),
         "jump": Vector2(s.x - 288.0, s.y - 238.0),
     }
@@ -55,7 +57,7 @@ func _touch_down(index: int, pos: Vector2) -> void:
     if _button_touches.has(index):
         return
     var l := _layout()
-    for id in ["fire", "reload", "crouch", "jump"]:
+    for id in ["fire", "reload", "aim", "crouch", "jump"]:
         var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
         if pos.distance_to(l[id]) <= radius * 1.15:
             _button_touches[index] = id
@@ -78,6 +80,8 @@ func _touch_up(index: int) -> void:
         _active.erase(id)
         if id == "fire":
             fire_changed.emit(false)
+        elif id == "aim":
+            aim_changed.emit(false)
         queue_redraw()
         return
     if index == _joy_touch:
@@ -99,6 +103,8 @@ func _press(id: String) -> void:
     match id:
         "fire":
             fire_changed.emit(true)
+        "aim":
+            aim_changed.emit(true)
         "reload":
             reload_pressed.emit()
         "crouch":
@@ -130,6 +136,7 @@ func _draw() -> void:
 
     _draw_button(l.fire, FIRE_RADIUS, "ОГОНЬ", "fire", Color(0.80, 0.18, 0.12, 0.50), font, 18)
     _draw_button(l.reload, SMALL_RADIUS, "ПЕРЕЗАР.", "reload", Color(0.12, 0.32, 0.55, 0.48), font, 12)
+    _draw_button(l.aim, SMALL_RADIUS, "ПРИЦЕЛ", "aim", Color(0.22, 0.38, 0.28, 0.48), font, 12)
     _draw_button(l.crouch, SMALL_RADIUS, "ПРИСЕСТЬ", "crouch", Color(0.20, 0.34, 0.20, 0.48), font, 11)
     _draw_button(l.jump, SMALL_RADIUS, "ПРЫЖОК", "jump", Color(0.34, 0.30, 0.12, 0.48), font, 12)
 

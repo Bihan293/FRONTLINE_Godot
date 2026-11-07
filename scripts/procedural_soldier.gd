@@ -13,6 +13,7 @@ var _hips_id: int = -1
 var _hips_rest := Vector3.ZERO
 var _hip_drop := 0.0
 var _phase: float = 0.0
+var _idle_time: float = 0.0
 var _speed: float = 0.0
 var _move_amount: float = 0.0
 var _run_amount: float = 0.0
@@ -20,6 +21,7 @@ var _aim_amount: float = 0.0
 var _crouch_amount: float = 0.0
 var _sit_amount: float = 0.0
 var _fire_amount: float = 0.0
+var _aim_forward_sign: float = -1.0
 var _look_yaw: float = 0.0
 var _look_pitch: float = 0.0
 var _pose: Dictionary = {}
@@ -73,6 +75,9 @@ func set_look(yaw: float, pitch: float) -> void:
 func set_aiming(enabled: bool) -> void:
     _aim_amount = 1.0 if enabled else 0.0
 
+func set_aim_forward_sign(value: float) -> void:
+    _aim_forward_sign = -1.0 if value < 0.0 else 1.0
+
 func set_crouching(enabled: bool) -> void:
     _crouch_amount = 1.0 if enabled else 0.0
 
@@ -86,6 +91,7 @@ func _process(delta: float) -> void:
     if _skeleton == null:
         return
     var blend := 1.0 - exp(-smoothing * delta)
+    _idle_time += delta
     var gait_rate := lerpf(2.0, 5.2, _run_amount) * walk_cycle_rate
     if _move_amount > 0.02:
         _phase = fposmod(_phase + delta * gait_rate, TAU)
@@ -93,6 +99,7 @@ func _process(delta: float) -> void:
     var stride := sin(_phase) * _move_amount
     var opposite_stride := sin(_phase + PI) * _move_amount
     var bounce := absf(cos(_phase * 2.0)) * _move_amount
+    var breath := sin(_idle_time * 1.55) * (1.0 - _move_amount) * (1.0 - _fire_amount)
     var run_scale := 1.0 + 0.35 * _run_amount
     var aim := _aim_amount
     var crouch := _crouch_amount
@@ -103,7 +110,8 @@ func _process(delta: float) -> void:
     var target_hip_drop := crouch * 0.28 + sit * 0.75
     _hip_drop = lerpf(_hip_drop, target_hip_drop, blend)
     if _hips_id >= 0:
-        _skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -_hip_drop, 0))
+        var body_bob := bounce * 0.035 + breath * 0.008
+        _skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -_hip_drop + body_bob, 0))
 
     # Lower body: alternating hip/knee/foot motion with a softer planted-foot phase.
     _set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.25), blend)
@@ -115,23 +123,26 @@ func _process(delta: float) -> void:
 
     # Torso follows the gait with damped counter-rotation and a subtle vertical rhythm.
     _set_pose("Hips", _q(Vector3.UP, sin(_phase) * 0.035 * _move_amount), blend)
-    _set_pose("Spine", _q(Vector3.RIGHT, -0.05 * _run_amount - 0.10 * crouch + 0.12 * sit), blend)
-    _set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.045 * _move_amount) * _q(Vector3.RIGHT, -0.08 * aim), blend)
-    _set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.25), blend)
-    _set_pose("Head", _q(Vector3.UP, _look_yaw) * _q(Vector3.RIGHT, _look_pitch * 0.75), blend)
+    _set_pose("Spine", _q(Vector3.RIGHT, -0.06 * _run_amount - 0.16 * crouch + 0.16 * sit + breath * 0.012), blend)
+    _set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.055 * _move_amount) * _q(Vector3.RIGHT, -0.10 * aim + breath * 0.018), blend)
+    _set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.30), blend)
+    _set_pose("Head", _q(Vector3.UP, _look_yaw * 0.72) * _q(Vector3.RIGHT, _look_pitch * 0.70), blend)
 
     # Arms counter-swing while moving; aiming smoothly blends both arms into a ready pose.
-    var arm_swing := 0.38 * run_scale
+    var arm_swing := 0.26 * run_scale
     var left_swing := opposite_stride * arm_swing * (1.0 - aim)
     var right_swing := stride * arm_swing * (1.0 - aim)
-    _set_pose("LeftShoulder", _q(Vector3.FORWARD, left_swing * 0.22), blend)
-    _set_pose("RightShoulder", _q(Vector3.FORWARD, right_swing * 0.22), blend)
-    _set_pose("LeftUpperArm", _q(Vector3.UP, lerpf(0.0, deg_to_rad(78.0), aim)) * _q(Vector3.FORWARD, left_swing), blend)
-    _set_pose("RightUpperArm", _q(Vector3.UP, lerpf(0.0, deg_to_rad(-78.0), aim)) * _q(Vector3.FORWARD, right_swing), blend)
-    _set_pose("LeftLowerArm", _q(Vector3.RIGHT, lerpf(0.0, -0.85, aim) + fire * 0.08), blend)
-    _set_pose("RightLowerArm", _q(Vector3.RIGHT, lerpf(0.0, -0.85, aim) + fire * 0.08), blend)
-    _set_pose("LeftHand", Quaternion.IDENTITY, blend)
-    _set_pose("RightHand", Quaternion.IDENTITY, blend)
+    _set_pose("LeftShoulder", _q(Vector3.FORWARD, left_swing * 0.16), blend)
+    _set_pose("RightShoulder", _q(Vector3.FORWARD, right_swing * 0.16), blend)
+    # У блочных моделей руки опущены вдоль корпуса. Плавно поднимаем их к
+    # автомату при прицеливании; при ходьбе оставляем мягкий встречный мах.
+    var aim_raise := 0.92 * aim * _aim_forward_sign
+    _set_pose("LeftUpperArm", _q(Vector3.RIGHT, aim_raise + left_swing - crouch * 0.10), blend)
+    _set_pose("RightUpperArm", _q(Vector3.RIGHT, aim_raise + right_swing - crouch * 0.10), blend)
+    _set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.28 * aim + fire * 0.12), blend)
+    _set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.34 * aim + fire * 0.12), blend)
+    _set_pose("LeftHand", _q(Vector3.RIGHT, -0.10 * aim), blend)
+    _set_pose("RightHand", _q(Vector3.RIGHT, -0.08 * aim), blend)
 
 func _set_pose(bone_name: String, target: Quaternion, weight: float) -> void:
     if not _bone_ids.has(bone_name):

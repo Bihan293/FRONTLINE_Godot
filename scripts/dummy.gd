@@ -1,14 +1,14 @@
 extends Node3D
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
-const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_IRON_LEGION_Soldier_RIG_v1.glb"
-const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_RED_FRONT_Soldier_RIG_v1.glb"
+const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
+const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 
-# Модель авторится ростом 2.39 м с origin по центру. Теперь используем полный
-# рост, а игрок увеличен до такого же масштаба.
-const MODEL_LIFT := 1.23
-const PRONE_Y := 0.32
+# Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
+const MODEL_LIFT := 0.0
+const PRONE_Y := 0.15
 
 static var _merged_mesh_cache: Dictionary = {}
 static var _normal_mesh_cache: Dictionary = {}
@@ -93,14 +93,17 @@ func _build_visual() -> void:
         return
     var model = packed.instantiate()
     _prepare_model(model, path)
+    var has_rig := model.find_child("Skeleton3D", true, false) is Skeleton3D
     _visual.add_child(model)
-    _visual.set_script(PROCEDURAL)
+    if has_rig:
+        _visual.set_script(PROCEDURAL)
     _pivot.add_child(_visual)
-    _proc = _visual
-    # Стойка «оружие к бою», иначе модель стоит в T-позе.
-    _proc.set_aiming(true)
-    _proc.set_motion(0.0, false)
-    _proc.set_look(0.0, 0.0)
+    if has_rig:
+        _proc = _visual
+        # Руки поднимаются к оружию только у стреляющих манекенов.
+        _proc.set_aiming(shooting)
+        _proc.set_motion(0.0, false)
+        _proc.set_look(0.0, 0.0)
 
 func _apply_stance() -> void:
     if _visual == null:
@@ -130,43 +133,43 @@ func _build_hitboxes() -> void:
     match stance:
         "crouch":
             boxes = [
-                [Vector3(0, 1.88, 0), Vector3(0.40, 0.40, 0.40), "head"],
-                [Vector3(0, 1.37, 0), Vector3(0.61, 0.56, 0.40), "chest"],
-                [Vector3(0, 0.98, 0), Vector3(0.53, 0.29, 0.37), "stomach"],
-                [Vector3(-0.48, 1.27, 0), Vector3(0.21, 0.60, 0.27), "arm"],
-                [Vector3(0.48, 1.27, 0), Vector3(0.21, 0.60, 0.27), "arm"],
+                [Vector3(0, 1.52, 0), Vector3(0.40, 0.40, 0.40), "head"],
+                [Vector3(0, 1.10, 0), Vector3(0.55, 0.48, 0.36), "chest"],
+                [Vector3(0, 0.77, 0), Vector3(0.48, 0.28, 0.34), "stomach"],
+                [Vector3(-0.35, 1.01, 0), Vector3(0.20, 0.56, 0.25), "arm"],
+                [Vector3(0.35, 1.01, 0), Vector3(0.20, 0.56, 0.25), "arm"],
                 [Vector3(-0.17, 0.36, 0), Vector3(0.29, 0.72, 0.32), "leg"],
                 [Vector3(0.17, 0.36, 0), Vector3(0.29, 0.72, 0.32), "leg"],
             ]
         "sit":
             boxes = [
-                [Vector3(0, 1.41, 0), Vector3(0.40, 0.40, 0.40), "head"],
-                [Vector3(0, 0.90, 0), Vector3(0.61, 0.56, 0.40), "chest"],
-                [Vector3(0, 0.53, 0), Vector3(0.53, 0.29, 0.37), "stomach"],
-                [Vector3(-0.48, 0.80, 0), Vector3(0.21, 0.52, 0.27), "arm"],
-                [Vector3(0.48, 0.80, 0), Vector3(0.21, 0.52, 0.27), "arm"],
+                [Vector3(0, 1.10, 0), Vector3(0.40, 0.40, 0.40), "head"],
+                [Vector3(0, 0.72, 0), Vector3(0.55, 0.48, 0.36), "chest"],
+                [Vector3(0, 0.43, 0), Vector3(0.48, 0.26, 0.34), "stomach"],
+                [Vector3(-0.35, 0.64, 0), Vector3(0.20, 0.48, 0.25), "arm"],
+                [Vector3(0.35, 0.64, 0), Vector3(0.20, 0.48, 0.25), "arm"],
                 [Vector3(-0.17, 0.28, -0.38), Vector3(0.29, 0.36, 0.80), "leg"],
                 [Vector3(0.17, 0.28, -0.38), Vector3(0.29, 0.36, 0.80), "leg"],
             ]
         "prone":
             boxes = [
-                [Vector3(0, 0.34, -2.05), Vector3(0.44, 0.36, 0.44), "head"],
-                [Vector3(0, 0.34, -1.50), Vector3(0.62, 0.36, 0.60), "chest"],
-                [Vector3(0, 0.32, -1.00), Vector3(0.52, 0.30, 0.50), "stomach"],
-                [Vector3(-0.44, 0.32, -1.35), Vector3(0.22, 0.28, 0.75), "arm"],
-                [Vector3(0.44, 0.32, -1.35), Vector3(0.22, 0.28, 0.75), "arm"],
-                [Vector3(-0.18, 0.30, -0.40), Vector3(0.30, 0.28, 1.00), "leg"],
-                [Vector3(0.18, 0.30, -0.40), Vector3(0.30, 0.28, 1.00), "leg"],
+                [Vector3(0, 0.16, -1.84), Vector3(0.44, 0.30, 0.44), "head"],
+                [Vector3(0, 0.15, -1.34), Vector3(0.62, 0.30, 0.60), "chest"],
+                [Vector3(0, 0.15, -0.91), Vector3(0.52, 0.26, 0.48), "stomach"],
+                [Vector3(-0.34, 0.15, -1.22), Vector3(0.22, 0.24, 0.72), "arm"],
+                [Vector3(0.34, 0.15, -1.22), Vector3(0.22, 0.24, 0.72), "arm"],
+                [Vector3(-0.12, 0.15, -0.39), Vector3(0.28, 0.24, 0.92), "leg"],
+                [Vector3(0.12, 0.15, -0.39), Vector3(0.28, 0.24, 0.92), "leg"],
             ]
         _:
             boxes = [
-                [Vector3(0, 2.16, 0), Vector3(0.40, 0.40, 0.40), "head"],
-                [Vector3(0, 1.65, 0), Vector3(0.61, 0.56, 0.40), "chest"],
-                [Vector3(0, 1.26, 0), Vector3(0.53, 0.29, 0.37), "stomach"],
-                [Vector3(-0.48, 1.55, 0), Vector3(0.21, 0.69, 0.27), "arm"],
-                [Vector3(0.48, 1.55, 0), Vector3(0.21, 0.69, 0.27), "arm"],
-                [Vector3(-0.17, 0.59, 0), Vector3(0.29, 1.09, 0.32), "leg"],
-                [Vector3(0.17, 0.59, 0), Vector3(0.29, 1.09, 0.32), "leg"],
+                [Vector3(0, 1.81, 0), Vector3(0.40, 0.40, 0.40), "head"],
+                [Vector3(0, 1.34, 0), Vector3(0.55, 0.46, 0.36), "chest"],
+                [Vector3(0, 0.99, 0), Vector3(0.48, 0.28, 0.34), "stomach"],
+                [Vector3(-0.31, 1.12, 0), Vector3(0.20, 0.64, 0.25), "arm"],
+                [Vector3(0.31, 1.12, 0), Vector3(0.20, 0.64, 0.25), "arm"],
+                [Vector3(-0.11, 0.45, 0), Vector3(0.29, 0.90, 0.32), "leg"],
+                [Vector3(0.11, 0.45, 0), Vector3(0.29, 0.90, 0.32), "leg"],
             ]
     for b in boxes:
         _add_hitbox(b[0], b[1], b[2])
@@ -198,26 +201,26 @@ func _build_label() -> void:
     _label.visibility_range_end = 55.0
     match stance:
         "crouch":
-            _label.position = Vector3(0, 2.45, 0)
+            _label.position = Vector3(0, 1.92, 0)
         "sit":
-            _label.position = Vector3(0, 1.78, 0)
+            _label.position = Vector3(0, 1.50, 0)
         "prone":
-            _label.position = Vector3(0, 1.05, -1.1)
+            _label.position = Vector3(0, 0.62, -1.45)
         _:
-            _label.position = Vector3(0, 2.72, 0)
+            _label.position = Vector3(0, 2.22, 0)
     add_child(_label)
 
 func _build_gun() -> void:
     _gun_pivot = Node3D.new()
     _gun_pivot.name = "GunPivot"
-    var gun_height := 1.45
+    var gun_height := 1.24
     match stance:
         "crouch":
-            gun_height = 1.25
+            gun_height = 0.98
         "sit":
-            gun_height = 0.95
+            gun_height = 0.72
         "prone":
-            gun_height = 0.50
+            gun_height = 0.34
     _gun_pivot.position = Vector3(0.20, gun_height, -0.10)
     _pivot.add_child(_gun_pivot)
 
@@ -375,7 +378,10 @@ func _aim_at_target(delta: float) -> void:
     _face_position(Vector3(shoot_target.x, global_position.y, shoot_target.z), delta)
     var to := shoot_target - _gun_pivot.global_position
     var horizontal := Vector2(to.x, to.z).length()
-    _gun_pivot.rotation.x = atan2(to.y, horizontal)
+    var pitch := atan2(to.y, horizontal)
+    _gun_pivot.rotation.x = pitch
+    if _proc != null:
+        _proc.set_look(0.0, pitch)
 
 func _fire() -> void:
     shots_fired += 1
@@ -436,13 +442,12 @@ func _respawn() -> void:
         set_process(false)
 
 func _prepare_model(root: Node, path: String) -> void:
-    # Исходный GLB состоит из ~49 отдельных MeshInstance3D (по одному на деталь
-    # экипировки). На 16 манекенах это ~780 skinned draw call — главная причина
-    # лагов на телефоне. Сливаем все поверхности в один меш, запекая цвет
-    # материала в вершинные цвета: получается 1 draw call на манекен.
+    # Новые блочные GLB собираем на скелет из жёстких сегментов; старые
+    # skinned GLB по-прежнему сливаются в один меш для мобильной производительности.
     var skeleton := root.find_child("Skeleton3D", true, false) as Skeleton3D
     if skeleton == null:
         _fix_normals(root)
+        BLOCK_RIG_BUILDER.rig_model(root)
         return
     var parts: Array = []
     for child in skeleton.get_children():
