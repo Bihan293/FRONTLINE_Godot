@@ -163,7 +163,6 @@ func _build_visuals() -> void:
 
 	_visual = Node3D.new()
 	_visual.rotation.y = PI
-	_pivot.add_child(_visual)
 
 	var path := RED_SCENE if team_name.to_upper().contains("RED") else IRON_SCENE
 	var packed = load(path)
@@ -176,7 +175,12 @@ func _build_visuals() -> void:
 	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
 	var has_rig := skeleton is Skeleton3D
 	if has_rig:
+		# Attach the procedural script before entering the tree so its _ready()
+		# can bind the skeleton built above. Setting the script after adding the
+		# visual to the live pivot leaves _skeleton null and disables animation/ragdoll.
 		_visual.set_script(PROCEDURAL)
+	_pivot.add_child(_visual)
+	if has_rig:
 		_proc = _visual as FRONTLINEProceduralSoldier
 		_proc.set_t_pose_arms(false)
 		_proc.set_aiming(true)
