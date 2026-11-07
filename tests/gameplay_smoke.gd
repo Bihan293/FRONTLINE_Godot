@@ -18,6 +18,7 @@ func _ready() -> void:
 	_test_combat_roles_and_drone()
 	_test_positional_combat_audio()
 	await _test_pause_freezes_bots()
+	await _test_loadout_presets()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -257,6 +258,36 @@ func _test_pause_freezes_bots() -> void:
 		pause_menu.call("close")
 	_check(not get_tree().paused, "resume did not restore the tree")
 
+	battlefield.queue_free()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _test_loadout_presets() -> void:
+	await _run_loadout_case("ASSAULT", "ASSAULT", 4, 1, 0)
+	await _run_loadout_case("SNIPER", "SURVIVAL", 0, 3, 6)
+	get_tree().set_meta("selected_role", "ASSAULT")
+	get_tree().set_meta("selected_loadout", "BALANCED")
+
+func _run_loadout_case(role_id: String, preset_id: String, expected_grenades: int, expected_medkits: int, expected_weapon: int) -> void:
+	get_tree().set_meta("selected_map", "BATTLEFIELD")
+	get_tree().set_meta("selected_mode", "CONQUEST")
+	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("selected_role", role_id)
+	get_tree().set_meta("selected_loadout", preset_id)
+	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
+	if scene == null:
+		_check(false, "battlefield scene missing for loadout test")
+		return
+	var battlefield := scene.instantiate()
+	add_child(battlefield)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var player := get_tree().get_first_node_in_group("player")
+	_check(player != null, "player missing for loadout %s/%s" % [role_id, preset_id])
+	if player != null:
+		_check(int(player.get("grenades")) == expected_grenades, "%s/%s grenades: %d != %d" % [role_id, preset_id, int(player.get("grenades")), expected_grenades])
+		_check(int(player.get("medkits")) == expected_medkits, "%s/%s medkits: %d != %d" % [role_id, preset_id, int(player.get("medkits")), expected_medkits])
+		_check(int(player.get("current_weapon_index")) == expected_weapon, "%s/%s primary weapon index: %d != %d" % [role_id, preset_id, int(player.get("current_weapon_index")), expected_weapon])
 	battlefield.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame

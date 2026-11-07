@@ -71,6 +71,9 @@ var weapon_aim_position := Vector3(0.0, -0.075, -0.48)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
+var sprint_anim := 0.0
+var landing_anim := 0.0
+var _was_on_floor := true
 var bob_time := 0.0
 var breathing_time := 0.0
 var aim_blend := 0.0
@@ -341,6 +344,15 @@ func _init_weapon_inventory() -> void:
 			smoke_grenades = 2
 			medkits = 2
 
+	# Пресет снаряжения, выбранный на экране развёртывания.
+	match str(get_tree().get_meta("selected_loadout", "BALANCED")):
+		"ASSAULT":
+			grenades += 1
+			medkits = maxi(1, medkits - 1)
+		"SURVIVAL":
+			grenades = maxi(0, grenades - 1)
+			medkits += 1
+
 	current_weapon_index = role_primary_weapon_index
 	last_primary_weapon_index = role_primary_weapon_index
 	ammo = ammo_by_weapon[current_weapon_index]
@@ -464,6 +476,54 @@ func _build_view_hands() -> void:
 	wrist_left_marker.name = "WristL"
 	wrist_left_marker.position = Vector3(0.0, -0.055, 0.02)
 	left_arm_pivot.add_child(wrist_left_marker)
+
+	_add_view_hand(wrist_right_marker, false)
+	_add_view_hand(wrist_left_marker, true)
+
+## Низкополигональная кисть на оружии. Заменяет длинные IK-руки,
+## которые вытягивались через весь экран.
+func _add_view_hand(marker: Node3D, is_left: bool) -> void:
+	var glove := StandardMaterial3D.new()
+	glove.albedo_color = Color(0.17, 0.14, 0.11)
+	glove.roughness = 0.92
+
+	var hand := MeshInstance3D.new()
+	hand.name = "HandL" if is_left else "HandR"
+	var palm := BoxMesh.new()
+	palm.size = Vector3(0.12, 0.10, 0.18)
+	hand.mesh = palm
+	hand.material_override = glove
+	hand.position = Vector3(0.0, -0.015, -0.06)
+	hand.rotation = Vector3(deg_to_rad(-6.0), deg_to_rad(9.0 if is_left else -9.0), 0.0)
+	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	marker.add_child(hand)
+
+	var thumb := MeshInstance3D.new()
+	thumb.name = "Thumb"
+	var thumb_mesh := BoxMesh.new()
+	thumb_mesh.size = Vector3(0.045, 0.05, 0.09)
+	thumb.mesh = thumb_mesh
+	thumb.material_override = glove
+	thumb.position = Vector3(0.055 if is_left else -0.055, 0.01, -0.055)
+	thumb.rotation = Vector3(deg_to_rad(12.0), 0.0, deg_to_rad(18.0 if is_left else -18.0))
+	thumb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	marker.add_child(thumb)
+
+	var cuff := MeshInstance3D.new()
+	cuff.name = "Cuff"
+	var cuff_mesh := CylinderMesh.new()
+	cuff_mesh.top_radius = 0.045
+	cuff_mesh.bottom_radius = 0.055
+	cuff_mesh.height = 0.15
+	cuff_mesh.radial_segments = 8
+	cuff.mesh = cuff_mesh
+	cuff.material_override = glove
+	cuff.position = Vector3(0.0, -0.01, 0.07)
+	cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
+	cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Рукав пока скрыт: на низкополигональной модели он читается как чёрный блок.
+	cuff.visible = false
+	marker.add_child(cuff)
 
 func _set_aiming(enabled: bool) -> void:
 	if aiming == enabled or is_dead or input_locked:
@@ -1040,10 +1100,20 @@ func _physics_process(delta: float) -> void:
 	var breath_offset := Vector3(0.0, sin(breathing_time * 1.8) * 0.002, 0.0)
 	var sway_offset := Vector3(-look_sway.x, look_sway.y, 0.0)
 	look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 8.0, 0.0, 1.0))
-	var target_weapon_pos := weapon_base.lerp(weapon_aim_position, aim_blend) + kick_offset + bob_offset + breath_offset + sway_offset
+
+	var stance_offset := Vector3.ZERO
+	if stance == 1:
+		stance_offset = Vector3(0.0, -0.015, 0.02)
+	elif stance == 2:
+		stance_offset = Vector3(0.0, -0.06, 0.05)
+	var sprint_offset := Vector3(0.10, -0.11, 0.03) * sprint_anim
+	var landing_offset := Vector3(0.0, -0.04, 0.0) * landing_anim
+
+	var target_weapon_pos := weapon_base.lerp(weapon_aim_position, aim_blend) + kick_offset + bob_offset + breath_offset + sway_offset + stance_offset + sprint_offset + landing_offset
 	weapon_root.position = weapon_root.position.lerp(target_weapon_pos, clampf(delta * 20.0, 0.0, 1.0))
-	weapon_root.rotation.x = -weapon_kick * 0.18 + sway_offset.y * 0.6
+	weapon_root.rotation.x = -weapon_kick * 0.18 + sway_offset.y * 0.6 + sprint_anim * 0.16 + landing_anim * 0.10
 	weapon_root.rotation.y = sway_offset.x * 0.6
+	weapon_root.rotation.z = -sprint_anim * 0.30
 
 	if muzzle_flash_time > 0.0:
 		muzzle_flash_time -= delta
@@ -1125,7 +1195,16 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, target_vel.z, accel * delta * current_speed)
 	if not is_on_floor():
 		velocity.y -= 18.0 * delta
+	var fall_speed := velocity.y
 	move_and_slide()
+
+	var on_floor := is_on_floor()
+	if on_floor and not _was_on_floor and fall_speed < -3.0:
+		landing_anim = 1.0
+	_was_on_floor = on_floor
+	landing_anim = maxf(0.0, landing_anim - delta * 5.0)
+	var sprint_target := 1.0 if (planar_speed > SPEED + 0.4 and not aiming and stance == 0 and on_floor) else 0.0
+	sprint_anim = lerpf(sprint_anim, sprint_target, clampf(delta * 8.0, 0.0, 1.0))
 
 	recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
 	var target_height := 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
@@ -1149,7 +1228,7 @@ func _physics_process(delta: float) -> void:
 			lean_side = signf(lean_side) * minf(absf(lean_side), available)
 	var lean_target := lean_side / 0.42
 	lean_amount = lerpf(lean_amount, lean_target, clampf(delta * 12.0, 0.0, 1.0))
-	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y, delta * 10.0)
+	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y - landing_anim * 0.055, delta * 10.0)
 	camera.position.x = lerpf(camera.position.x, cam_bob_x + lean_amount * 0.42, delta * 10.0)
 	if player_body != null:
 		player_body.set_motion(planar_speed, planar_speed > SPEED + 0.5)

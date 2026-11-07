@@ -33,6 +33,12 @@ func set_selected(index: int) -> void:
 	selected_spawn = index
 	queue_redraw()
 
+func set_team(faction: String) -> void:
+	team_name = faction
+	_spawns = LAYOUT.spawns_red() if team_name.contains("RED") else LAYOUT.spawns_iron()
+	selected_spawn = 0
+	queue_redraw()
+
 func _build_world_preview() -> void:
 	var container := SubViewportContainer.new()
 	container.name = "MapWorldView"
@@ -44,7 +50,7 @@ func _build_world_preview() -> void:
 
 	_viewport = SubViewport.new()
 	_viewport.name = "VillageTopDown"
-	_viewport.use_own_world_3d = true
+	_viewport.own_world_3d = true
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_viewport.msaa_3d = Viewport.MSAA_DISABLED
 	container.add_child(_viewport)

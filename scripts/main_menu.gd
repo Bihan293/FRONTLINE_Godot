@@ -11,6 +11,8 @@ var map_selected := false
 var selected_map := "BATTLEFIELD"
 var selected_team := "IRON LEGION"
 var selected_mode := "CONQUEST"
+var selected_role := "ASSAULT"
+var selected_loadout := "BALANCED"
 
 func _ready() -> void:
 	_show_main()
@@ -216,7 +218,7 @@ func _show_maps() -> void:
 
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
-	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_teams, Vector2(0,58))
+	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_deployment, Vector2(0,58))
 
 	set_meta("map_details", details)
 	set_meta("polygon_preview", image)
@@ -404,21 +406,56 @@ func _select_role(role_id: String) -> void:
 	get_tree().set_meta("selected_role", role_id)
 	_show_deployment()
 
+func _role_data() -> Array:
+	return [
+		{"id": "ASSAULT", "title": "ШТУРМОВИК", "primary": "AK-47", "sidearm": "M1911", "ability": "Спринт и универсальный бой", "grenades": 3, "smoke": 2, "medkits": 2},
+		{"id": "MEDIC", "title": "САНИТАР", "primary": "MP-40", "sidearm": "M1911", "ability": "Лечение себя и союзников", "grenades": 2, "smoke": 2, "medkits": 5},
+		{"id": "SNIPER", "title": "СНАЙПЕР", "primary": "KAR98K", "sidearm": "M1911", "ability": "Оптика 2.6x, радар 70 м", "grenades": 1, "smoke": 2, "medkits": 2},
+		{"id": "ANTI_TANK", "title": "ПТ-СТРЕЛОК", "primary": "PANZERFAUST", "sidearm": "M1911", "ability": "Ракеты по укрытиям", "grenades": 1, "smoke": 1, "medkits": 2},
+		{"id": "RADIO_OPERATOR", "title": "РАДИСТ", "primary": "ППШ-41", "sidearm": "M1911", "ability": "FPV-дрон на кабеле", "grenades": 1, "smoke": 2, "medkits": 2},
+	]
+
+func _loadout_data() -> Array:
+	return [
+		{"id": "ASSAULT", "title": "ШТУРМ", "desc": "+1 граната"},
+		{"id": "BALANCED", "title": "БАЛАНС", "desc": "Стандартный набор"},
+		{"id": "SURVIVAL", "title": "ЖИВУЧЕСТЬ", "desc": "+1 бинт"},
+	]
+
+func _role_by_id(role_id: String) -> Dictionary:
+	for role in _role_data():
+		if str(role["id"]) == role_id:
+			return role
+	return _role_data()[0]
+
 func _show_deployment() -> void:
-	var root := _make_shell("DEPLOYMENT  /  " + selected_map)
-	_label(root, "СТОРОНА: " + selected_team + "     •     Выбери рубеж появления", 16, Color(0.75,0.79,0.76))
+	if get_tree().has_meta("selected_role"):
+		selected_role = str(get_tree().get_meta("selected_role"))
+	if get_tree().has_meta("selected_loadout"):
+		selected_loadout = str(get_tree().get_meta("selected_loadout"))
+	if get_tree().has_meta("selected_team"):
+		selected_team = str(get_tree().get_meta("selected_team"))
+	get_tree().set_meta("selected_role", selected_role)
+	get_tree().set_meta("selected_loadout", selected_loadout)
+	get_tree().set_meta("selected_team", selected_team)
+	get_tree().set_meta("selected_map", selected_map)
+
+	var root := _make_shell("РАЗВЁРТЫВАНИЕ  /  " + selected_map)
+	_label(root, "Выбери фракцию, класс, снаряжение и точку десанта прямо на карте.", 15, Color(0.72,0.77,0.74))
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 18)
 	root.add_child(body)
+
 	var map_holder := PanelContainer.new()
 	map_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	map_holder.custom_minimum_size = Vector2(480, 300)
+	map_holder.custom_minimum_size = Vector2(600, 400)
 	body.add_child(map_holder)
 	var map_overlay := Control.new()
 	map_holder.add_child(map_overlay)
 	map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
 	var image: Control
 	if selected_map == "VILLAGE":
 		var vil_prev = VILLAGE_PREVIEW_SCRIPT.new()
@@ -432,28 +469,156 @@ func _show_deployment() -> void:
 		image = MAP_PREVIEW_SCRIPT.new()
 	image.show_spawns = true
 	image.interactive = true
-	image.custom_minimum_size = Vector2(460, 300)
+	image.custom_minimum_size = Vector2(580, 400)
 	image.set_selected(0)
 	image.spawn_selected.connect(_select_spawn)
 	map_overlay.add_child(image)
 	image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var side_scroll := ScrollContainer.new()
+	side_scroll.custom_minimum_size = Vector2(370, 0)
+	side_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(side_scroll)
 	var side := VBoxContainer.new()
-	side.custom_minimum_size = Vector2(250,0)
-	side.add_theme_constant_override("separation", 12)
-	body.add_child(side)
-	_label(side, "ТОЧКА ПОЯВЛЕНИЯ", 19)
+	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side.add_theme_constant_override("separation", 8)
+	side_scroll.add_child(side)
+
+	# Фракция
+	_label(side, "ФРАКЦИЯ", 17, Color(0.85,0.88,0.84))
+	var faction_group := ButtonGroup.new()
+	var faction_row := HBoxContainer.new()
+	faction_row.add_theme_constant_override("separation", 8)
+	side.add_child(faction_row)
+	for team in ["IRON LEGION", "RED FRONT"]:
+		var faction_btn := _toggle_button(faction_row, team, faction_group, selected_team == team, _set_team_in_place.bind(team), Vector2(0, 40))
+		faction_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		faction_btn.add_theme_font_size_override("font_size", 13)
+
+	# Класс
+	_label(side, "КЛАСС", 17, Color(0.85,0.88,0.84))
+	var class_group := ButtonGroup.new()
+	var class_grid := GridContainer.new()
+	class_grid.columns = 2
+	class_grid.add_theme_constant_override("h_separation", 6)
+	class_grid.add_theme_constant_override("v_separation", 6)
+	side.add_child(class_grid)
+	for role in _role_data():
+		var role_id := str(role["id"])
+		var class_btn := _toggle_button(class_grid, str(role["title"]), class_group, selected_role == role_id, _set_role_in_place.bind(role_id), Vector2(0, 38))
+		class_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		class_btn.add_theme_font_size_override("font_size", 12)
+
+	# Снаряжение
+	_label(side, "СНАРЯЖЕНИЕ", 17, Color(0.85,0.88,0.84))
+	var loadout_group := ButtonGroup.new()
+	var loadout_row := HBoxContainer.new()
+	loadout_row.add_theme_constant_override("separation", 6)
+	side.add_child(loadout_row)
+	for preset in _loadout_data():
+		var preset_id := str(preset["id"])
+		var preset_btn := _toggle_button(loadout_row, str(preset["title"]), loadout_group, selected_loadout == preset_id, _set_loadout_in_place.bind(preset_id), Vector2(0, 38))
+		preset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		preset_btn.add_theme_font_size_override("font_size", 12)
+
+	var summary := Label.new()
+	summary.name = "LoadoutSummary"
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.add_theme_font_size_override("font_size", 13)
+	summary.add_theme_color_override("font_color", Color(0.82,0.86,0.80))
+	summary.custom_minimum_size = Vector2(0, 80)
+	side.add_child(summary)
+
+	_label(side, "ТОЧКА ПОЯВЛЕНИЯ", 15, Color(0.85,0.88,0.84))
+	_label(side, "Нажми на круг на карте, затем подтверди DEPLOY.", 12, Color(0.67,0.72,0.69))
+
+	# Кнопки и статус всегда внизу экрана, вне прокрутки настроек.
+	var bottom_row := HBoxContainer.new()
+	bottom_row.add_theme_constant_override("separation", 14)
+	root.add_child(bottom_row)
 	var selected := Label.new()
 	selected.name = "SpawnLabel"
 	selected.text = "ТОЧКА 1  •  ГОТОВА"
-	selected.add_theme_font_size_override("font_size", 18)
-	side.add_child(selected)
-	_label(side, "Нажми на рубеж на схеме и подтверди DEPLOY.", 14, Color(0.67,0.72,0.69))
-	var deploy := _button(side, "DEPLOY (В БОЙ)", _deploy, Vector2(0,66))
+	selected.custom_minimum_size = Vector2(190, 0)
+	selected.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	selected.add_theme_font_size_override("font_size", 16)
+	selected.add_theme_color_override("font_color", Color(0.96,0.84,0.38))
+	bottom_row.add_child(selected)
+	var deploy := _button(bottom_row, "DEPLOY (В БОЙ)", _deploy, Vector2(0, 56))
+	deploy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	deploy.add_theme_font_size_override("font_size", 19)
+	var back := _button(bottom_row, "НАЗАД К КАРТЕ", _show_maps, Vector2(220, 56))
+	back.add_theme_font_size_override("font_size", 15)
+
 	set_meta("spawn_label", selected)
 	set_meta("deploy_button", deploy)
 	set_meta("map_preview", image)
+	set_meta("loadout_summary", summary)
 	set_meta("selected_spawn", 0)
-	_button(side, "НАЗАД", _show_roles, Vector2(0,48))
+	_update_loadout_summary()
+
+func _toggle_button(parent: Control, text: String, group: ButtonGroup, is_selected: bool, callback: Callable, min_size := Vector2(0, 40)) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.toggle_mode = true
+	button.button_group = group
+	button.button_pressed = is_selected
+	button.custom_minimum_size = min_size
+	button.add_theme_font_size_override("font_size", 14)
+	var selected_style := StyleBoxFlat.new()
+	selected_style.bg_color = Color(0.20, 0.30, 0.25, 1.0)
+	selected_style.border_width_left = 2
+	selected_style.border_width_right = 2
+	selected_style.border_width_top = 2
+	selected_style.border_width_bottom = 2
+	selected_style.border_color = Color(0.92, 0.78, 0.34, 1.0)
+	selected_style.corner_radius_top_left = 4
+	selected_style.corner_radius_top_right = 4
+	selected_style.corner_radius_bottom_left = 4
+	selected_style.corner_radius_bottom_right = 4
+	button.add_theme_stylebox_override("pressed", selected_style)
+	button.add_theme_color_override("font_pressed_color", Color(1.0, 0.96, 0.78))
+	button.pressed.connect(callback)
+	parent.add_child(button)
+	return button
+
+func _set_team_in_place(team: String) -> void:
+	selected_team = team
+	get_tree().set_meta("selected_team", team)
+	var preview = get_meta("map_preview", null)
+	if preview != null and preview.has_method("set_team"):
+		preview.call("set_team", team)
+	set_meta("selected_spawn", 0)
+	_select_spawn(0)
+
+func _set_role_in_place(role_id: String) -> void:
+	selected_role = role_id
+	get_tree().set_meta("selected_role", role_id)
+	_update_loadout_summary()
+
+func _set_loadout_in_place(loadout_id: String) -> void:
+	selected_loadout = loadout_id
+	get_tree().set_meta("selected_loadout", loadout_id)
+	_update_loadout_summary()
+
+func _update_loadout_summary() -> void:
+	var role := _role_by_id(selected_role)
+	var grenades := int(role["grenades"])
+	var smoke := int(role["smoke"])
+	var medkits := int(role["medkits"])
+	match selected_loadout:
+		"ASSAULT":
+			grenades += 1
+			medkits = maxi(1, medkits - 1)
+		"SURVIVAL":
+			grenades = maxi(0, grenades - 1)
+			medkits += 1
+	var summary: Label = get_meta("loadout_summary", null)
+	if summary != null:
+		summary.text = "ОСНОВНОЕ: %s\nПИСТОЛЕТ: %s\nГРАНАТЫ: %d  •  ДЫМ: %d  •  БИНТЫ: %d\n%s" % [
+			str(role["primary"]), str(role["sidearm"]), grenades, smoke, medkits, str(role["ability"])
+		]
 
 func _select_spawn(index: int) -> void:
 	set_meta("selected_spawn", index)
@@ -464,6 +629,9 @@ func _select_spawn(index: int) -> void:
 		preview.set_selected(index)
 
 func _deploy() -> void:
+	get_tree().set_meta("selected_role", selected_role)
+	get_tree().set_meta("selected_loadout", selected_loadout)
+	get_tree().set_meta("selected_team", selected_team)
 	var index: int = int(get_meta("selected_spawn", 0))
 	if index < 0:
 		index = 0

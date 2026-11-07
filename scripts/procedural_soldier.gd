@@ -21,6 +21,9 @@ var _aim_amount: float = 0.0
 var _crouch_amount: float = 0.0
 var _sit_amount: float = 0.0
 var _fire_amount: float = 0.0
+var _reload_amount: float = 0.0
+var _flinch_amount: float = 0.0
+var _flinch_side: float = 1.0
 var _aim_forward_sign: float = -1.0
 var _look_yaw: float = 0.0
 var _look_pitch: float = 0.0
@@ -109,6 +112,13 @@ func set_sitting(enabled: bool) -> void:
 func set_firing(enabled: bool) -> void:
 	_fire_amount = 1.0 if enabled else 0.0
 
+func set_reloading(enabled: bool) -> void:
+	_reload_amount = 1.0 if enabled else 0.0
+
+func add_flinch(strength: float = 0.7) -> void:
+	_flinch_amount = clampf(maxf(_flinch_amount, strength), 0.0, 1.0)
+	_flinch_side = -1.0 if randf() < 0.5 else 1.0
+
 func set_t_pose_arms(enabled: bool) -> void:
 	_t_pose_arms = enabled
 
@@ -141,9 +151,11 @@ func _process(delta: float) -> void:
 
 	var blend := 1.0 - exp(-smoothing * delta)
 	_idle_time += delta
-	var gait_rate := lerpf(2.0, 5.2, _run_amount) * walk_cycle_rate
+	# Темп шага привязан к реальной скорости, чтобы ступни меньше скользили.
+	var gait_rate := clampf(_speed * 1.7, 2.4, 7.5) * walk_cycle_rate
 	if _move_amount > 0.02:
 		_phase = fposmod(_phase + delta * gait_rate, TAU)
+	_flinch_amount = maxf(0.0, _flinch_amount - delta * 3.5)
 
 	var stride := sin(_phase) * _move_amount
 	var opposite_stride := sin(_phase + PI) * _move_amount
@@ -154,6 +166,8 @@ func _process(delta: float) -> void:
 	var crouch := _crouch_amount
 	var sit := _sit_amount
 	var fire := _fire_amount
+	var reload := _reload_amount
+	var flinch := _flinch_amount
 
 	# Опускаем таз, чтобы присед/сидение читались, а ступни оставались у пола.
 	var target_hip_drop := crouch * 0.26 + sit * 0.48
@@ -172,10 +186,10 @@ func _process(delta: float) -> void:
 
 	# Корпус и голова
 	_set_pose("Hips", _q(Vector3.UP, sin(_phase) * 0.035 * _move_amount), blend)
-	_set_pose("Spine", _q(Vector3.RIGHT, -0.06 * _run_amount - 0.16 * crouch + 0.16 * sit + breath * 0.012), blend)
-	_set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.055 * _move_amount) * _q(Vector3.RIGHT, -0.10 * aim + breath * 0.018), blend)
-	_set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.30), blend)
-	_set_pose("Head", _q(Vector3.UP, _look_yaw * 0.72) * _q(Vector3.RIGHT, _look_pitch * 0.70), blend)
+	_set_pose("Spine", _q(Vector3.RIGHT, -0.06 * _run_amount - 0.16 * crouch + 0.16 * sit - 0.10 * reload + breath * 0.012), blend)
+	_set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.055 * _move_amount) * _q(Vector3.RIGHT, -0.10 * aim - 0.12 * reload - 0.14 * flinch + breath * 0.018) * _q(Vector3.FORWARD, 0.10 * flinch * _flinch_side), blend)
+	_set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.30 + 0.10 * flinch), blend)
+	_set_pose("Head", _q(Vector3.UP, _look_yaw * 0.72) * _q(Vector3.RIGHT, _look_pitch * 0.70 + 0.12 * flinch), blend)
 
 	# Руки
 	var arm_swing := 0.26 * run_scale
@@ -230,11 +244,12 @@ func _process(delta: float) -> void:
 			return
 		var aim_raise := 1.25 * aim * _aim_forward_sign
 		var inward := 0.55 * aim
-		_set_pose("LeftUpperArm", _q(Vector3.UP, inward) * _q(Vector3.RIGHT, aim_raise + left_swing - crouch * 0.10), blend)
+		# Левая рука уходит к магазину на перезарядке.
+		_set_pose("LeftUpperArm", _q(Vector3.UP, inward - 0.18 * reload) * _q(Vector3.RIGHT, aim_raise + left_swing - crouch * 0.10 - 0.48 * reload), blend)
 		_set_pose("RightUpperArm", _q(Vector3.UP, -inward) * _q(Vector3.RIGHT, aim_raise + right_swing - crouch * 0.10), blend)
-		_set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.20 * aim + fire * 0.12), blend)
+		_set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.20 * aim + fire * 0.12 + 0.90 * reload), blend)
 		_set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.24 * aim + fire * 0.12), blend)
-		_set_pose("LeftHand", _q(Vector3.RIGHT, -0.08 * aim), blend)
+		_set_pose("LeftHand", _q(Vector3.RIGHT, -0.08 * aim - 0.25 * reload), blend)
 		_set_pose("RightHand", _q(Vector3.RIGHT, -0.06 * aim), blend)
 
 ## Процедурная физика рэгдолла при гибели в стиле Dummy War.

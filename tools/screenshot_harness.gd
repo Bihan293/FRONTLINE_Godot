@@ -18,12 +18,33 @@ func _ready() -> void:
 		await _capture_hud_only()
 	elif "village_hud" in OS.get_cmdline_user_args():
 		await _capture_village_hud_only()
+	elif "deployment" in OS.get_cmdline_user_args():
+		await _capture_deployment_only()
 	else:
 		await _capture_main_menu()
 		await _capture_battlefield()
 		await _capture_village()
 	print("SCREENSHOTS_OK: %d" % _captures)
 	get_tree().quit()
+
+func _capture_deployment_only() -> void:
+	var packed: PackedScene = load(MAIN_MENU_SCENE)
+	var menu: Control = packed.instantiate()
+	add_child(menu)
+	await _wait_frames(3)
+	menu.call("_show_maps")
+	await _wait_frames(2)
+	menu.call("_select_battlefield")
+	await _wait_frames(2)
+	menu.call("_show_deployment")
+	await _wait_frames(3)
+	await _capture("08_deployment")
+	menu.call("_set_team_in_place", "RED FRONT")
+	menu.call("_set_role_in_place", "SNIPER")
+	menu.call("_set_loadout_in_place", "SURVIVAL")
+	await _wait_frames(3)
+	await _capture("09_deployment_red")
+	menu.queue_free()
 
 func _capture_village_hud_only() -> void:
 	get_tree().set_meta("selected_map", "VILLAGE")
