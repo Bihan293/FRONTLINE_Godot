@@ -8,6 +8,10 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 config/auto_accept_quit=true
 config/icon="res://icon.svg"
 
+[autoload]
+
+GameSettings="*res://scripts/game_settings.gd"
+
 [display]
 window/size/viewport_width=1280
 window/size/viewport_height=720

@@ -233,8 +233,38 @@ func _deploy() -> void:
 
 func _show_settings() -> void:
     var root := _make_shell("НАСТРОЙКИ")
-    _label(root, "Прототип 0.3: настройки графики и чувствительности будут расширены в следующих сборках.", 18, Color(0.7,0.74,0.72))
-    _button(root, "НАЗАД", _show_main, Vector2(0,52))
+    _label(root, "ГРАФИКА", 20, Color(0.85, 0.88, 0.84))
+    var quality_button: Button
+    quality_button = _button(root, "КАЧЕСТВО: " + GameSettings.quality_name(), func():
+        GameSettings.cycle_quality()
+        quality_button.text = "КАЧЕСТВО: " + GameSettings.quality_name()
+    , Vector2(0, 56))
+    _label(root, "НИЗКОЕ — максимум FPS, без теней и сглаживания. СРЕДНЕЕ — баланс. ВЫСОКОЕ — тени, MSAA 4x и полное разрешение.", 15, Color(0.66, 0.71, 0.68))
+    var gap := Control.new()
+    gap.custom_minimum_size.y = 12
+    root.add_child(gap)
+    _label(root, "ЗВУК", 20, Color(0.85, 0.88, 0.84))
+    var volume_row := HBoxContainer.new()
+    volume_row.add_theme_constant_override("separation", 18)
+    root.add_child(volume_row)
+    var volume_label := _label(volume_row, "ГРОМКОСТЬ: %d%%" % int(round(GameSettings.master_volume * 100.0)), 16)
+    volume_label.custom_minimum_size.x = 190
+    var slider := HSlider.new()
+    slider.min_value = 0.0
+    slider.max_value = 1.0
+    slider.step = 0.05
+    slider.value = GameSettings.master_volume
+    slider.custom_minimum_size = Vector2(360, 45)
+    slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    slider.value_changed.connect(func(value: float):
+        GameSettings.set_master_volume(value)
+        volume_label.text = "ГРОМКОСТЬ: %d%%" % int(round(value * 100.0))
+    )
+    volume_row.add_child(slider)
+    var spacer := Control.new()
+    spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    root.add_child(spacer)
+    _button(root, "НАЗАД", _show_main, Vector2(0, 52))
 
 func _quit() -> void:
     get_tree().quit()

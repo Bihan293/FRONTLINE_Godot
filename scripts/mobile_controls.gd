@@ -26,6 +26,7 @@ var _joy_touch := -1
 var _look_touch := -1
 var _button_touches: Dictionary = {}
 var _active: Dictionary = {}
+var _aim_on := false
 
 func _ready() -> void:
     set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -80,8 +81,6 @@ func _touch_up(index: int) -> void:
         _active.erase(id)
         if id == "fire":
             fire_changed.emit(false)
-        elif id == "aim":
-            aim_changed.emit(false)
         queue_redraw()
         return
     if index == _joy_touch:
@@ -104,7 +103,9 @@ func _press(id: String) -> void:
         "fire":
             fire_changed.emit(true)
         "aim":
-            aim_changed.emit(true)
+            # Прицел — переключатель: одно нажатие включает, второе выключает.
+            _aim_on = not _aim_on
+            aim_changed.emit(_aim_on)
         "reload":
             reload_pressed.emit()
         "crouch":
@@ -141,7 +142,7 @@ func _draw() -> void:
     _draw_button(l.jump, SMALL_RADIUS, "ПРЫЖОК", "jump", Color(0.34, 0.30, 0.12, 0.48), font, 12)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
-    var active: bool = bool(_active.get(id, false))
+    var active: bool = _aim_on if id == "aim" else bool(_active.get(id, false))
     var fill := color.lightened(0.25) if active else color
     draw_circle(center, radius, fill)
     draw_arc(center, radius, 0.0, TAU, 64, Color(1, 1, 1, 0.40 if active else 0.28), 2.5, true)

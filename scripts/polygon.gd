@@ -15,6 +15,7 @@ var stats_label: Label
 var ui_click: AudioStreamPlayer
 var _mat_cache: Dictionary = {}
 var _detail_texture: Texture2D
+var _environment: Environment
 
 func _ready() -> void:
     team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -89,7 +90,7 @@ func _build_world() -> void:
     environment.adjustment_saturation = 1.16
 
     # Дальняя дымка смягчает полигон и скрывает границу карты.
-    environment.fog_enabled = true
+    environment.fog_enabled = GameSettings.fog_enabled()
     environment.fog_light_color = Color(0.62, 0.70, 0.76)
     environment.fog_light_energy = 0.9
     environment.fog_density = 0.0045
@@ -97,14 +98,16 @@ func _build_world() -> void:
     environment.fog_aerial_perspective = 0.35
 
     env.environment = environment
+    _environment = environment
     add_child(env)
 
     var sun := DirectionalLight3D.new()
+    sun.name = "Sun"
     sun.rotation_degrees = Vector3(-52, -28, 0)
     sun.light_color = Color(1.0, 0.94, 0.84)
     sun.light_energy = 0.98
-    sun.shadow_enabled = true
-    sun.directional_shadow_max_distance = 90.0
+    sun.shadow_enabled = GameSettings.shadows_enabled()
+    sun.directional_shadow_max_distance = GameSettings.shadow_distance()
     sun.shadow_bias = 0.035
     sun.shadow_normal_bias = 1.2
     add_child(sun)
@@ -113,7 +116,7 @@ func _build_world() -> void:
     var fill := DirectionalLight3D.new()
     fill.rotation_degrees = Vector3(-25, 148, 0)
     fill.light_color = Color(0.62, 0.72, 0.88)
-    fill.light_energy = 0.22
+    fill.light_energy = 0.22 if GameSettings.quality > 0 else 0.16
     fill.shadow_enabled = false
     add_child(fill)
 
@@ -292,6 +295,28 @@ func _build_hud() -> void:
         scoreboard.visible = not scoreboard.visible
     )
     hud.add_child(board_btn)
+
+    var gfx_btn := Button.new()
+    gfx_btn.text = "ГРАФИКА: " + GameSettings.quality_name()
+    gfx_btn.anchor_left = 1.0
+    gfx_btn.anchor_right = 1.0
+    gfx_btn.offset_left = -152.0
+    gfx_btn.offset_right = -22.0
+    gfx_btn.offset_top = 112.0
+    gfx_btn.offset_bottom = 152.0
+    gfx_btn.add_theme_font_size_override("font_size", 13)
+    gfx_btn.pressed.connect(func():
+        _play_ui()
+        GameSettings.cycle_quality()
+        gfx_btn.text = "ГРАФИКА: " + GameSettings.quality_name()
+        var sun := get_node_or_null("Sun")
+        if sun != null:
+            sun.shadow_enabled = GameSettings.shadows_enabled()
+            sun.directional_shadow_max_distance = GameSettings.shadow_distance()
+        if _environment != null:
+            _environment.fog_enabled = GameSettings.fog_enabled()
+    )
+    hud.add_child(gfx_btn)
 
     scoreboard = PanelContainer.new()
     scoreboard.anchor_left = 0.5

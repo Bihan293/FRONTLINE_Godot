@@ -26,6 +26,8 @@ var _look_yaw: float = 0.0
 var _look_pitch: float = 0.0
 var _t_pose_arms := false
 var _prone := false
+var _hide_head := false
+var _hide_arms := false
 var _pose: Dictionary = {}
 
 func _ready() -> void:
@@ -58,6 +60,20 @@ func _ready() -> void:
     if _bone_ids.has("Hips"):
         _hips_id = _bone_ids["Hips"]
         _hips_rest = _skeleton.get_bone_rest(_hips_id).origin
+    _apply_hidden_bones()
+
+func _apply_hidden_bones() -> void:
+    if _skeleton == null:
+        return
+    var tiny := Vector3.ONE * 0.001
+    if _hide_head:
+        for bone_name in ["Head", "Neck"]:
+            if _bone_ids.has(bone_name):
+                _skeleton.set_bone_pose_scale(_bone_ids[bone_name], tiny)
+    if _hide_arms:
+        for bone_name in ["LeftUpperArm", "RightUpperArm"]:
+            if _bone_ids.has(bone_name):
+                _skeleton.set_bone_pose_scale(_bone_ids[bone_name], tiny)
 
 func _find_skeleton() -> Skeleton3D:
     var direct := get_node_or_null(skeleton_path)
@@ -102,6 +118,20 @@ func set_t_pose_arms(enabled: bool) -> void:
 func set_prone(enabled: bool) -> void:
     _prone = enabled
 
+func set_hide_head(enabled: bool) -> void:
+    _hide_head = enabled
+    _apply_hidden_bones()
+
+func set_hide_arms(enabled: bool) -> void:
+    _hide_arms = enabled
+    _apply_hidden_bones()
+
+func set_chest_scale(value: float) -> void:
+    if _skeleton == null or not _bone_ids.has("Chest"):
+        return
+    var scale_value := maxf(clampf(value, 0.0, 1.0), 0.001)
+    _skeleton.set_bone_pose_scale(_bone_ids["Chest"], Vector3.ONE * scale_value)
+
 func _process(delta: float) -> void:
     if _skeleton == null:
         return
@@ -122,7 +152,7 @@ func _process(delta: float) -> void:
     var fire := _fire_amount
 
     # Опускаем таз, чтобы присед/сидение читались, а ступни оставались у пола.
-    var target_hip_drop := crouch * 0.26 + sit * 0.70
+    var target_hip_drop := crouch * 0.26 + sit * 0.48
     _hip_drop = lerpf(_hip_drop, target_hip_drop, blend)
     if _hips_id >= 0:
         var body_bob := bounce * 0.035 + breath * 0.008
@@ -192,15 +222,25 @@ func _process(delta: float) -> void:
     else:
         _set_pose("LeftShoulder", _q(Vector3.FORWARD, left_swing * 0.16), blend)
         _set_pose("RightShoulder", _q(Vector3.FORWARD, right_swing * 0.16), blend)
+        if _prone and aim > 0.01:
+            # Лёжа: руки вытянуты вдоль корпуса вперёд (в model +Y).
+            _set_pose("LeftUpperArm", _q(Vector3.UP, 0.35 * aim) * _q(Vector3.RIGHT, PI - 0.18), blend)
+            _set_pose("RightUpperArm", _q(Vector3.UP, -0.35 * aim) * _q(Vector3.RIGHT, PI - 0.18), blend)
+            _set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.12), blend)
+            _set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.12), blend)
+            _set_pose("LeftHand", Quaternion.IDENTITY, blend)
+            _set_pose("RightHand", Quaternion.IDENTITY, blend)
+            return
         # У блочных моделей руки опущены вдоль корпуса. Плавно поднимаем их к
         # автомату при прицеливании; при ходьбе оставляем мягкий встречный мах.
-        var aim_raise := 0.92 * aim * _aim_forward_sign
-        _set_pose("LeftUpperArm", _q(Vector3.RIGHT, aim_raise + left_swing - crouch * 0.10), blend)
-        _set_pose("RightUpperArm", _q(Vector3.RIGHT, aim_raise + right_swing - crouch * 0.10), blend)
-        _set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.28 * aim + fire * 0.12), blend)
-        _set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.34 * aim + fire * 0.12), blend)
-        _set_pose("LeftHand", _q(Vector3.RIGHT, -0.10 * aim), blend)
-        _set_pose("RightHand", _q(Vector3.RIGHT, -0.08 * aim), blend)
+        var aim_raise := 1.25 * aim * _aim_forward_sign
+        var inward := 0.55 * aim
+        _set_pose("LeftUpperArm", _q(Vector3.UP, inward) * _q(Vector3.RIGHT, aim_raise + left_swing - crouch * 0.10), blend)
+        _set_pose("RightUpperArm", _q(Vector3.UP, -inward) * _q(Vector3.RIGHT, aim_raise + right_swing - crouch * 0.10), blend)
+        _set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.20 * aim + fire * 0.12), blend)
+        _set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.24 * aim + fire * 0.12), blend)
+        _set_pose("LeftHand", _q(Vector3.RIGHT, -0.08 * aim), blend)
+        _set_pose("RightHand", _q(Vector3.RIGHT, -0.06 * aim), blend)
 
 func _set_pose(bone_name: String, target: Quaternion, weight: float) -> void:
     if not _bone_ids.has(bone_name):

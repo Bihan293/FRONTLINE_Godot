@@ -2,6 +2,8 @@ extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const CROSSHAIR = preload("res://scripts/crosshair.gd")
+const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -32,7 +34,7 @@ var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_base := Vector3.ZERO
-var weapon_aim_position := Vector3(0.0, -0.095, -0.68)
+var weapon_aim_position := Vector3(0.0, -0.092, -0.64)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
@@ -46,6 +48,12 @@ var look_sway := Vector2.ZERO
 var left_arm_pivot: Node3D
 var left_arm_base := Vector3.ZERO
 var detail_texture: Texture2D
+var player_body: Node3D
+var damage_label: Label
+var damage_time := 0.0
+var hit_effect_time := 0.0
+var body_hit_effect: MeshInstance3D
+var body_hit_time := 0.0
 
 var pitch := 0.0
 var yaw := 0.0
@@ -59,9 +67,7 @@ var reload_timer := 0.0
 
 var hud: CanvasLayer
 var ammo_label: Label
-var notice_label: Label
 var crosshair
-var notice_timer := 0.0
 
 var mobile_controls
 var mobile_move := Vector2.ZERO
@@ -85,6 +91,7 @@ func _ready() -> void:
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
     _build_weapon()
+    _build_body()
     _build_audio()
     _build_mobile_controls()
     _build_hud()
@@ -109,8 +116,8 @@ func _build_player() -> void:
 func _build_weapon() -> void:
     weapon_root = Node3D.new()
     weapon_root.name = "ViewModel"
-    weapon_root.position = Vector3(0.15, -0.19, -0.64)
-    weapon_root.scale = Vector3.ONE * 0.68
+    weapon_root.position = Vector3(0.155, -0.18, -0.54)
+    weapon_root.scale = Vector3.ONE * 0.66
     weapon_base = weapon_root.position
     camera.add_child(weapon_root)
 
@@ -151,6 +158,48 @@ func _build_weapon() -> void:
     muzzle_flash.visible = false
     muzzle_anchor.add_child(muzzle_flash)
     _build_view_hands()
+
+func _build_body() -> void:
+    var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+    var is_red := team.to_upper().contains("RED")
+    var path := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb" if is_red else "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
+    var packed = load(path)
+    if packed == null:
+        push_error("FRONTLINE: cannot load player body " + path)
+        return
+    var model = packed.instantiate()
+    _add_body_equipment(model, is_red)
+    var skeleton = BLOCK_RIG_BUILDER.rig_model(model)
+    BLOCK_RIG_BUILDER.merge_rigged_model(skeleton, ["Hips"])
+
+    player_body = Node3D.new()
+    player_body.name = "PlayerBody"
+    player_body.position = Vector3(0.0, 0.0, -0.15)
+    player_body.rotation.y = PI
+    player_body.add_child(model)
+    player_body.set_script(PROCEDURAL)
+    add_child(player_body)
+    # Голова и руки скрыты, чтобы камера не сидела внутри головы, а оружие
+    # от первого лица оставалось отдельным viewmodel'ом.
+    player_body.set_t_pose_arms(false)
+    player_body.set_aiming(false)
+    player_body.set_motion(0.0, false)
+    player_body.set_hide_head(true)
+    player_body.set_hide_arms(true)
+
+func _add_body_equipment(root: Node3D, is_red: bool) -> void:
+    var helmet_path := "res://assets/models/equipment/Soviet_Helmet.glb" if is_red else "res://assets/models/equipment/German_Helmet.glb"
+    var vest_path := "res://assets/models/equipment/Soviet_Vest.glb" if is_red else "res://assets/models/equipment/German_Vest.glb"
+    var helmet = load(helmet_path)
+    if helmet != null:
+        var h: Node3D = helmet.instantiate()
+        h.position = Vector3(0.0, 1.74, 0.0)
+        root.add_child(h)
+    var vest = load(vest_path)
+    if vest != null:
+        var v: Node3D = vest.instantiate()
+        v.position = Vector3(0.0, 1.32, 0.0)
+        root.add_child(v)
 
 func _tune_ak_materials(root: Node) -> void:
     for mi in root.find_children("*", "MeshInstance3D", true, false):
@@ -357,21 +406,23 @@ func _build_hud() -> void:
     ammo_label.add_theme_constant_override("shadow_offset_x", 2)
     ammo_label.add_theme_constant_override("shadow_offset_y", 2)
     hud.add_child(ammo_label)
-    notice_label = Label.new()
-    notice_label.anchor_left = 0.0
-    notice_label.anchor_right = 1.0
-    notice_label.offset_left = 0.0
-    notice_label.offset_right = 0.0
-    notice_label.offset_top = 68.0
-    notice_label.offset_bottom = 102.0
-    notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    notice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    notice_label.add_theme_font_size_override("font_size", 20)
-    notice_label.add_theme_color_override("font_color", Color(1, 0.92, 0.65, 1.0))
-    notice_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
-    notice_label.add_theme_constant_override("shadow_offset_x", 2)
-    notice_label.add_theme_constant_override("shadow_offset_y", 2)
-    hud.add_child(notice_label)
+    damage_label = Label.new()
+    damage_label.anchor_left = 0.5
+    damage_label.anchor_right = 0.5
+    damage_label.anchor_top = 0.5
+    damage_label.anchor_bottom = 0.5
+    damage_label.offset_left = -90.0
+    damage_label.offset_right = 90.0
+    damage_label.offset_top = -78.0
+    damage_label.offset_bottom = -34.0
+    damage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    damage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    damage_label.add_theme_font_size_override("font_size", 26)
+    damage_label.add_theme_color_override("font_color", Color(1.0, 0.16, 0.12, 1.0))
+    damage_label.add_theme_color_override("font_outline_color", Color(0.1, 0.0, 0.0, 0.95))
+    damage_label.add_theme_constant_override("outline_size", 7)
+    damage_label.visible = false
+    hud.add_child(damage_label)
     _refresh_ammo()
 
 func _on_move_changed(value: Vector2) -> void:
@@ -394,8 +445,8 @@ func _unhandled_input(event: InputEvent) -> void:
         look_sway = look_sway.limit_length(0.035)
     elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
         _shoot()
-    elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
-        _set_aiming(event.pressed)
+    elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+        _set_aiming(not aiming)
     elif event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_R:
             _reload()
@@ -458,13 +509,22 @@ func _physics_process(delta: float) -> void:
             reserve_ammo -= take
             is_reloading = false
             _play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
-            _set_notice("ПЕРЕЗАРЯЖЕНО", 1.2)
             _refresh_ammo()
 
-    if notice_timer > 0.0:
-        notice_timer -= delta
-        if notice_timer <= 0.0:
-            notice_label.text = ""
+    if damage_time > 0.0:
+        damage_time -= delta
+        var fade := clampf(damage_time / 0.65, 0.0, 1.0)
+        damage_label.modulate.a = fade
+        damage_label.offset_top = -78.0 - (1.0 - fade) * 22.0
+        damage_label.offset_bottom = damage_label.offset_top + 44.0
+        if damage_time <= 0.0:
+            damage_label.visible = false
+    if body_hit_time > 0.0:
+        body_hit_time -= delta
+        if body_hit_effect != null:
+            body_hit_effect.scale = Vector3.ONE * (1.0 + (0.25 - maxf(body_hit_time, 0.0)) * 6.0)
+            if body_hit_time <= 0.0:
+                body_hit_effect.visible = false
 
     if mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
         _shoot()
@@ -500,8 +560,22 @@ func _physics_process(delta: float) -> void:
     var target_height := 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
     player_capsule.height = lerpf(player_capsule.height, target_height, clampf(delta * 10.0, 0.0, 1.0))
     player_collision.position.y = player_capsule.height * 0.5
-    var target_y := 1.78 if stance == 0 else (1.20 if stance == 1 else 0.52)
+    var target_y := 1.78 if stance == 0 else (1.32 if stance == 1 else 0.52)
     camera.position.y = lerpf(camera.position.y, target_y, delta * 10.0)
+    if player_body != null:
+        player_body.set_motion(planar_speed, planar_speed > SPEED + 0.5)
+        player_body.set_crouching(stance == 1)
+        player_body.set_prone(stance == 2)
+        # При взгляде вниз грудь/бронежилет плавно убираются, иначе они
+        # перекрывают весь обзор и не дают увидеть ноги.
+        var chest_scale := 1.0 - clampf((-pitch - 0.35) / 0.35, 0.0, 1.0)
+        player_body.set_chest_scale(chest_scale)
+        if stance == 2:
+            player_body.rotation.x = PI * 0.5
+            player_body.position = Vector3(0.0, 0.14, 0.725)
+        else:
+            player_body.rotation.x = 0.0
+            player_body.position = Vector3(0.0, 0.0, -0.15)
     _apply_look()
 
 func _apply_look() -> void:
@@ -513,20 +587,13 @@ func _apply_look() -> void:
     )
 
 func _down_action() -> void:
-    _play_sfx(sfx_ui, SFX_UI, -8.0, randf_range(0.96, 1.04))
     stance = mini(2, stance + 1)
-    _update_stance()
 
 func _up_action() -> void:
-    _play_sfx(sfx_ui, SFX_UI, -8.0, randf_range(0.96, 1.04))
     if stance > 0:
         stance -= 1
-        _update_stance()
     elif is_on_floor():
         velocity.y = JUMP_VELOCITY
-
-func _update_stance() -> void:
-    _set_notice(["СТОЯ", "ПРИСЕЛ", "ЛЁЖА"][stance], 1.2)
 
 func _shoot() -> void:
     if is_reloading or fire_cooldown > 0.0:
@@ -534,7 +601,6 @@ func _shoot() -> void:
     if ammo <= 0:
         _play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
         fire_cooldown = 0.25
-        _set_notice("НЕТ ПАТРОНОВ — ПЕРЕЗАРЯДКА", 1.4)
         return
     ammo -= 1
     fire_cooldown = FIRE_INTERVAL
@@ -567,7 +633,8 @@ func _shoot() -> void:
             var was_alive: bool = dummy.health > 0.0
             var damage: int = dummy.receive_hit(region)
             _play_sfx(sfx_hit, SFX_HIT, -4.0, randf_range(0.92, 1.06))
-            _set_notice("ПОПАДАНИЕ: %s  −%d HP" % [region.to_upper(), damage], 1.1)
+            _pop_damage(damage)
+            _spawn_hit_effect(hit.position)
             if crosshair != null:
                 crosshair.flash_hit()
             if was_alive and dummy.health <= 0.0:
@@ -577,9 +644,6 @@ func _shoot() -> void:
                     world.add_kill()
         else:
             _play_sfx(sfx_metal, SFX_METAL, -6.0, randf_range(0.94, 1.06))
-            _set_notice("ПОПАДАНИЕ В УКРЫТИЕ", 0.8)
-    else:
-        _set_notice("ПРОМАХ", 0.7)
 
 func _reload() -> void:
     if is_reloading or ammo >= MAG_SIZE or reserve_ammo <= 0:
@@ -587,11 +651,40 @@ func _reload() -> void:
     is_reloading = true
     reload_timer = RELOAD_TIME
     _play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
-    _set_notice("ПЕРЕЗАРЯДКА...", RELOAD_TIME)
 
 func _refresh_ammo() -> void:
     ammo_label.text = "AK-47   %d / %d" % [ammo, reserve_ammo]
 
-func _set_notice(text: String, time: float = 1.5) -> void:
-    notice_label.text = text
-    notice_timer = time
+func _pop_damage(amount: int) -> void:
+    if damage_label == null:
+        return
+    damage_label.text = "−%d" % amount
+    damage_label.visible = true
+    damage_label.modulate = Color(1.0, 1.0, 1.0, 1.0)
+    damage_label.offset_top = -78.0
+    damage_label.offset_bottom = -34.0
+    damage_time = 0.65
+
+func _spawn_hit_effect(pos: Vector3) -> void:
+    if body_hit_effect == null:
+        body_hit_effect = MeshInstance3D.new()
+        var sphere := SphereMesh.new()
+        sphere.radius = 0.10
+        sphere.height = 0.20
+        sphere.radial_segments = 10
+        sphere.rings = 6
+        body_hit_effect.mesh = sphere
+        var mat := StandardMaterial3D.new()
+        mat.albedo_color = Color(0.75, 0.04, 0.03, 0.85)
+        mat.emission_enabled = true
+        mat.emission = Color(0.65, 0.03, 0.02)
+        mat.emission_energy_multiplier = 2.0
+        mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        body_hit_effect.material_override = mat
+        body_hit_effect.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        get_parent().add_child(body_hit_effect)
+    body_hit_effect.visible = true
+    body_hit_effect.global_position = pos
+    body_hit_effect.scale = Vector3.ONE
+    body_hit_time = 0.25

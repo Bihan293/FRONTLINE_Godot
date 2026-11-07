@@ -2,14 +2,15 @@ extends Node3D
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
-const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_IRON_LEGION_Soldier_RIG_v1.glb"
-const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_RED_FRONT_Soldier_RIG_v1.glb"
+const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
+const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 
 # Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
-const MODEL_LIFT := 1.0
-const MODEL_SCALE := 0.812
+const MODEL_LIFT := 0.0
+const MODEL_SCALE := 1.0
 const PRONE_Y := 0.14
+const HIP_HEIGHT := 0.875
 
 static var _merged_mesh_cache: Dictionary = {}
 static var _normal_mesh_cache: Dictionary = {}
@@ -51,6 +52,7 @@ var _impact_flash: MeshInstance3D
 var _impact_time := 0.0
 var _shoot_timer := 0.0
 var _firing_time := 0.0
+var _idle_time := 0.0
 var shots_fired := 0
 var _sfx: AudioStreamPlayer3D
 
@@ -61,8 +63,8 @@ func _ready() -> void:
     _apply_stance()
     _build_hitboxes()
     _build_label()
+    _build_gun()
     if shooting:
-        _build_gun()
         _build_audio()
         _shoot_timer = randf_range(0.6, 2.2)
     _patrol_active = patrol_range > 0.01 and patrol_axis.length() > 0.01
@@ -78,7 +80,8 @@ func _settle_static() -> void:
     var player := get_tree().get_first_node_in_group("player") as Node3D
     if player != null:
         _face_position(player.global_position, 1.0)
-    set_process(false)
+    # Оставляем process включённым: статичные манекены должны дышать,
+    # поворачивать голову и шевелиться в сидячей/лежачей позе.
 
 func _build_visual() -> void:
     _pivot = Node3D.new()
@@ -103,9 +106,9 @@ func _build_visual() -> void:
     _pivot.add_child(_visual)
     if has_rig:
         _proc = _visual
-        # Руки поднимаются к оружию только у стреляющих манекенов.
-        _proc.set_t_pose_arms(true)
-        _proc.set_aiming(shooting)
+        # Все манекены держат автомат: руки подняты к оружию, даже в патруле.
+        _proc.set_t_pose_arms(false)
+        _proc.set_aiming(true)
         _proc.set_motion(0.0, false)
         _proc.set_look(0.0, 0.0)
 
@@ -124,10 +127,12 @@ func _apply_stance() -> void:
             _visual.position.y = MODEL_LIFT
         "prone":
             # Лицом вниз, головой вперёд (в локальную -Z, как и оружие).
+            # Блочная модель имеет origin у ступней, поэтому при повороте
+            # компенсируем высоту таза, чтобы корпус лёг вокруг бёдер.
             _visual.rotation.x = PI * 0.5
-            _visual.position.y = PRONE_Y
+            _visual.position = Vector3(0.0, PRONE_Y, HIP_HEIGHT)
         _:
-            _visual.position.y = MODEL_LIFT
+            _visual.position = Vector3(0.0, MODEL_LIFT, 0.0)
     if _proc != null:
         _proc.set_crouching(crouch)
         _proc.set_sitting(sit)
@@ -148,23 +153,23 @@ func _build_hitboxes() -> void:
             ]
         "sit":
             boxes = [
-                [Vector3(0, 1.10, 0), Vector3(0.40, 0.40, 0.40), "head"],
-                [Vector3(0, 0.72, 0), Vector3(0.55, 0.48, 0.36), "chest"],
-                [Vector3(0, 0.43, 0), Vector3(0.48, 0.26, 0.34), "stomach"],
-                [Vector3(-0.35, 0.64, 0), Vector3(0.20, 0.48, 0.25), "arm"],
-                [Vector3(0.35, 0.64, 0), Vector3(0.20, 0.48, 0.25), "arm"],
-                [Vector3(-0.17, 0.28, -0.38), Vector3(0.29, 0.36, 0.80), "leg"],
-                [Vector3(0.17, 0.28, -0.38), Vector3(0.29, 0.36, 0.80), "leg"],
+                [Vector3(0, 1.31, 0), Vector3(0.40, 0.40, 0.40), "head"],
+                [Vector3(0, 0.84, 0), Vector3(0.55, 0.48, 0.36), "chest"],
+                [Vector3(0, 0.53, 0), Vector3(0.48, 0.26, 0.34), "stomach"],
+                [Vector3(-0.35, 0.80, -0.30), Vector3(0.20, 0.44, 0.60), "arm"],
+                [Vector3(0.35, 0.80, -0.30), Vector3(0.20, 0.44, 0.60), "arm"],
+                [Vector3(-0.17, 0.28, -0.32), Vector3(0.29, 0.40, 0.78), "leg"],
+                [Vector3(0.17, 0.28, -0.32), Vector3(0.29, 0.40, 0.78), "leg"],
             ]
         "prone":
             boxes = [
-                [Vector3(0, 0.18, -0.78), Vector3(0.44, 0.30, 0.46), "head"],
-                [Vector3(0, 0.17, -0.38), Vector3(0.62, 0.30, 0.62), "chest"],
-                [Vector3(0, 0.16, 0.02), Vector3(0.52, 0.26, 0.50), "stomach"],
-                [Vector3(-0.30, 0.16, -0.35), Vector3(0.22, 0.24, 0.82), "arm"],
-                [Vector3(0.30, 0.16, -0.35), Vector3(0.22, 0.24, 0.82), "arm"],
-                [Vector3(-0.12, 0.16, 0.42), Vector3(0.28, 0.24, 0.98), "leg"],
-                [Vector3(0.12, 0.16, 0.42), Vector3(0.28, 0.24, 0.98), "leg"],
+                [Vector3(0, 0.20, -0.94), Vector3(0.44, 0.32, 0.46), "head"],
+                [Vector3(0, 0.18, -0.52), Vector3(0.62, 0.32, 0.62), "chest"],
+                [Vector3(0, 0.17, -0.12), Vector3(0.52, 0.28, 0.50), "stomach"],
+                [Vector3(-0.28, 0.17, -0.95), Vector3(0.22, 0.26, 0.80), "arm"],
+                [Vector3(0.28, 0.17, -0.95), Vector3(0.22, 0.26, 0.80), "arm"],
+                [Vector3(-0.12, 0.16, 0.36), Vector3(0.28, 0.26, 0.98), "leg"],
+                [Vector3(0.12, 0.16, 0.36), Vector3(0.28, 0.26, 0.98), "leg"],
             ]
         _:
             boxes = [
@@ -208,9 +213,9 @@ func _build_label() -> void:
         "crouch":
             _label.position = Vector3(0, 1.92, 0)
         "sit":
-            _label.position = Vector3(0, 1.50, 0)
+            _label.position = Vector3(0, 1.60, 0)
         "prone":
-            _label.position = Vector3(0, 0.62, -0.55)
+            _label.position = Vector3(0, 0.62, -0.70)
         _:
             _label.position = Vector3(0, 2.22, 0)
     add_child(_label)
@@ -218,23 +223,25 @@ func _build_label() -> void:
 func _build_gun() -> void:
     _gun_pivot = Node3D.new()
     _gun_pivot.name = "GunPivot"
-    var gun_pos := Vector3(0.10, 1.34, -0.31)
+    var gun_pos := Vector3(0.05, 1.34, -0.55)
     match stance:
         "crouch":
-            gun_pos = Vector3(0.10, 1.13, -0.31)
+            gun_pos = Vector3(0.05, 1.08, -0.55)
         "sit":
-            gun_pos = Vector3(0.10, 0.77, -0.31)
+            gun_pos = Vector3(0.05, 0.86, -0.55)
         "prone":
-            gun_pos = Vector3(0.08, 0.28, -0.92)
+            gun_pos = Vector3(0.05, 0.28, -1.25)
     _gun_pivot.position = gun_pos
     _pivot.add_child(_gun_pivot)
 
     var gun_root := Node3D.new()
     _gun_pivot.add_child(gun_root)
-    _gun_box(gun_root, Vector3(0, 0, -0.22), Vector3(0.10, 0.13, 0.62), Color(0.12, 0.11, 0.09))
-    _gun_box(gun_root, Vector3(0, -0.13, -0.16), Vector3(0.08, 0.22, 0.16), Color(0.14, 0.12, 0.10))
-    _gun_box(gun_root, Vector3(0, 0.02, -0.60), Vector3(0.05, 0.05, 0.40), Color(0.20, 0.20, 0.20))
-    _gun_box(gun_root, Vector3(0, 0.06, -0.40), Vector3(0.06, 0.06, 0.22), Color(0.32, 0.25, 0.15))
+    var gun_mesh := _get_gun_mesh()
+    if gun_mesh != null:
+        var gun_inst := MeshInstance3D.new()
+        gun_inst.name = "Rifle"
+        gun_inst.mesh = gun_mesh
+        gun_root.add_child(gun_inst)
 
     _gun_muzzle = Node3D.new()
     _gun_muzzle.position = Vector3(0, 0.02, -0.82)
@@ -269,6 +276,59 @@ func _build_gun() -> void:
     _impact_flash.visible = false
     add_child(_impact_flash)
     _impact_flash.global_position = shoot_target
+
+static var _gun_mesh_cache: ArrayMesh
+static var _gun_material_cache: StandardMaterial3D
+
+func _get_gun_mesh() -> ArrayMesh:
+    if _gun_mesh_cache != null:
+        return _gun_mesh_cache
+    var boxes := [
+        [Vector3(0, 0, -0.22), Vector3(0.10, 0.13, 0.62), Color(0.12, 0.11, 0.09)],
+        [Vector3(0, -0.13, -0.16), Vector3(0.08, 0.22, 0.16), Color(0.14, 0.12, 0.10)],
+        [Vector3(0, 0.02, -0.60), Vector3(0.05, 0.05, 0.40), Color(0.20, 0.20, 0.20)],
+        [Vector3(0, 0.06, -0.40), Vector3(0.06, 0.06, 0.22), Color(0.32, 0.25, 0.15)],
+    ]
+    var verts := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    for box in boxes:
+        var bm := BoxMesh.new()
+        bm.size = box[1]
+        var arr := bm.surface_get_arrays(0)
+        var bv: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+        var bn: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+        var bi = arr[Mesh.ARRAY_INDEX]
+        var offset := verts.size()
+        for i in range(bv.size()):
+            verts.append(bv[i] + box[0])
+            normals.append(bn[i])
+            colors.append(box[2])
+        if bi == null or bi.is_empty():
+            for i in range(bv.size()):
+                indices.append(offset + i)
+        else:
+            for idx in bi:
+                indices.append(offset + idx)
+    var mesh := ArrayMesh.new()
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = verts
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    if _gun_material_cache == null:
+        _gun_material_cache = StandardMaterial3D.new()
+        _gun_material_cache.albedo_color = Color.WHITE
+        _gun_material_cache.vertex_color_use_as_albedo = true
+        _gun_material_cache.vertex_color_is_srgb = true
+        _gun_material_cache.roughness = 0.72
+        _gun_material_cache.metallic = 0.20
+    mesh.surface_set_material(0, _gun_material_cache)
+    _gun_mesh_cache = mesh
+    return mesh
 
 func _gun_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
     var inst := MeshInstance3D.new()
@@ -356,6 +416,11 @@ func _process(delta: float) -> void:
             _proc.set_motion(absf(velocity) * 1.6, false)
     elif _proc != null:
         _proc.set_motion(0.0, false)
+        _idle_time += delta
+        # Лёгкое «дыхание» и осмотр по сторонам, чтобы статичные позы ожили.
+        var yaw_look := sin(_idle_time * 0.35 + float(get_instance_id() % 100) * 0.06) * 0.28
+        var pitch_look := sin(_idle_time * 0.21 + 1.7) * 0.05
+        _proc.set_look(yaw_look, pitch_look)
 
     var player := get_tree().get_first_node_in_group("player") as Node3D
     if shooting:
@@ -451,8 +516,10 @@ func _prepare_model(root: Node, path: String) -> void:
     # skinned GLB по-прежнему сливаются в один меш для мобильной производительности.
     var skeleton := root.find_child("Skeleton3D", true, false) as Skeleton3D
     if skeleton == null:
+        _add_equipment(root, path)
         _fix_normals(root)
-        BLOCK_RIG_BUILDER.rig_model(root)
+        var built := BLOCK_RIG_BUILDER.rig_model(root)
+        BLOCK_RIG_BUILDER.merge_rigged_model(built)
         return
     var parts: Array = []
     for child in skeleton.get_children():
@@ -561,6 +628,23 @@ static func _make_detail_texture() -> Texture2D:
         Color(0.84, 0.84, 0.84), Color(0.94, 0.94, 0.94), Color(1, 1, 1)])
     tex.color_ramp = ramp
     return tex
+
+func _add_equipment(root: Node3D, model_path: String) -> void:
+    var is_red := model_path.to_upper().contains("SOVIET") or team_name.to_upper().contains("RED")
+    var helmet_path := "res://assets/models/equipment/Soviet_Helmet.glb" if is_red else "res://assets/models/equipment/German_Helmet.glb"
+    var vest_path := "res://assets/models/equipment/Soviet_Vest.glb" if is_red else "res://assets/models/equipment/German_Vest.glb"
+    var helmet := load(helmet_path)
+    if helmet != null:
+        var h: Node3D = helmet.instantiate()
+        # Базовые координаты шлема — низ на уровне origin, у головы блочной модели.
+        h.position = Vector3(0.0, 1.74, 0.0)
+        root.add_child(h)
+    var vest := load(vest_path)
+    if vest != null:
+        var v: Node3D = vest.instantiate()
+        # Центр бронежилета совпадает с грудной костью.
+        v.position = Vector3(0.0, 1.32, 0.0)
+        root.add_child(v)
 
 func _fix_normals(root: Node) -> void:
     # Исходные GLB солдат не содержат NORMAL. Godot их не генерирует,
