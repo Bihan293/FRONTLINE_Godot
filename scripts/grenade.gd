@@ -28,8 +28,16 @@ func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 1  # Только статический мир/стены
 
+	_build_collision()
 	_build_visuals()
 	_build_fuse_sparks()
+
+func _build_collision() -> void:
+	var col_shape := CollisionShape3D.new()
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.08
+	col_shape.shape = sphere
+	add_child(col_shape)
 
 func _build_visuals() -> void:
 	_mesh_root = Node3D.new()
@@ -66,6 +74,15 @@ func _build_visuals() -> void:
 
 func _build_fuse_sparks() -> void:
 	_fuse_sparks = CPUParticles3D.new()
+	var smesh := SphereMesh.new()
+	smesh.radius = 0.02
+	smesh.height = 0.04
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.albedo_color = Color(1.0, 0.75, 0.2)
+	smesh.material = smat
+	_fuse_sparks.mesh = smesh
+
 	_fuse_sparks.position.y = 0.11
 	_fuse_sparks.amount = 10
 	_fuse_sparks.lifetime = 0.25

@@ -38,7 +38,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	if player_camera == null:
+	if player_camera == null or not is_instance_valid(player_camera):
 		return
 
 	var center := size.x * 0.5

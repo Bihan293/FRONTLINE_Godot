@@ -77,6 +77,7 @@ var smoke_grenades := 2
 var medkits := 2
 var is_healing := false
 var heal_timer := 0.0
+var throwable_cooldown := 0.0
 
 # Здоровье и статус игрока
 var health := MAX_HEALTH
@@ -299,8 +300,8 @@ func _build_hud() -> void:
 	ammo_label.anchor_bottom = 1.0
 	ammo_label.offset_left = -310.0
 	ammo_label.offset_right = -24.0
-	ammo_label.offset_top = -238.0
-	ammo_label.offset_bottom = -200.0
+	ammo_label.offset_top = -430.0
+	ammo_label.offset_bottom = -392.0
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ammo_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	ammo_label.add_theme_font_size_override("font_size", 24)
@@ -315,10 +316,10 @@ func _build_hud() -> void:
 	equip_label.anchor_right = 1.0
 	equip_label.anchor_top = 1.0
 	equip_label.anchor_bottom = 1.0
-	equip_label.offset_left = -310.0
+	equip_label.offset_left = -360.0
 	equip_label.offset_right = -24.0
-	equip_label.offset_top = -198.0
-	equip_label.offset_bottom = -168.0
+	equip_label.offset_top = -390.0
+	equip_label.offset_bottom = -360.0
 	equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	equip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	equip_label.add_theme_font_size_override("font_size", 16)
@@ -448,6 +449,9 @@ func _physics_process(delta: float) -> void:
 		return
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
+	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
+	if crosshair != null:
+		crosshair.visible = not is_dead and not aiming
 	weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
 	var blend := 1.0 - exp(-delta * 13.0)
 	aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
@@ -577,20 +581,27 @@ func _apply_look() -> void:
 	)
 
 func _down_action() -> void:
+	if is_dead:
+		return
 	stance = mini(2, stance + 1)
 
 func _up_action() -> void:
+	if is_dead:
+		return
 	if stance > 0:
 		stance -= 1
 	elif is_on_floor():
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
-	if is_reloading or fire_cooldown > 0.0 or is_dead:
+	if is_reloading or is_healing or fire_cooldown > 0.0 or is_dead:
 		return
 	if ammo <= 0:
-		_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
-		fire_cooldown = 0.25
+		if reserve_ammo > 0 and not is_reloading:
+			_reload()
+		else:
+			_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
+			fire_cooldown = 0.25
 		return
 	ammo -= 1
 	fire_cooldown = FIRE_INTERVAL

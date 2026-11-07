@@ -19,6 +19,10 @@ func _ready() -> void:
 	_build_audio_players()
 	_artillery_timer = randf_range(6.0, 14.0)
 
+func _exit_tree() -> void:
+	if instance == self:
+		instance = null
+
 func _build_audio_players() -> void:
 	var whiz_stream := _make_whiz_stream()
 	for i in range(3):

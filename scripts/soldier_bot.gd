@@ -426,9 +426,9 @@ func _route_direction(destination: Vector3, delta: float) -> Vector3:
 		_route_repath_timer = 0.9
 		_route_has_attempted = true
 		if _route_path.is_empty():
-			return Vector3.ZERO
+			return direct.normalized()
 	if _route_path.is_empty():
-		return Vector3.ZERO
+		return direct.normalized()
 
 	while _route_index < _route_path.size() - 1:
 		var waypoint := _route_path[_route_index]

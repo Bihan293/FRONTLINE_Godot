@@ -9,7 +9,7 @@ const MIN_X := -108.0
 const MIN_Z := -84.0
 const GRID_WIDTH := 73
 const GRID_HEIGHT := 57
-const AGENT_CLEARANCE := 1.1
+const AGENT_CLEARANCE := 0.45
 const AGENT_HEIGHT := 1.8
 
 var _astar := AStar2D.new()
@@ -50,10 +50,15 @@ func _build_graph() -> void:
 		if top <= 0.05 or bottom >= AGENT_HEIGHT:
 			continue
 
-		var min_x := clampi(floori((center.x - size.x * 0.5 - AGENT_CLEARANCE - MIN_X) / CELL_SIZE), 0, GRID_WIDTH - 1)
-		var max_x := clampi(ceili((center.x + size.x * 0.5 + AGENT_CLEARANCE - MIN_X) / CELL_SIZE), 0, GRID_WIDTH - 1)
-		var min_z := clampi(floori((center.z - size.z * 0.5 - AGENT_CLEARANCE - MIN_Z) / CELL_SIZE), 0, GRID_HEIGHT - 1)
-		var max_z := clampi(ceili((center.z + size.z * 0.5 + AGENT_CLEARANCE - MIN_Z) / CELL_SIZE), 0, GRID_HEIGHT - 1)
+		var b_min_x := center.x - size.x * 0.5 - AGENT_CLEARANCE
+		var b_max_x := center.x + size.x * 0.5 + AGENT_CLEARANCE
+		var b_min_z := center.z - size.z * 0.5 - AGENT_CLEARANCE
+		var b_max_z := center.z + size.z * 0.5 + AGENT_CLEARANCE
+
+		var min_x := clampi(ceili((b_min_x - MIN_X) / CELL_SIZE - 0.5), 0, GRID_WIDTH - 1)
+		var max_x := clampi(floori((b_max_x - MIN_X) / CELL_SIZE + 0.5), 0, GRID_WIDTH - 1)
+		var min_z := clampi(ceili((b_min_z - MIN_Z) / CELL_SIZE - 0.5), 0, GRID_HEIGHT - 1)
+		var max_z := clampi(floori((b_max_z - MIN_Z) / CELL_SIZE + 0.5), 0, GRID_HEIGHT - 1)
 		for z in range(min_z, max_z + 1):
 			for x in range(min_x, max_x + 1):
 				blocked[_cell_id(x, z)] = 1

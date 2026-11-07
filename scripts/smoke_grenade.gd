@@ -26,7 +26,15 @@ var _bounces := 0
 func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 1
+	_build_collision()
 	_build_visuals()
+
+func _build_collision() -> void:
+	var col_shape := CollisionShape3D.new()
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.09
+	col_shape.shape = sphere
+	add_child(col_shape)
 
 func _build_visuals() -> void:
 	_mesh_root = Node3D.new()
@@ -108,6 +116,16 @@ func deploy_smoke() -> void:
 
 	# Плотные клубы дыма (CPU Particles)
 	var p := CPUParticles3D.new()
+	var smoke_mesh := SphereMesh.new()
+	smoke_mesh.radius = 0.55
+	smoke_mesh.height = 1.10
+	var smoke_mat := StandardMaterial3D.new()
+	smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smoke_mat.albedo_color = Color(0.92, 0.94, 0.96, 0.40)
+	smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smoke_mesh.material = smoke_mat
+	p.mesh = smoke_mesh
+
 	p.amount = 48
 	p.lifetime = 4.5
 	p.explosiveness = 0.1
@@ -130,9 +148,10 @@ func deploy_smoke() -> void:
 		active_clouds.erase(cloud_record)
 		if is_instance_valid(p):
 			p.emitting = false
-			var t := get_tree().create_tween()
-			t.tween_property(p, "modulate:a", 0.0, 3.0)
-			t.tween_callback(p.queue_free)
+			get_tree().create_timer(2.5).timeout.connect(func():
+				if is_instance_valid(p):
+					p.queue_free()
+			)
 		if is_instance_valid(sfx):
 			sfx.stop()
 			sfx.queue_free()
