@@ -127,7 +127,8 @@ func _test_diggable_ground() -> void:
 	await get_tree().physics_frame
 	var query := PhysicsRayQueryParameters3D.create(Vector3(0.0, 2.0, 0.0), Vector3(0.0, -2.0, 0.0))
 	query.collision_mask = 1
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var space_state: PhysicsDirectSpaceState3D = get_viewport().world_3d.direct_space_state
+	var hit: Dictionary = space_state.intersect_ray(query)
 	_check(not hit.is_empty() and hit.get("collider") == ground, "edited terrain is missing from physics collision")
 	if not hit.is_empty():
 		_check(absf(float(hit.position.y) - 0.72) < 0.02, "terrain collision did not follow the berm height")
