@@ -9,6 +9,7 @@ signal exploded(pos: Vector3)
 
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const SFX_EXPLOSION = preload("res://assets/audio/explosion.wav")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const FUSE_TIME := 3.0
 const BLAST_RADIUS := 9.0
 const MAX_DAMAGE := 140
@@ -205,16 +206,8 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 	# Подпалина на земле
 	HIT_EFFECTS.spawn_bullet_hole(world, pos, Vector3.UP)
 
-	# Звук взрыва
-	var sfx := AudioStreamPlayer3D.new()
-	sfx.stream = SFX_EXPLOSION
-	sfx.unit_size = 18.0
-	sfx.max_distance = 110.0
-	sfx.pitch_scale = randf_range(0.92, 1.08)
-	sfx.position = pos
-	world.add_child(sfx)
-	sfx.play()
-	sfx.finished.connect(sfx.queue_free)
+	# Звук взрыва с пространственной окклюзией и логарифмическим спадом
+	COMBAT_AUDIO.play_explosion_3d(world, pos, SFX_EXPLOSION, 28.0, 260.0, 0.0)
 
 func _apply_blast_damage(pos: Vector3) -> void:
 	var space := get_world_3d().direct_space_state

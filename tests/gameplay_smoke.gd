@@ -16,6 +16,7 @@ func _ready() -> void:
 	await _test_diggable_ground()
 	_test_minimap_alignment()
 	_test_combat_roles_and_drone()
+	_test_positional_combat_audio()
 	await _test_pause_freezes_bots()
 	_report()
 
@@ -67,6 +68,53 @@ func _test_combat_roles_and_drone() -> void:
 
 		drone.return_to_operator()
 		op.queue_free()
+
+func _test_positional_combat_audio() -> void:
+	var combat_audio_script: Script = load("res://scripts/combat_audio.gd")
+	_check(combat_audio_script != null, "combat_audio.gd missing")
+	if combat_audio_script != null:
+		_check(AudioServer.get_bus_index("SFX") >= 0, "SFX audio bus missing")
+		_check(AudioServer.get_bus_index("Ambience") >= 0, "Ambience audio bus missing")
+		_check(AudioServer.get_bus_index("CombatDirect") >= 0, "CombatDirect audio bus missing")
+		_check(AudioServer.get_bus_index("CombatOccluded") >= 0, "CombatOccluded audio bus missing")
+		_check(AudioServer.get_bus_index("IndoorReverb") >= 0, "IndoorReverb audio bus missing")
+
+		var constants: Dictionary = combat_audio_script.get_script_constant_map()
+		var profiles: Dictionary = constants.get("WEAPON_PROFILES", {})
+		_check(profiles.size() >= 8, "weapon audio profiles count < 8")
+		_check(profiles.has("ak47") and profiles.has("kar98k") and profiles.has("panzerfaust"), "missing key weapon profiles")
+
+	# GameSettings audio persistence test
+	GameSettings.set_sfx_volume(0.68)
+	GameSettings.set_ambience_volume(0.42)
+	_check(absf(GameSettings.sfx_volume - 0.68) < 0.01, "sfx volume setter failed")
+	_check(absf(GameSettings.ambience_volume - 0.42) < 0.01, "ambience volume setter failed")
+	GameSettings.load_settings()
+	_check(absf(GameSettings.sfx_volume - 0.68) < 0.01, "sfx volume did not persist to ConfigFile")
+	_check(absf(GameSettings.ambience_volume - 0.42) < 0.01, "ambience volume did not persist to ConfigFile")
+	# Restore standard defaults
+	GameSettings.set_sfx_volume(0.90)
+	GameSettings.set_ambience_volume(0.75)
+
+	# AudioListener on Player
+	var player_script: Script = load("res://scripts/player.gd")
+	if player_script != null:
+		var dummy_p: CharacterBody3D = player_script.new()
+		add_child(dummy_p)
+		var listener = dummy_p.get_node_or_null("Camera3D/PlayerAudioListener")
+		if listener == null and dummy_p.camera != null:
+			listener = dummy_p.camera.get_node_or_null("PlayerAudioListener")
+		_check(listener != null and listener is AudioListener3D, "Player missing PlayerAudioListener under camera")
+		dummy_p.queue_free()
+
+	# AudioListener on Radio Drone
+	var drone_script: Script = load("res://scripts/radio_drone.gd")
+	if drone_script != null:
+		var dummy_d = drone_script.new()
+		add_child(dummy_d)
+		var drone_listener = dummy_d.get_node_or_null("DroneCamera/DroneListener")
+		_check(drone_listener != null and drone_listener is AudioListener3D, "Drone missing DroneListener under DroneCamera")
+		dummy_d.queue_free()
 
 func _test_weapon_definitions() -> void:
 	var player_script: Script = load("res://scripts/player.gd")

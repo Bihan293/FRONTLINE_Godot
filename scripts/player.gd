@@ -845,6 +845,8 @@ func _launch_drone() -> void:
 	drone.detonated.connect(_on_drone_detonated)
 	active_drone = drone
 	camera.current = false
+	if drone != null and drone.has_node("DroneCamera/DroneListener"):
+		(drone.get_node("DroneCamera/DroneListener") as AudioListener3D).make_current()
 	if drone_controller_view != null:
 		drone_controller_view.visible = true
 	if mobile_controls != null:
@@ -866,6 +868,8 @@ func _end_drone_control() -> void:
 		drone_controller_view.visible = false
 	if camera != null and is_instance_valid(camera):
 		camera.current = true
+		if audio_listener != null and is_instance_valid(audio_listener):
+			audio_listener.make_current()
 	if mobile_controls != null:
 		mobile_controls.set_drone_mode(false)
 	if not OS.has_feature("mobile") and not is_dead:
@@ -1196,7 +1200,7 @@ func _shoot() -> void:
 	fire_cooldown = float(weapon.interval)
 	_store_weapon_ammo()
 	_refresh_ammo()
-	_play_sfx(sfx_shot, SFX_SHOT, -2.0, float(weapon.pitch) * randf_range(0.94, 1.06))
+	_play_player_shot_sfx(str(weapon.id), float(weapon.pitch))
 
 	if str(weapon.id) == "panzerfaust":
 		recoil.y = minf(recoil.y + 0.055, 0.18)
@@ -1443,12 +1447,10 @@ func register_field_pickup(pickup: Node3D) -> void:
 	if is_instance_valid(pickup) and not nearby_field_pickups.has(pickup):
 		nearby_field_pickups.append(pickup)
 		_refresh_pickup_prompt()
-	_update_acoustics(delta)
 
 func unregister_field_pickup(pickup: Node3D) -> void:
 	nearby_field_pickups.erase(pickup)
 	_refresh_pickup_prompt()
-	_update_acoustics(delta)
 
 func _nearest_field_pickup() -> Node3D:
 	var nearest: Node3D = null
@@ -1484,7 +1486,6 @@ func _interact_with_pickup() -> void:
 	if bool(pickup.call("collect", self)):
 		nearby_field_pickups.erase(pickup)
 		_refresh_pickup_prompt()
-	_update_acoustics(delta)
 		_play_sfx(sfx_ui, SFX_UI, -2.0, 1.12)
 
 func can_take_field_ammo(amount: int) -> bool:

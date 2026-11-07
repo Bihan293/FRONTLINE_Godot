@@ -519,7 +519,9 @@ func _show_settings() -> void:
 	_label(content, "НИЗКОЕ — максимум FPS. СРЕДНЕЕ — баланс. ВЫСОКОЕ — тени и сглаживание.", 14, Color(0.66, 0.71, 0.68))
 
 	_label(content, "ЗВУК", 20, Color(0.85, 0.88, 0.84))
-	_settings_slider(content, "ГРОМКОСТЬ", GameSettings.master_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_master_volume)
+	_settings_slider(content, "ОБЩАЯ ГРОМКОСТЬ", GameSettings.master_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_master_volume)
+	_settings_slider(content, "ЭФФЕКТЫ БОЯ (SFX)", GameSettings.sfx_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_sfx_volume)
+	_settings_slider(content, "ОКРУЖЕНИЕ (AMBIENCE)", GameSettings.ambience_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_ambience_volume)
 
 	_button(root, "НАЗАД", _show_main, Vector2(0, 52))
 

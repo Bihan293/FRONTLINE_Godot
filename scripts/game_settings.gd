@@ -3,6 +3,8 @@ extends Node
 ## Общие настройки игры: качество графики и громкость.
 ## Сохраняются в user://frontline_settings.cfg и применяются сразу.
 
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
+
 const CONFIG_PATH := "user://frontline_settings.cfg"
 const QUALITY_NAMES := ["НИЗКАЯ", "СРЕДНЯЯ", "ВЫСОКАЯ"]
 
@@ -15,12 +17,15 @@ const MAX_FOV := 100.0
 
 var quality := 1
 var master_volume := 0.8
+var sfx_volume := 0.90
+var ambience_volume := 0.75
 var look_sensitivity := 1.0
 var aim_sensitivity := 0.70
 var invert_y := false
 var fov := 78.0
 
 func _ready() -> void:
+	COMBAT_AUDIO.ensure_audio_buses()
 	load_settings()
 	apply_all()
 
@@ -29,6 +34,8 @@ func load_settings() -> void:
 	if cfg.load(CONFIG_PATH) == OK:
 		quality = clampi(int(cfg.get_value("video", "quality", 1)), 0, 2)
 		master_volume = clampf(float(cfg.get_value("audio", "master", 0.8)), 0.0, 1.0)
+		sfx_volume = clampf(float(cfg.get_value("audio", "sfx", 0.90)), 0.0, 1.0)
+		ambience_volume = clampf(float(cfg.get_value("audio", "ambience", 0.75)), 0.0, 1.0)
 		look_sensitivity = clampf(float(cfg.get_value("controls", "look_sensitivity", 1.0)), MIN_LOOK_SENSITIVITY, MAX_LOOK_SENSITIVITY)
 		aim_sensitivity = clampf(float(cfg.get_value("controls", "aim_sensitivity", 0.70)), MIN_AIM_SENSITIVITY, MAX_AIM_SENSITIVITY)
 		invert_y = bool(cfg.get_value("controls", "invert_y", false))
@@ -38,12 +45,16 @@ func load_settings() -> void:
 		# но без «мыла» низкого разрешения.
 		quality = 1
 		master_volume = 0.8
+		sfx_volume = 0.90
+		ambience_volume = 0.75
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("video", "fov", fov)
 	cfg.set_value("audio", "master", master_volume)
+	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("audio", "ambience", ambience_volume)
 	cfg.set_value("controls", "look_sensitivity", look_sensitivity)
 	cfg.set_value("controls", "aim_sensitivity", aim_sensitivity)
 	cfg.set_value("controls", "invert_y", invert_y)
@@ -64,6 +75,16 @@ func set_quality(value: int) -> void:
 
 func set_master_volume(value: float) -> void:
 	master_volume = clampf(value, 0.0, 1.0)
+	apply_audio()
+	save_settings()
+
+func set_sfx_volume(value: float) -> void:
+	sfx_volume = clampf(value, 0.0, 1.0)
+	apply_audio()
+	save_settings()
+
+func set_ambience_volume(value: float) -> void:
+	ambience_volume = clampf(value, 0.0, 1.0)
 	apply_audio()
 	save_settings()
 
@@ -100,11 +121,22 @@ func apply_all() -> void:
 	apply_frame_limit()
 
 func apply_audio() -> void:
-	var bus := AudioServer.get_bus_index("Master")
+	COMBAT_AUDIO.ensure_audio_buses()
+	_apply_bus_volume("Master", master_volume)
+	_apply_bus_volume("SFX", sfx_volume)
+	_apply_bus_volume("Ambience", ambience_volume)
+
+	# На слабом мобильном пресете отключаем тяжелый реверб для 60 FPS
+	var rev_bus := AudioServer.get_bus_index("IndoorReverb")
+	if rev_bus >= 0 and AudioServer.get_bus_effect_count(rev_bus) > 0:
+		AudioServer.set_bus_effect_enabled(rev_bus, 0, quality > 0)
+
+func _apply_bus_volume(bus_name: StringName, linear_val: float) -> void:
+	var bus := AudioServer.get_bus_index(bus_name)
 	if bus < 0:
 		return
-	AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(master_volume, 0.001)))
-	AudioServer.set_bus_mute(bus, master_volume <= 0.001)
+	AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(linear_val, 0.001)))
+	AudioServer.set_bus_mute(bus, linear_val <= 0.001)
 
 func apply_video() -> void:
 	var vp := get_viewport()

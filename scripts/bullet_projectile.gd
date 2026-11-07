@@ -4,6 +4,7 @@ extends Node3D
 ## segment covered this physics frame, so damage is delayed until impact.
 
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const COLLISION_MASK := (1 << 0) | (1 << 1) | (1 << 2)
 
 var velocity := Vector3.ZERO
@@ -46,6 +47,8 @@ func _physics_process(delta: float) -> void:
 	if step.length() > remaining_range and step.length() > 0.001:
 		step *= remaining_range / step.length()
 	var to := from + step
+	var ear := COMBAT_AUDIO.get_listener_position(get_tree())
+	COMBAT_AUDIO.trigger_bullet_flyby_3d(get_parent(), from, to, ear)
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.collision_mask = COLLISION_MASK
 	query.exclude = _excluded_rids
@@ -111,6 +114,7 @@ func _resolve_impact(hit: Dictionary, direction: Vector3) -> void:
 		var world := get_parent()
 		if world != null:
 			HIT_EFFECTS.spawn_bullet_hole(world, position, normal)
+			COMBAT_AUDIO.play_surface_impact(world, position, normal, "ground")
 
 func _apply_actor_hit(actor: Node, collider: Object, position: Vector3, direction: Vector3) -> void:
 	if actor == shooter or not is_instance_valid(actor):
@@ -137,8 +141,12 @@ func _apply_actor_hit(actor: Node, collider: Object, position: Vector3, directio
 	var applied := int(actor.call("receive_hit", damage, attacker_pos, region, shooter_name))
 	if applied <= 0:
 		return
-	if not actor.is_in_group("explosive_barrels"):
-		HIT_EFFECTS.spawn_directional_blood(actor, position, direction, region == "head", get_parent())
+	var world := get_parent()
+	if actor.is_in_group("explosive_barrels"):
+		COMBAT_AUDIO.play_surface_impact(world, position, -direction, "metal")
+	else:
+		COMBAT_AUDIO.play_surface_impact(world, position, -direction, "flesh")
+		HIT_EFFECTS.spawn_directional_blood(actor, position, direction, region == "head", world)
 	if is_instance_valid(shooter) and shooter.has_method("on_projectile_hit"):
 		shooter.call("on_projectile_hit", actor, applied, was_alive, region)
 

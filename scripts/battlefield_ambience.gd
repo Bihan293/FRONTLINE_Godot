@@ -29,12 +29,14 @@ func _build_audio_players() -> void:
 		var p := AudioStreamPlayer.new()
 		p.stream = whiz_stream
 		p.volume_db = -8.0
+		p.bus = &"Ambience"
 		add_child(p)
 		_whiz_players.append(p)
 
 	_artillery_player = AudioStreamPlayer.new()
 	_artillery_player.stream = _make_artillery_stream()
 	_artillery_player.volume_db = -11.0
+	_artillery_player.bus = &"Ambience"
 	add_child(_artillery_player)
 
 func _make_whiz_stream() -> AudioStreamWAV:
@@ -95,6 +97,10 @@ func _make_wav(pcm: PackedByteArray) -> AudioStreamWAV:
 ## Проверяет, пролетела ли пуля рядом с головой игрока, и воспроизводит свист
 static func check_bullet_flyby(ray_from: Vector3, ray_to: Vector3, ear_pos: Vector3) -> void:
 	if instance == null:
+		return
+	var world := instance.get_parent()
+	if world != null:
+		FRONTLINECombatAudio.trigger_bullet_flyby_3d(world, ray_from, ray_to, ear_pos)
 		return
 	var seg := ray_to - ray_from
 	var seg_len := seg.length()

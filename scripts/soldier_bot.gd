@@ -17,6 +17,7 @@ const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -286,15 +287,18 @@ func _build_label() -> void:
 func _build_audio() -> void:
 	_sfx_shot = AudioStreamPlayer3D.new()
 	_sfx_shot.stream = SFX_SHOT
-	_sfx_shot.unit_size = 14.0
-	_sfx_shot.max_distance = 110.0
-	_sfx_shot.max_polyphony = 2
+	_sfx_shot.unit_size = 16.0
+	_sfx_shot.max_distance = 220.0
+	_sfx_shot.max_polyphony = 1
+	_sfx_shot.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
+	_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
 	add_child(_sfx_shot)
 
 	_sfx_reload = AudioStreamPlayer3D.new()
 	_sfx_reload.stream = SFX_RELOAD_IN
 	_sfx_reload.unit_size = 8.0
 	_sfx_reload.max_distance = 45.0
+	_sfx_reload.bus = COMBAT_AUDIO.BUS_SFX
 	add_child(_sfx_reload)
 
 func _physics_process(delta: float) -> void:
@@ -622,11 +626,35 @@ func _shoot_burst() -> void:
 
 func _fire_single_shot() -> void:
 	soldier_fired.emit(global_position)
-	var pitch_factors := [1.0, 1.16, 0.76, 1.3, 0.78, 1.25, 0.70, 0.65]
-	var w_pitch: float = pitch_factors[clampi(bot_weapon_index, 0, pitch_factors.size() - 1)]
+	var from := _muzzle_node.global_position if _muzzle_node != null else global_position + Vector3(0, 1.3, 0)
+
+	const WID_NAMES := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
+	var wid: String = WID_NAMES[clampi(bot_weapon_index, 0, WID_NAMES.size() - 1)]
+	var prof: Dictionary = COMBAT_AUDIO.WEAPON_PROFILES.get(wid, {})
+
 	if _sfx_shot != null:
-		_sfx_shot.pitch_scale = w_pitch * randf_range(0.94, 1.06)
-		_sfx_shot.play()
+		var listener_pos := COMBAT_AUDIO.get_listener_position(get_tree())
+		var dist_sq := from.distance_squared_to(listener_pos)
+		var max_dist := float(prof.get("max_dist", 220.0))
+		if dist_sq <= max_dist * max_dist:
+			_sfx_shot.unit_size = float(prof.get("unit_size", 16.0))
+			_sfx_shot.max_distance = max_dist
+			_sfx_shot.pitch_scale = float(prof.get("pitch", 1.0)) * randf_range(0.95, 1.05)
+			_sfx_shot.volume_db = float(prof.get("vol", -2.0))
+			var world_3d := get_world_3d()
+			if COMBAT_AUDIO.is_indoors(world_3d, from):
+				_sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
+				_sfx_shot.attenuation_filter_cutoff_hz = 18000.0
+				_sfx_shot.attenuation_filter_db = 0.0
+			elif COMBAT_AUDIO.check_occlusion(world_3d, from, listener_pos):
+				_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_OCCLUDED
+				_sfx_shot.attenuation_filter_cutoff_hz = 1250.0
+				_sfx_shot.attenuation_filter_db = -8.0
+			else:
+				_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
+				_sfx_shot.attenuation_filter_cutoff_hz = 20500.0
+				_sfx_shot.attenuation_filter_db = 0.0
+			_sfx_shot.play()
 
 	if _muzzle_flash != null:
 		_muzzle_flash.visible = true
@@ -635,7 +663,6 @@ func _fire_single_shot() -> void:
 	if _proc != null:
 		_proc.set_firing(true)
 
-	var from := _muzzle_node.global_position if _muzzle_node != null else global_position + Vector3(0, 1.3, 0)
 	var target_pt := current_target.global_position + Vector3(0, 1.25, 0) if current_target != null else from - global_transform.basis.z * 40.0
 	var spread: float = (0.02 + suppression * 0.05) * difficulty_spread_mult
 	var shoot_dir := (target_pt - from).normalized()

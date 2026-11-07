@@ -10,6 +10,7 @@ signal barrel_exploded(pos: Vector3)
 const SFX_HIT_METAL = preload("res://assets/audio/hit_metal.ogg")
 const SFX_EXPLOSION = preload("res://assets/audio/explosion.wav")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 const BLAST_RADIUS := 8.5
 const MAX_DAMAGE := 145.0
@@ -280,15 +281,7 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 	HIT_EFFECTS.spawn_bullet_hole(world, pos, Vector3.UP)
 
 func _play_explosion_sfx(pos: Vector3) -> void:
-	var sfx := AudioStreamPlayer3D.new()
-	sfx.stream = SFX_EXPLOSION
-	sfx.unit_size = 18.0
-	sfx.max_distance = 120.0
-	sfx.pitch_scale = randf_range(0.9, 1.1)
-	sfx.position = pos
-	get_parent().add_child(sfx)
-	sfx.play()
-	sfx.finished.connect(sfx.queue_free)
+	COMBAT_AUDIO.play_explosion_3d(get_parent(), pos, SFX_EXPLOSION, 30.0, 280.0, 1.0)
 
 func _play_metal_sfx(pos: Vector3) -> void:
 	var sfx := AudioStreamPlayer3D.new()

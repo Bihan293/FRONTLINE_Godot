@@ -11,6 +11,7 @@ signal returned()
 
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const SFX_EXPLODE = preload("res://assets/audio/explosion.wav")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 const BLAST_DAMAGE := 240.0
 const BLAST_RADIUS := 9.5
@@ -197,15 +198,7 @@ func return_to_operator() -> void:
 	queue_free()
 
 func _play_explosion(world: Node, pos: Vector3) -> void:
-	var player := AudioStreamPlayer3D.new()
-	player.stream = SFX_EXPLODE
-	player.volume_db = -3.0
-	player.max_distance = 120.0
-	player.unit_size = 10.0
-	player.position = pos
-	world.add_child(player)
-	player.play()
-	player.finished.connect(player.queue_free)
+	COMBAT_AUDIO.play_explosion_3d(world, pos, SFX_EXPLODE, 32.0, 300.0, 1.5)
 
 func _apply_blast_damage(pos: Vector3) -> void:
 	# Урон ботам с защитой от огня по своим
@@ -365,6 +358,9 @@ func _build_camera() -> void:
 	camera.rotation.x = deg_to_rad(-12.0) # Лёгкий наклон вниз для обзора поля боя
 	camera.fov = 85.0
 	add_child(camera)
+	var drone_listener := AudioListener3D.new()
+	drone_listener.name = "DroneListener"
+	camera.add_child(drone_listener)
 	_feed_viewport = SubViewport.new()
 	_feed_viewport.name = "ControllerScreenFeed"
 	_feed_viewport.size = Vector2i(480, 270) if not OS.has_feature("mobile") else Vector2i(384, 216)
