@@ -14,5 +14,8 @@
 - Confirm the centered dot reticle and that visible bullets leave the muzzle, travel to targets, and hit walls, barrels, enemies, and allies consistently; verify friendly fire stays disabled.
 - Verify bullets ignite barrels and combat freezes after match end.
 - Record projectile weapon, target distance, device/build, and whether impact delay, muzzle origin, wall blocking, and friendly-fire behavior match the desktop smoke test.
+- **New HUD pass (PR #9):** confirm the touch pause button opens the menu, sliders respond to finger input, settings survive a restart, and the minimap/sector markers stay aligned while moving and rotating.
+- Confirm ammo/equipment text sits below the killfeed and does not overlap the right-hand buttons on 16:9 and 20:9 phones; confirm no touch controls appear on desktop.
+- Confirm the first-person view no longer shows helmet/vest/arm blobs and that the weapon does not cast giant ground shadows.
 - Retest every issue in `BUGS/OPEN.md`; record build, device, steps, and result before marking an issue verified.
 

@@ -11,4 +11,5 @@
 | TASK-0007 | P1 | in progress | Codex / Antigravity | Replace the arcade reticle and hitscan fire with a dot and visible ballistic bullets |
 | TASK-0008 | P1 | in progress | Codex / Antigravity / OpenCode | Add selectable combat roles: medic, sniper, anti-tank, and radio operator with a tethered kamikaze drone (v0.1.46 built & delivered) |
 | TASK-0009 | P1 | in progress | Codex / Antigravity / OpenCode | Build immersive positional combat audio with distance, occlusion, indoor reverberation, and grenade acoustics |
+| TASK-0010 | P2 | in progress | OpenCode | Prepare the itch.io page, screenshots and press kit |
 
