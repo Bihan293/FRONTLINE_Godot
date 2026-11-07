@@ -87,6 +87,15 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			_add_box(root, "SightLeaf", Vector3(0.0, 0.075, -0.36), Vector3(0.02, 0.09, 0.02), dark)
 			_add_box(root, "TriggerBox", Vector3(0.0, 0.06, -0.16), Vector3(0.035, 0.05, 0.12), dark)
 			muzzle_z = -0.78
+		"drone_controller":
+			# Handheld FPV terminal with screen and dual joysticks
+			_add_box(root, "ConsoleBody", Vector3(0.0, -0.05, -0.22), Vector3(0.28, 0.05, 0.18), dark)
+			_add_box(root, "Screen", Vector3(0.0, -0.02, -0.23), Vector3(0.18, 0.015, 0.11), _weapon_material("screen", Color(0.15, 0.65, 0.25), 0.2, 0.0))
+			_add_cylinder(root, "AntennaL", Vector3(-0.11, 0.04, -0.29), 0.008, 0.14, steel)
+			_add_cylinder(root, "AntennaR", Vector3(0.11, 0.04, -0.29), 0.008, 0.14, steel)
+			_add_cylinder(root, "StickL", Vector3(-0.09, -0.01, -0.16), 0.012, 0.035, dark)
+			_add_cylinder(root, "StickR", Vector3(0.09, -0.01, -0.16), 0.012, 0.035, dark)
+			muzzle_z = -0.32
 		_:
 			root.free()
 			return null

@@ -14,12 +14,58 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_test_weapon_definitions()
 	_test_minimap_alignment()
+	_test_combat_roles_and_drone()
 	await _test_pause_freezes_bots()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
 	if not condition:
 		_failures.append(message)
+
+func _test_combat_roles_and_drone() -> void:
+	# 1. Drone controller mesh
+	var controller: Node3D = WEAPON_MESHES.make_weapon("drone_controller")
+	_check(controller != null, "drone_controller mesh missing")
+	if controller != null:
+		controller.free()
+
+	# 2. Minimap sniper range and drone rendering
+	var minimap = MINIMAP_SCRIPT.new()
+	add_child(minimap)
+	var dummy_player := CharacterBody3D.new()
+	dummy_player.set("player_role", "SNIPER")
+	minimap.player = dummy_player
+	_check(minimap._get_enemy_visible_range() == 70.0, "sniper radar range != 70.0")
+	dummy_player.set("player_role", "ASSAULT")
+	_check(minimap._get_enemy_visible_range() == 38.0, "assault radar range != 38.0")
+	minimap.queue_free()
+	dummy_player.queue_free()
+
+	# 3. Radio drone instantiation, collision, and tether limit
+	var drone_script: Script = load("res://scripts/radio_drone.gd")
+	_check(drone_script != null, "radio_drone script missing")
+	if drone_script != null:
+		var drone = drone_script.new()
+		add_child(drone)
+		_check(drone.get_node_or_null("DroneCollision") != null, "drone missing DroneCollision shape")
+		_check(drone.get_node_or_null("DroneCamera") != null, "drone missing DroneCamera")
+		_check(drone.get_node_or_null("TetherLine") != null, "drone missing TetherLine")
+
+		# Test launch and tether limit
+		var op := CharacterBody3D.new()
+		add_child(op)
+		drone.launch(Vector3(0, 2, 0), 0.0, op, 80.0)
+		_check(drone.max_tether == 80.0, "drone tether length was not set correctly")
+		_check(drone.operator == op, "drone operator was not assigned")
+
+		# Move drone past tether
+		drone.global_position = Vector3(0, 2, 100.0)
+		drone._physics_process(0.016)
+		var op_anchor: Vector3 = op.global_position + Vector3(0, 1.4, 0)
+		_check(drone.global_position.distance_to(op_anchor) <= 80.5, "drone exceeded tether limit")
+
+		drone.return_to_operator()
+		op.queue_free()
 
 func _test_weapon_definitions() -> void:
 	var player_script: Script = load("res://scripts/player.gd")

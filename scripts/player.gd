@@ -10,6 +10,7 @@ const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
+const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
@@ -58,6 +59,7 @@ var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_mount: Node3D
 var weapon_muzzle: Node3D
+var drone_controller_anchor: Marker3D
 var weapon_base := Vector3.ZERO
 var weapon_aim_position := Vector3(0.0, -0.092, -0.56)
 var muzzle_flash: MeshInstance3D
@@ -101,7 +103,13 @@ var smoke_grenades := 2
 var medkits := 2
 var is_healing := false
 var heal_timer := 0.0
+var heal_target: Node3D
 var throwable_cooldown := 0.0
+var player_role := "ASSAULT"
+var role_primary_weapon_index := 0
+var active_drone: FRONTLINERadioDrone = null
+var drone_charge_available := true
+var drone_vertical_input := 0.0
 
 # Здоровье и статус игрока
 var health := MAX_HEALTH
@@ -170,6 +178,10 @@ func _build_player() -> void:
 	add_child(camera)
 
 func _build_weapon() -> void:
+	drone_controller_anchor = Marker3D.new()
+	drone_controller_anchor.name = "DroneControllerAnchor"
+	drone_controller_anchor.position = Vector3(0.20, -0.14, -0.46)
+	camera.add_child(drone_controller_anchor)
 	weapon_root = Node3D.new()
 	weapon_root.name = "ViewModel"
 	weapon_root.position = Vector3(0.08, -0.17, -0.52)
@@ -276,8 +288,39 @@ func _init_weapon_inventory() -> void:
 	for definition in WEAPON_DEFS:
 		ammo_by_weapon.append(int(definition.mag))
 		reserve_by_weapon.append(int(definition.reserve))
-	ammo = ammo_by_weapon[0]
-	reserve_ammo = reserve_by_weapon[0]
+
+	player_role = str(get_tree().get_meta("selected_role", "ASSAULT"))
+	match player_role:
+		"SNIPER":
+			role_primary_weapon_index = 6 # Kar98k
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+		"ANTI_TANK":
+			role_primary_weapon_index = 7 # Panzerfaust
+			grenades = 1
+			smoke_grenades = 1
+			medkits = 2
+		"MEDIC":
+			role_primary_weapon_index = 1 # MP-40
+			grenades = 2
+			smoke_grenades = 2
+			medkits = 5
+		"RADIO_OPERATOR":
+			role_primary_weapon_index = 5 # PPSh-41
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+		_:
+			player_role = "ASSAULT"
+			role_primary_weapon_index = 0 # AK-47
+			grenades = 3
+			smoke_grenades = 2
+			medkits = 2
+
+	current_weapon_index = role_primary_weapon_index
+	ammo = ammo_by_weapon[current_weapon_index]
+	reserve_ammo = reserve_by_weapon[current_weapon_index]
 
 func _weapon_data() -> Dictionary:
 	return WEAPON_DEFS[current_weapon_index]
@@ -443,6 +486,12 @@ func _build_mobile_controls() -> void:
 	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
 	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
 	mobile_controls.interact_pressed.connect(_interact_with_pickup)
+	if mobile_controls.has_signal("drone_pressed"):
+		mobile_controls.drone_pressed.connect(_launch_drone)
+	if mobile_controls.has_signal("drone_vertical_changed"):
+		mobile_controls.drone_vertical_changed.connect(_on_drone_vertical_changed)
+	if player_role == "RADIO_OPERATOR":
+		mobile_controls.set_drone_visible(true)
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
@@ -613,6 +662,10 @@ func _on_move_changed(value: Vector2) -> void:
 func _on_look_delta(delta: Vector2) -> void:
 	if is_dead:
 		return
+	if active_drone != null and is_instance_valid(active_drone):
+		active_drone.drone_yaw -= delta.x * TOUCH_SENS * 1.5
+		active_drone.drone_pitch = clampf(active_drone.drone_pitch - delta.y * TOUCH_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
+		return
 	var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
 	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor
 	yaw -= delta.x * sense
@@ -625,6 +678,10 @@ func _on_look_delta(delta: Vector2) -> void:
 
 func _on_fire_changed(pressed: bool) -> void:
 	mobile_fire = pressed
+	if pressed and is_healing:
+		_cancel_healing()
+	if pressed and active_drone != null and is_instance_valid(active_drone):
+		active_drone.detonate(active_drone.global_position)
 
 func _on_mobile_peek_left(pressed: bool) -> void:
 	mobile_lean_left = pressed
@@ -632,8 +689,90 @@ func _on_mobile_peek_left(pressed: bool) -> void:
 func _on_mobile_peek_right(pressed: bool) -> void:
 	mobile_lean_right = pressed
 
+func _on_drone_vertical_changed(direction: float, pressed: bool) -> void:
+	drone_vertical_input = direction if pressed else 0.0
+
+func _drone_tether_length() -> float:
+	match str(get_tree().get_meta("selected_map", "BATTLEFIELD")):
+		"VILLAGE":
+			return 105.0
+		"POLYGON":
+			return 55.0
+		_:
+			return 150.0
+
+func _launch_drone() -> void:
+	if is_dead or input_locked or player_role != "RADIO_OPERATOR":
+		return
+	if active_drone != null and is_instance_valid(active_drone):
+		active_drone.return_to_operator()
+		return
+	if not drone_charge_available or get_parent() == null:
+		return
+	drone_charge_available = false
+	var drone := RADIO_DRONE_SCRIPT.new() as FRONTLINERadioDrone
+	if drone == null:
+		return
+	get_parent().add_child(drone)
+	var spawn_pos := drone_controller_anchor.global_position + (-camera.global_transform.basis.z * 0.45) + Vector3.UP * 0.08
+	drone.launch(spawn_pos, yaw, self, _drone_tether_length())
+	drone.returned.connect(_on_drone_returned)
+	drone.detonated.connect(_on_drone_detonated)
+	active_drone = drone
+	drone.camera.current = true
+	if mobile_controls != null:
+		mobile_controls.set_drone_mode(true)
+	if not OS.has_feature("mobile"):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_refresh_equipment()
+
+func _on_drone_returned() -> void:
+	_end_drone_control()
+
+func _on_drone_detonated(_position: Vector3) -> void:
+	_end_drone_control()
+
+func _end_drone_control() -> void:
+	active_drone = null
+	drone_vertical_input = 0.0
+	if camera != null and is_instance_valid(camera):
+		camera.current = true
+	if mobile_controls != null:
+		mobile_controls.set_drone_mode(false)
+	if not OS.has_feature("mobile") and not is_dead:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_refresh_equipment()
+
+func _update_drone_controls() -> void:
+	if active_drone == null or not is_instance_valid(active_drone):
+		return
+	var move_x := mobile_move.x
+	var move_y := mobile_move.y
+	move_x += float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
+	move_y += float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
+	active_drone.move_input = Vector2(move_x, move_y).limit_length(1.0)
+	var vertical := drone_vertical_input
+	vertical += float(Input.is_key_pressed(KEY_SPACE)) - float(Input.is_key_pressed(KEY_CTRL))
+	active_drone.vertical_input = clampf(vertical, -1.0, 1.0)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if is_dead or input_locked:
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V and player_role == "RADIO_OPERATOR":
+		_launch_drone()
+		return
+	if active_drone != null and is_instance_valid(active_drone):
+		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			active_drone.drone_yaw -= event.relative.x * MOUSE_SENS * 1.5
+			active_drone.drone_pitch = clampf(active_drone.drone_pitch - event.relative.y * MOUSE_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
+		elif event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode == KEY_ESCAPE:
+				active_drone.return_to_operator()
+			elif event.keycode == KEY_ENTER:
+				active_drone.detonate(active_drone.global_position)
+		elif event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				active_drone.detonate(active_drone.global_position)
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
@@ -687,6 +826,16 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
+	if active_drone != null and is_instance_valid(active_drone):
+		_update_drone_controls()
+		velocity.x = move_toward(velocity.x, 0.0, 22.0 * delta)
+		velocity.z = move_toward(velocity.z, 0.0, 22.0 * delta)
+		if not is_on_floor():
+			velocity.y -= 18.0 * delta
+		else:
+			velocity.y = 0.0
+		move_and_slide()
+		return
 	_refresh_pickup_prompt()
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
@@ -714,14 +863,22 @@ func _physics_process(delta: float) -> void:
 
 	# Таймер лечения
 	if is_healing:
-		heal_timer -= delta
-		if heal_timer <= 0.0:
-			is_healing = false
-			medkits = maxi(0, medkits - 1)
-			health = minf(MAX_HEALTH, health + 45.0)
-			_refresh_health()
-			_refresh_equipment()
-			_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
+		var moving_to_cancel := mobile_move.length() > 0.15 or Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D)
+		if moving_to_cancel:
+			_cancel_healing()
+		else:
+			heal_timer -= delta
+			if heal_timer <= 0.0:
+				if heal_target != null and is_instance_valid(heal_target) and not bool(heal_target.get("is_dead")):
+					heal_target.set("health", minf(MAX_HEALTH, float(heal_target.get("health")) + 40.0))
+				else:
+					health = minf(MAX_HEALTH, health + 45.0)
+				is_healing = false
+				heal_target = null
+				medkits = maxi(0, medkits - 1)
+				_refresh_health()
+				_refresh_equipment()
+				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
 
 	# Вспышка крови на экране
 	if blood_vignette_time > 0.0:
@@ -880,7 +1037,9 @@ func _up_action() -> void:
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
-	if is_reloading or is_healing or fire_cooldown > 0.0 or is_dead or input_locked:
+	if is_healing:
+		_cancel_healing()
+	if is_reloading or fire_cooldown > 0.0 or is_dead or input_locked:
 		return
 	var weapon := _weapon_data()
 	if ammo <= 0:
@@ -1032,11 +1191,43 @@ func _throw_smoke() -> void:
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
 
 func _use_heal() -> void:
-	if medkits <= 0 or is_dead or is_healing or health >= MAX_HEALTH:
+	if medkits <= 0 or is_dead or is_healing:
+		return
+	heal_target = null
+	if player_role == "MEDIC":
+		var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		var nearest_dist := 4.0
+		for bot in get_tree().get_nodes_in_group("bots"):
+			if bot == null or not is_instance_valid(bot) or bool(bot.get("is_dead")):
+				continue
+			if str(bot.get("team_name")) != player_team or not ("health" in bot):
+				continue
+			var distance := global_position.distance_to((bot as Node3D).global_position)
+			if float(bot.get("health")) < MAX_HEALTH and distance < nearest_dist:
+				nearest_dist = distance
+				heal_target = bot as Node3D
+		if heal_target != null:
+			var start := global_position + Vector3.UP * 1.1
+			var finish := heal_target.global_position + Vector3.UP * 0.9
+			var query := PhysicsRayQueryParameters3D.create(start, finish)
+			query.collision_mask = WORLD_LAYER_MASK
+			query.exclude = [get_rid()]
+			if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+				heal_target = null
+	if heal_target == null and health >= MAX_HEALTH:
 		return
 	is_healing = true
 	heal_timer = 2.2
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
+	_refresh_equipment()
+
+func _cancel_healing() -> void:
+	if not is_healing:
+		return
+	is_healing = false
+	heal_target = null
+	heal_timer = 0.0
+	_refresh_equipment()
 
 func _refresh_ammo() -> void:
 	if ammo_label == null:
@@ -1052,7 +1243,10 @@ func _refresh_health() -> void:
 
 func _refresh_equipment() -> void:
 	if equip_label != null:
-		equip_label.text = "ГРАНАТЫ: %d   •   ДЫМ: %d   •   БИНТЫ: %d" % [grenades, smoke_grenades, medkits]
+		var role_names := {"ASSAULT": "ШТУРМОВИК", "MEDIC": "МЕДИК", "SNIPER": "СНАЙПЕР", "ANTI_TANK": "ПТ", "RADIO_OPERATOR": "РАДИСТ"}
+		var role_text := str(role_names.get(player_role, "ШТУРМОВИК"))
+		var drone_text := "   •   ДРОН: ГОТОВ" if player_role == "RADIO_OPERATOR" and drone_charge_available else ("   •   ДРОН: ИСПОЛЬЗОВАН" if player_role == "RADIO_OPERATOR" else "")
+		equip_label.text = "%s   •   ГРАН: %d   •   ДЫМ: %d   •   БИНТЫ: %d%s" % [role_text, grenades, smoke_grenades, medkits, drone_text]
 
 func register_field_pickup(pickup: Node3D) -> void:
 	if is_instance_valid(pickup) and not nearby_field_pickups.has(pickup):
@@ -1183,6 +1377,7 @@ func _pop_damage(amount: int) -> void:
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Enemy") -> void:
 	if is_dead:
 		return
+	_cancel_healing()
 	health = maxf(0.0, health - float(damage))
 	blood_vignette_time = 1.0
 	_play_sfx(sfx_hit, SFX_HIT_FLESH, 0.0, randf_range(0.9, 1.1))
@@ -1197,6 +1392,14 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		_die(attacker_name)
 
 func _die(killer_name: String) -> void:
+	if active_drone != null and is_instance_valid(active_drone):
+		active_drone.return_to_operator()
+	_cancel_healing()
+	if camera != null:
+		camera.current = true
+	if mobile_controls != null:
+		mobile_controls.set_drone_mode(false)
+
 	is_dead = true
 	health = 0.0
 	velocity = Vector3.ZERO
@@ -1218,24 +1421,68 @@ func _die(killer_name: String) -> void:
 		death_screen.visible = true
 
 func respawn() -> void:
+	if active_drone != null and is_instance_valid(active_drone):
+		active_drone.return_to_operator()
+	if camera != null:
+		camera.current = true
+
 	is_dead = false
 	health = MAX_HEALTH
 	for i in range(WEAPON_DEFS.size()):
 		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
 		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)
+
+	match player_role:
+		"SNIPER":
+			current_weapon_index = 6
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = false
+		"ANTI_TANK":
+			current_weapon_index = 7
+			grenades = 1
+			smoke_grenades = 1
+			medkits = 2
+			drone_charge_available = false
+		"MEDIC":
+			current_weapon_index = 1
+			grenades = 2
+			smoke_grenades = 2
+			medkits = 5
+			drone_charge_available = false
+		"RADIO_OPERATOR":
+			current_weapon_index = 5
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = true
+		_:
+			current_weapon_index = 0
+			grenades = 3
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = false
+
 	ammo = ammo_by_weapon[current_weapon_index]
 	reserve_ammo = reserve_by_weapon[current_weapon_index]
+	_equip_weapon_visual()
+
 	is_reloading = false
 	reload_timer = 0.0
-	grenades = 3
-	smoke_grenades = 2
-	medkits = 2
 	is_healing = false
+	heal_target = null
+	drone_vertical_input = 0.0
 	aiming = false
 	aim_blend = 0.0
 	camera.fov = GameSettings.fov
-	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
-		mobile_controls.call("reset_aim")
+	if mobile_controls != null:
+		if mobile_controls.has_method("reset_aim"):
+			mobile_controls.call("reset_aim")
+		if mobile_controls.has_method("set_drone_visible"):
+			mobile_controls.set_drone_visible(player_role == "RADIO_OPERATOR")
+		if mobile_controls.has_method("set_drone_mode"):
+			mobile_controls.set_drone_mode(false)
 	stance = 0
 	lean_amount = 0.0
 	mobile_lean_left = false

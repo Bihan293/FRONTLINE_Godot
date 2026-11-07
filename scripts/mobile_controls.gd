@@ -21,6 +21,8 @@ signal peek_left_changed(pressed: bool)
 signal peek_right_changed(pressed: bool)
 signal cycle_weapon_pressed
 signal interact_pressed
+signal drone_pressed
+signal drone_vertical_changed(direction: float, pressed: bool)
 
 const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
@@ -36,6 +38,8 @@ var _button_touches: Dictionary = {}
 var _active: Dictionary = {}
 var _aim_on := false
 var _interact_visible := false
+var _drone_visible := false
+var _drone_mode := false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -59,12 +63,25 @@ func _layout() -> Dictionary:
 		"peek_right": Vector2(s.x - 294.0, s.y - 466.0),
 		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
 		"interact": Vector2(s.x - 195.0, s.y - 530.0),
+		"drone": Vector2(s.x - 478.0, s.y - 355.0),
 	}
 
 func set_interact_visible(is_visible: bool) -> void:
 	if _interact_visible == is_visible:
 		return
 	_interact_visible = is_visible
+	queue_redraw()
+
+func set_drone_visible(is_visible: bool) -> void:
+	if _drone_visible == is_visible:
+		return
+	_drone_visible = is_visible
+	queue_redraw()
+
+func set_drone_mode(enabled: bool) -> void:
+	if _drone_mode == enabled:
+		return
+	_drone_mode = enabled
 	queue_redraw()
 
 func reset_aim() -> void:
@@ -86,8 +103,13 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact"]:
+	var ids := ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact", "drone"]
+	if _drone_mode:
+		ids = ["fire", "crouch", "jump", "drone"]
+	for id in ids:
 		if id == "interact" and not _interact_visible:
+			continue
+		if id == "drone" and not _drone_visible:
 			continue
 		var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
 		if pos.distance_to(l[id]) <= radius * 1.15:
@@ -111,6 +133,10 @@ func _touch_up(index: int) -> void:
 		_active.erase(id)
 		if id == "fire":
 			fire_changed.emit(false)
+		elif _drone_mode and id == "jump":
+			drone_vertical_changed.emit(1.0, false)
+		elif _drone_mode and id == "crouch":
+			drone_vertical_changed.emit(-1.0, false)
 		elif id == "peek_left":
 			peek_left_changed.emit(false)
 		elif id == "peek_right":
@@ -146,9 +172,15 @@ func _press(id: String) -> void:
 		"reload":
 			reload_pressed.emit()
 		"crouch":
-			stance_down_pressed.emit()
+			if _drone_mode:
+				drone_vertical_changed.emit(-1.0, true)
+			else:
+				stance_down_pressed.emit()
 		"jump":
-			stance_up_pressed.emit()
+			if _drone_mode:
+				drone_vertical_changed.emit(1.0, true)
+			else:
+				stance_up_pressed.emit()
 		"grenade":
 			grenade_pressed.emit()
 		"smoke":
@@ -163,6 +195,8 @@ func _press(id: String) -> void:
 			cycle_weapon_pressed.emit()
 		"interact":
 			interact_pressed.emit()
+		"drone":
+			drone_pressed.emit()
 
 func _set_joy(value: Vector2) -> void:
 	var v := value
@@ -185,6 +219,12 @@ func _draw() -> void:
 	var knob: Vector2 = l.joy + _joy_value * JOY_RADIUS
 	draw_circle(knob, JOY_RADIUS * 0.40, Color(0.85, 0.92, 1.0, 0.50))
 	draw_arc(knob, JOY_RADIUS * 0.40, 0.0, TAU, 48, Color(1, 1, 1, 0.45), 2.0, true)
+	if _drone_mode:
+		_draw_button(l.fire, FIRE_RADIUS, "ПОДРЫВ", "fire", Color(0.80, 0.18, 0.12, 0.58), font, 16)
+		_draw_button(l.jump, SMALL_RADIUS, "ВЫШЕ", "jump", Color(0.12, 0.32, 0.55, 0.58), font, 11)
+		_draw_button(l.crouch, SMALL_RADIUS, "НИЖЕ", "crouch", Color(0.12, 0.32, 0.55, 0.58), font, 12)
+		_draw_button(l.drone, SMALL_RADIUS, "ВОЗВРАТ", "drone", Color(0.42, 0.22, 0.55, 0.68), font, 10)
+		return
 
 	_draw_button(l.fire, FIRE_RADIUS, "ОГОНЬ", "fire", Color(0.80, 0.18, 0.12, 0.50), font, 18)
 	_draw_button(l.reload, SMALL_RADIUS, "ПЕРЕЗАР.", "reload", Color(0.12, 0.32, 0.55, 0.48), font, 12)
@@ -199,6 +239,8 @@ func _draw() -> void:
 	_draw_button(l.weapon, SMALL_RADIUS, "ОРУЖИЕ", "weapon", Color(0.50, 0.36, 0.14, 0.52), font, 10)
 	if _interact_visible:
 		_draw_button(l.interact, SMALL_RADIUS, "ВЗЯТЬ", "interact", Color(0.20, 0.48, 0.30, 0.62), font, 11)
+	if _drone_visible:
+		_draw_button(l.drone, SMALL_RADIUS, "ДРОН", "drone", Color(0.42, 0.22, 0.55, 0.62), font, 11)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
 	var active: bool = _aim_on if id == "aim" else bool(_active.get(id, false))

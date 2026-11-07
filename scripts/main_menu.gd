@@ -314,6 +314,94 @@ func _choose_team(faction: String) -> void:
 	selected_team = faction
 	get_tree().set_meta("selected_team", faction)
 	get_tree().set_meta("selected_map", selected_map)
+	_show_roles()
+
+func _show_roles() -> void:
+	var root := _make_shell("ВЫБОР БОЕВОГО КЛАССА  (" + selected_team + ")")
+	_label(root, "Выбери специализацию бойца и экипировку перед высадкой.", 16, Color(0.72, 0.76, 0.74))
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 14)
+	var screen_width := get_viewport_rect().size.x
+	grid.columns = 3 if screen_width >= 1150.0 else (2 if screen_width >= 680.0 else 1)
+	scroll.add_child(grid)
+
+	var roles_data := [
+		{
+			"id": "ASSAULT",
+			"title": "ШТУРМОВИК",
+			"weapon": "AK-47 + M1911",
+			"desc": "Универсальный передовой боец. 3 осколочные гранаты, 2 дыма, увеличенная скорость спринта.",
+			"tint": Color(0.25, 0.35, 0.30)
+		},
+		{
+			"id": "MEDIC",
+			"title": "САНИТАР",
+			"weapon": "MP-40 + M1911",
+			"desc": "Полевой медик. 5 аптечек: лечение себя и перевязка союзников в радиусе 6.5м.",
+			"tint": Color(0.20, 0.35, 0.40)
+		},
+		{
+			"id": "SNIPER",
+			"title": "СНАЙПЕР",
+			"weapon": "KAR98K (2.6x ADS)",
+			"desc": "Стрелок дальнего боя. Оптический прицел с мил-дот сеткой, радар видит врагов до 70м.",
+			"tint": Color(0.35, 0.30, 0.20)
+		},
+		{
+			"id": "ANTI_TANK",
+			"title": "ПТ-СТРЕЛОК",
+			"weapon": "PANZERFAUST + ППШ",
+			"desc": "Тяжёлый гранатомётчик. Кумулятивные ракеты (220 урона, 10.5м радиус) против укрытий.",
+			"tint": Color(0.40, 0.22, 0.20)
+		},
+		{
+			"id": "RADIO_OPERATOR",
+			"title": "РАДИСТ",
+			"weapon": "ППШ-41 + FPV ДРОН",
+			"desc": "Оператор проводного дрона-камикадзе (150м кабель, ручной FPV таран, 240 взрывного урона).",
+			"tint": Color(0.32, 0.22, 0.38)
+		}
+	]
+
+	for r in roles_data:
+		_role_card(grid, r)
+
+	_button(root, "НАЗАД К ВЫБОРУ СТОРОНЫ", _show_teams, Vector2(0, 48))
+
+func _role_card(parent: Control, data: Dictionary) -> void:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.custom_minimum_size = Vector2(250, 228)
+	parent.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+
+	var swatch := ColorRect.new()
+	swatch.color = data["tint"]
+	swatch.custom_minimum_size = Vector2(0, 60)
+	box.add_child(swatch)
+
+	_label(box, str(data["title"]), 19, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_label(box, str(data["weapon"]), 13, Color(0.95, 0.92, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
+	var desc := _label(box, str(data["desc"]), 12, Color(0.75, 0.79, 0.76), HORIZONTAL_ALIGNMENT_CENTER)
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var choose := _button(box, "ВЫБРАТЬ", _select_role.bind(str(data["id"])), Vector2(0, 48))
+	choose.size_flags_vertical = Control.SIZE_SHRINK_END
+
+func _select_role(role_id: String) -> void:
+	get_tree().set_meta("selected_role", role_id)
 	_show_deployment()
 
 func _show_deployment() -> void:
@@ -365,7 +453,7 @@ func _show_deployment() -> void:
 	set_meta("deploy_button", deploy)
 	set_meta("map_preview", image)
 	set_meta("selected_spawn", 0)
-	_button(side, "НАЗАД", _show_teams, Vector2(0,48))
+	_button(side, "НАЗАД", _show_roles, Vector2(0,48))
 
 func _select_spawn(index: int) -> void:
 	set_meta("selected_spawn", index)
