@@ -26,6 +26,7 @@ var max_tether := 150.0
 var battery_lifetime := 45.0
 var flight_time := 0.0
 var is_exploding := false
+var _is_launched := false
 
 var move_input := Vector2.ZERO
 var vertical_input := 0.0
@@ -56,6 +57,8 @@ func launch(start_pos: Vector3, initial_yaw: float, op: CharacterBody3D, tether_
 	global_position = start_pos
 	rotation.y = initial_yaw
 	velocity = -transform.basis.z * 4.0 + Vector3.UP * 2.0
+	_is_launched = true
+	set_physics_process(true)
 	if operator != null and operator.has_method("set_drone_controller_feed") and _feed_viewport != null:
 		operator.call("set_drone_controller_feed", _feed_viewport.get_texture())
 
@@ -68,13 +71,15 @@ func _ready() -> void:
 	_build_camera()
 	_build_tether_renderer()
 	_build_osd()
+	if not _is_launched:
+		set_physics_process(false)
 
 func _exit_tree() -> void:
 	if _osd_canvas != null and is_instance_valid(_osd_canvas):
 		_osd_canvas.queue_free()
 
 func _physics_process(delta: float) -> void:
-	if is_exploding:
+	if not _is_launched or is_exploding:
 		return
 
 	if operator == null or not is_instance_valid(operator) or bool(operator.get("is_dead")):
