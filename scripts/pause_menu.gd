@@ -48,6 +48,7 @@ func _build() -> void:
 	panel.add_child(margin)
 
 	var column := VBoxContainer.new()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_theme_constant_override("separation", 14)
 	margin.add_child(column)
 
