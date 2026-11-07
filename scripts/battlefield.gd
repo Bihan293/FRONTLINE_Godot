@@ -61,6 +61,11 @@ var _detail_texture: Texture2D
 var _environment: Environment
 var _active_bots: Array[FRONTLINESoldierBot] = []
 var _bot_name_idx := 0
+var _merge_vertices := PackedVector3Array()
+var _merge_normals := PackedVector3Array()
+var _merge_colors := PackedColorArray()
+var _merge_uvs := PackedVector2Array()
+var _merge_indices := PackedInt32Array()
 
 const SOVIET_NAMES := [
 	"Ряд. Морозов", "С-нт Васильев", "Ряд. Смирнов", "Ряд. Ковалёв",
@@ -91,6 +96,8 @@ func _ready() -> void:
 	_build_sectors()
 	_build_hud()
 	_spawn_initial_squads()
+	if bool(get_tree().get_meta("deploy_intro", false)):
+		_play_deploy_intro()
 
 func _make_detail_texture() -> Texture2D:
 	var noise := FastNoiseLite.new()
@@ -233,6 +240,55 @@ func _build_box(data: Dictionary) -> void:
 		inst.position = pos
 	parent.add_child(inst)
 
+## Складываем все статические боксы карты в один меш: ~87 draw call -> 1.
+func _append_box_mesh(center: Vector3, size: Vector3, color: Color) -> void:
+	var h := size * 0.5
+	var x0 := center.x - h.x
+	var x1 := center.x + h.x
+	var y0 := center.y - h.y
+	var y1 := center.y + h.y
+	var z0 := center.z - h.z
+	var z1 := center.z + h.z
+	_add_merge_quad(Vector3(x0, y0, z0), Vector3(x0, y0, z1), Vector3(x0, y1, z1), Vector3(x0, y1, z0), Vector3.LEFT, color)
+	_add_merge_quad(Vector3(x1, y0, z1), Vector3(x1, y0, z0), Vector3(x1, y1, z0), Vector3(x1, y1, z1), Vector3.RIGHT, color)
+	_add_merge_quad(Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y0, z1), Vector3(x0, y0, z1), Vector3.DOWN, color)
+	_add_merge_quad(Vector3(x0, y1, z1), Vector3(x1, y1, z1), Vector3(x1, y1, z0), Vector3(x0, y1, z0), Vector3.UP, color)
+	_add_merge_quad(Vector3(x0, y0, z1), Vector3(x1, y0, z1), Vector3(x1, y1, z1), Vector3(x0, y1, z1), Vector3.BACK, color)
+	_add_merge_quad(Vector3(x1, y0, z0), Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3.FORWARD, color)
+
+func _add_merge_quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, normal: Vector3, color: Color) -> void:
+	var base := _merge_vertices.size()
+	_merge_vertices.append_array([a, b, c, d])
+	_merge_normals.append_array([normal, normal, normal, normal])
+	_merge_colors.append_array([color, color, color, color])
+	_merge_uvs.append_array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+	_merge_indices.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+
+func _flush_merged_boxes() -> void:
+	if _merge_vertices.is_empty():
+		return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = _merge_vertices
+	arrays[Mesh.ARRAY_NORMAL] = _merge_normals
+	arrays[Mesh.ARRAY_COLOR] = _merge_colors
+	arrays[Mesh.ARRAY_TEX_UV] = _merge_uvs
+	arrays[Mesh.ARRAY_INDEX] = _merge_indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color.WHITE
+	material.vertex_color_use_as_albedo = true
+	material.vertex_color_is_srgb = true
+	material.roughness = 0.94
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var instance := MeshInstance3D.new()
+	instance.name = "MergedMapGeometry"
+	instance.mesh = mesh
+	instance.material_override = material
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(instance)
+
 func _build_diggable_ground(data: Dictionary) -> void:
 	var size: Vector3 = data.size
 	var ground = DIGGABLE_GROUND_SCRIPT.new()
@@ -247,6 +303,44 @@ func _spawn_player() -> void:
 	var spawn: Vector3 = get_tree().get_meta("spawn_position", default_spawn)
 	player.position = spawn
 	add_child(player)
+
+## Кинематографичный спуск камеры с верху карты к выбранной точке спавна.
+func _play_deploy_intro() -> void:
+	get_tree().set_meta("deploy_intro", false)
+	if player == null or not is_instance_valid(player):
+		return
+	var player_camera := player.get("camera") as Camera3D
+	if player_camera == null:
+		return
+	player.call("set_input_locked", true)
+	var player_hud = player.get("hud")
+	if player_hud is CanvasLayer:
+		(player_hud as CanvasLayer).visible = false
+
+	var spawn := player.global_position
+	var intro := Camera3D.new()
+	intro.fov = 62.0
+	intro.far = 500.0
+	add_child(intro)
+	intro.look_at_from_position(spawn + Vector3(0.0, 46.0, 34.0), spawn + Vector3(0.0, 0.0, -6.0), Vector3.UP)
+	intro.current = true
+	var final_pos := player_camera.global_position
+	var final_rot := player_camera.global_rotation
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(intro, "global_position", final_pos, 2.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(intro, "global_rotation", final_rot, 2.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.chain().tween_callback(func():
+		if is_instance_valid(intro):
+			intro.queue_free()
+		if is_instance_valid(player):
+			var pc := player.get("camera") as Camera3D
+			if pc != null:
+				pc.current = true
+			player.call("set_input_locked", false)
+		if player_hud is CanvasLayer:
+			(player_hud as CanvasLayer).visible = true
+	)
 
 func _build_sectors() -> void:
 	sector_data = _layout().sectors()

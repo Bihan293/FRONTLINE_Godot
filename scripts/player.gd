@@ -13,6 +13,8 @@ const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
+const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
+const SHOW_VIEW_ARMS := false
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -120,6 +122,7 @@ var heal_target: Node3D
 var throwable_cooldown := 0.0
 var player_role := "ASSAULT"
 var role_primary_weapon_index := 0
+var role_weapon_indices: Array[int] = [0, 3]
 var active_drone: FRONTLINERadioDrone = null
 var drone_charge_available := true
 var drone_vertical_input := 0.0
@@ -147,6 +150,8 @@ var mobile_move := Vector2.ZERO
 var mobile_fire := false
 var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu
+var _view_arm_left: MeshInstance3D
+var _view_arm_right: MeshInstance3D
 
 var sfx_shot: AudioStreamPlayer
 var sfx_empty: AudioStreamPlayer
@@ -320,27 +325,32 @@ func _init_weapon_inventory() -> void:
 	match player_role:
 		"SNIPER":
 			role_primary_weapon_index = 6 # Kar98k
+			role_weapon_indices = [6, 3]
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
 		"ANTI_TANK":
 			role_primary_weapon_index = 7 # Panzerfaust
+			role_weapon_indices = [7, 5, 3]
 			grenades = 1
 			smoke_grenades = 1
 			medkits = 2
 		"MEDIC":
 			role_primary_weapon_index = 1 # MP-40
+			role_weapon_indices = [1, 3]
 			grenades = 2
 			smoke_grenades = 2
 			medkits = 5
 		"RADIO_OPERATOR":
 			role_primary_weapon_index = 5 # PPSh-41
+			role_weapon_indices = [5, 3]
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
 		_:
 			player_role = "ASSAULT"
 			role_primary_weapon_index = 0 # AK-47
+			role_weapon_indices = [0, 3]
 			grenades = 3
 			smoke_grenades = 2
 			medkits = 2
@@ -353,6 +363,23 @@ func _init_weapon_inventory() -> void:
 		"SURVIVAL":
 			grenades = maxi(0, grenades - 1)
 			medkits += 1
+
+	# Ручная настройка на экране спавна: оружие и количество снаряжения.
+	var chosen_primary := int(get_tree().get_meta("selected_primary", -1))
+	if chosen_primary >= 0 and role_weapon_indices.has(chosen_primary):
+		role_primary_weapon_index = chosen_primary
+	var chosen_grenades := int(get_tree().get_meta("selected_grenades", -1))
+	if chosen_grenades >= 0:
+		grenades = chosen_grenades
+	var chosen_smoke := int(get_tree().get_meta("selected_smoke", -1))
+	if chosen_smoke >= 0:
+		smoke_grenades = chosen_smoke
+	var chosen_medkits := int(get_tree().get_meta("selected_medkits", -1))
+	if chosen_medkits >= 0:
+		medkits = chosen_medkits
+	var chosen_rockets := int(get_tree().get_meta("selected_rockets", -1))
+	if chosen_rockets >= 0:
+		reserve_by_weapon[7] = chosen_rockets
 
 	current_weapon_index = role_primary_weapon_index
 	last_primary_weapon_index = role_primary_weapon_index
@@ -368,6 +395,8 @@ func _store_weapon_ammo() -> void:
 
 func _switch_weapon(index: int) -> void:
 	if is_dead or index < 0 or index >= WEAPON_DEFS.size():
+		return
+	if not role_weapon_indices.has(index):
 		return
 	var was_shovel_equipped := is_shovel_equipped
 	is_shovel_equipped = false
@@ -396,12 +425,18 @@ func _switch_weapon(index: int) -> void:
 	_play_sfx(sfx_ui, SFX_UI, -6.0, 1.0)
 
 func _cycle_weapon(direction: int) -> void:
-	var next_index := current_weapon_index + direction
-	if next_index < 0:
-		next_index = WEAPON_DEFS.size() - 1
-	elif next_index >= WEAPON_DEFS.size():
-		next_index = 0
-	_switch_weapon(next_index)
+	if role_weapon_indices.is_empty():
+		return
+	var slot := role_weapon_indices.find(current_weapon_index)
+	if slot < 0:
+		slot = 0
+	slot = posmod(slot + direction, role_weapon_indices.size())
+	_switch_weapon(role_weapon_indices[slot])
+
+func _select_weapon_slot(slot: int) -> void:
+	if slot < 0 or slot >= role_weapon_indices.size():
+		return
+	_switch_weapon(role_weapon_indices[slot])
 
 func _toggle_sidearm() -> void:
 	if is_dead or input_locked:
@@ -439,6 +474,7 @@ func _build_body() -> void:
 	body.position = Vector3(0.0, 0.0, -0.45)
 	add_child(body)
 	body.setup(team.to_upper().contains("RED"), wrist_left_marker, wrist_right_marker)
+	body.visible = false  # торс/ноги не должны закрывать обзор при взгляде вниз
 	player_body = body
 	if player_role == "RADIO_OPERATOR":
 		drone_controller_view = WEAPON_MESHES.make_weapon("drone_controller")
@@ -480,6 +516,54 @@ func _build_view_hands() -> void:
 
 	_add_view_hand(wrist_right_marker, false)
 	_add_view_hand(wrist_left_marker, true)
+	_view_arm_left = _make_view_arm("ViewArmL")
+	_view_arm_right = _make_view_arm("ViewArmR")
+
+func _make_view_arm(arm_name: String) -> MeshInstance3D:
+	var arm := MeshInstance3D.new()
+	arm.name = arm_name
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.035
+	mesh.bottom_radius = 0.050
+	mesh.height = 1.0
+	mesh.radial_segments = 8
+	arm.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.10, 0.10, 0.08)
+	material.roughness = 1.0
+	arm.material_override = material
+	arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if camera != null:
+		camera.add_child(arm)
+	return arm
+
+func _update_view_arms() -> void:
+	if camera == null:
+		return
+	if not SHOW_VIEW_ARMS:
+		if _view_arm_left != null:
+			_view_arm_left.visible = false
+		if _view_arm_right != null:
+			_view_arm_right.visible = false
+		return
+	if wrist_left_marker != null and _view_arm_left != null:
+		var l_end := wrist_left_marker.global_position
+		var l_start := l_end + camera.global_transform.basis * Vector3(-0.035, 0.055, 0.14)
+		_place_view_arm(_view_arm_left, l_start, l_end)
+	if wrist_right_marker != null and _view_arm_right != null:
+		var r_end := wrist_right_marker.global_position
+		var r_start := r_end + camera.global_transform.basis * Vector3(0.035, 0.055, 0.14)
+		_place_view_arm(_view_arm_right, r_start, r_end)
+
+func _place_view_arm(arm: MeshInstance3D, start: Vector3, end: Vector3) -> void:
+	var delta := end - start
+	var length := delta.length()
+	if length < 0.02:
+		arm.visible = false
+		return
+	arm.visible = true
+	var dir := delta / length
+	arm.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, dir)).scaled(Vector3(1.0, length, 1.0)), (start + end) * 0.5)
 
 ## Низкополигональная кисть на оружии. Заменяет длинные IK-руки,
 ## которые вытягивались через весь экран.
@@ -584,6 +668,13 @@ func set_input_locked(locked: bool) -> void:
 			mobile_controls.set_interact_visible(false)
 		if death_screen != null:
 			death_screen.visible = false
+		if crosshair != null:
+			crosshair.visible = false
+	else:
+		if mobile_controls != null:
+			mobile_controls.visible = true
+		if crosshair != null:
+			crosshair.visible = not aiming
 
 func _build_audio() -> void:
 	sfx_shot = _make_sfx(COMBAT_AUDIO.BUS_COMBAT_DIRECT)
@@ -621,7 +712,7 @@ func _play_player_shot_sfx(wid: String, default_pitch: float) -> void:
 		sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
 	else:
 		sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
-	_play_sfx(sfx_shot, SFX_SHOT, vol, pitch)
+	_play_sfx(sfx_shot, WEAPON_SOUND.get_shot(wid), vol, pitch)
 
 func _play_sfx(player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
 	if player == null or stream == null:
@@ -1015,7 +1106,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
-			_switch_weapon(event.keycode - KEY_1)
+			_select_weapon_slot(event.keycode - KEY_1)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -1115,6 +1206,7 @@ func _physics_process(delta: float) -> void:
 	weapon_root.rotation.x = -weapon_kick * 0.18 + sway_offset.y * 0.6 + sprint_anim * 0.16 + landing_anim * 0.10
 	weapon_root.rotation.y = sway_offset.x * 0.6
 	weapon_root.rotation.z = -sprint_anim * 0.30
+	_update_view_arms()
 
 	if muzzle_flash_time > 0.0:
 		muzzle_flash_time -= delta
@@ -1585,6 +1677,8 @@ func take_field_ammo(amount: int) -> int:
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
 		return false
+	if not role_weapon_indices.has(index):
+		return false
 	var stored_clip := ammo if index == current_weapon_index else ammo_by_weapon[index]
 	var stored_reserve := reserve_ammo if index == current_weapon_index else reserve_by_weapon[index]
 	var definition: Dictionary = WEAPON_DEFS[index]
@@ -1681,6 +1775,7 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 	collision_layer = 0
 	if player_body != null and player_body.has_method("set_ragdoll"):
 		var hit_dir := global_position - attacker_pos
+		player_body.visible = true
 		player_body.call("set_ragdoll", true, hit_dir, region == "head")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var world := get_parent()
@@ -1696,6 +1791,10 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 	camera.rotation = Vector3(deg_to_rad(-27.0), 0.0, 0.0)
 	if weapon_root != null:
 		weapon_root.visible = false
+	if _view_arm_left != null:
+		_view_arm_left.visible = false
+	if _view_arm_right != null:
+		_view_arm_right.visible = false
 	if crosshair != null:
 		crosshair.visible = false
 
@@ -1715,8 +1814,13 @@ func respawn() -> void:
 	health = MAX_HEALTH
 	if player_body != null and player_body.has_method("set_ragdoll"):
 		player_body.call("set_ragdoll", false)
+		player_body.visible = false
 	if weapon_root != null:
 		weapon_root.visible = true
+	if _view_arm_left != null:
+		_view_arm_left.visible = true
+	if _view_arm_right != null:
+		_view_arm_right.visible = true
 	for i in range(WEAPON_DEFS.size()):
 		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
 		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)

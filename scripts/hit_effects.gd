@@ -224,7 +224,7 @@ static func _surface_transform(pos: Vector3, normal: Vector3, offset: float) -> 
 
 static func _register_decal(decal: MeshInstance3D) -> void:
 	_decals.append(decal)
-	while _decals.size() > 90:
+	while _decals.size() > 60:
 		var old = _decals.pop_front()
 		if old != null and is_instance_valid(old):
 			old.queue_free()

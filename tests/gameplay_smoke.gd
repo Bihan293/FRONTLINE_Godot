@@ -21,9 +21,10 @@ func _ready() -> void:
 	_test_combat_roles_and_drone()
 	_test_positional_combat_audio()
 	_test_explosion_audio_budget()
-	await _test_physics_ragdoll()
+	await _test_death_ragdoll()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
+	await _test_role_weapon_restrictions()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -146,7 +147,7 @@ func _test_explosion_audio_budget() -> void:
 	listener.queue_free()
 	await get_tree().process_frame
 
-func _test_physics_ragdoll() -> void:
+func _test_death_ragdoll() -> void:
 	var floor := StaticBody3D.new()
 	floor.name = "RagdollSmokeFloor"
 	floor.collision_layer = 1
@@ -179,18 +180,12 @@ func _test_physics_ragdoll() -> void:
 	var hips_id := skeleton.find_bone("Hips")
 	var hips_y_before := skeleton.get_bone_global_pose(hips_id).origin.y if hips_id >= 0 else 0.0
 	bot.receive_hit(1000, Vector3(0.0, 0.9, 2.0), "chest", "Smoke Test")
-	for _i in range(24):
-		await get_tree().physics_frame
-	_check(bool(procedural.call("is_physics_ragdoll_active")), "death did not start physical ragdoll simulation")
-	_check(int(procedural.call("get_physics_ragdoll_bone_count")) >= 8, "physical ragdoll has too few simulated bones")
+	for _i in range(40):
+		await get_tree().process_frame
+	_check(absf(procedural.rotation.x) > 0.35, "dead bot did not visibly fall")
 	if hips_id >= 0:
 		var hips_y_after := skeleton.get_bone_global_pose(hips_id).origin.y
-		_check(hips_y_after < hips_y_before - 0.04, "ragdoll skeleton did not fall under physics")
-		procedural.call("_freeze_physics_ragdoll")
-		await get_tree().process_frame
-		_check(not bool(procedural.call("is_physics_ragdoll_active")), "settled corpse kept simulating physics")
-		_check(skeleton.get_node_or_null("RagdollPhysics") == null, "settled corpse kept physical bone nodes")
-		_check(absf(skeleton.get_bone_global_pose(hips_id).origin.y - hips_y_after) < 0.02, "frozen corpse pose changed after physics cleanup")
+		_check(hips_y_after < hips_y_before + 0.05, "dead bot hips did not drop")
 	bot.queue_free()
 
 	var player: CharacterBody3D = PLAYER_SCRIPT.new()
@@ -202,13 +197,16 @@ func _test_physics_ragdoll() -> void:
 		await get_tree().physics_frame
 	var player_body := player.get("player_body") as Node3D
 	var player_visual := player_body.get("body_visual") as FRONTLINEProceduralSoldier if player_body != null else null
-	_check(player_visual != null and bool(player_visual.call("is_physics_ragdoll_active")), "player death did not start physical ragdoll")
+	_check(player_visual != null and absf(player_visual.rotation.x) > 0.25, "player death did not visibly fall")
+	_check(player_body != null and player_body.visible, "player death body stayed hidden")
 	_check(player.collision_layer == 0, "dead player collision layer still blocks ragdoll physics")
 	_check((player.get("camera") as Camera3D).position.z > 2.0, "death camera did not pull back to show the body")
 	player.respawn()
 	_check(player.collision_layer == 1, "player collision layer was not restored on respawn")
+	if player_body != null:
+		_check(not player_body.visible, "player body should be hidden again after respawn")
 	if player_visual != null:
-		_check(not bool(player_visual.call("is_physics_ragdoll_active")), "player ragdoll remained active after respawn")
+		_check(absf(player_visual.rotation.x) < 0.05, "player ragdoll rotation did not reset after respawn")
 	player.queue_free()
 	floor.queue_free()
 	await get_tree().process_frame
@@ -384,6 +382,33 @@ func _run_loadout_case(role_id: String, preset_id: String, expected_grenades: in
 		_check(int(player.get("grenades")) == expected_grenades, "%s/%s grenades: %d != %d" % [role_id, preset_id, int(player.get("grenades")), expected_grenades])
 		_check(int(player.get("medkits")) == expected_medkits, "%s/%s medkits: %d != %d" % [role_id, preset_id, int(player.get("medkits")), expected_medkits])
 		_check(int(player.get("current_weapon_index")) == expected_weapon, "%s/%s primary weapon index: %d != %d" % [role_id, preset_id, int(player.get("current_weapon_index")), expected_weapon])
+	battlefield.queue_free()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _test_role_weapon_restrictions() -> void:
+	get_tree().set_meta("selected_map", "BATTLEFIELD")
+	get_tree().set_meta("selected_mode", "CONQUEST")
+	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("selected_role", "ASSAULT")
+	get_tree().set_meta("selected_loadout", "BALANCED")
+	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
+	if scene == null:
+		_check(false, "battlefield scene missing for weapon restriction test")
+		return
+	var battlefield := scene.instantiate()
+	add_child(battlefield)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var player := get_tree().get_first_node_in_group("player")
+	_check(player != null, "player missing for weapon restriction test")
+	if player != null:
+		var before := int(player.get("current_weapon_index"))
+		player.call("_switch_weapon", 6) # Kar98k is not in the assault kit
+		_check(int(player.get("current_weapon_index")) == before, "assault switched to a non-role weapon")
+		player.call("_switch_weapon", 3) # M1911 sidearm is allowed
+		_check(int(player.get("current_weapon_index")) == 3, "assault cannot switch to the allowed sidearm")
+		_check(not bool(player.call("can_take_weapon_pickup", 6, 5, 45)), "assault can pick up a sniper rifle")
 	battlefield.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame

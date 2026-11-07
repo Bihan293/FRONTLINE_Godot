@@ -45,13 +45,22 @@ var _ragdoll_physics_bones: Dictionary = {}
 var _ragdoll_physics_pending := false
 var _ragdoll_physics_active := false
 var _ragdoll_physics_time := 0.0
+var _ragdoll_physics_check := 0.0
+var _ragdoll_physics_hips_start := Vector3.ZERO
+var _ragdoll_pending_timer := 0.0
+var _ragdoll_physics_checked := false
 var _ragdoll_started_msec := 0
+var _base_rotation := Vector3.ZERO
 
 const RAGDOLL_PHYSICS_TIME := 2.6
 const RAGDOLL_WORLD_LAYER := 1
 const MAX_ACTIVE_RAGDOLLS := 8
+## На мобильном GL PhysicalBoneSimulator часто «оживает», но визуально
+## оставляет тело стоять. Для надёжного падения используем процедурный завал.
+const USE_PHYSICS_RAGDOLL := false
 
 func _ready() -> void:
+	_base_rotation = rotation
 	_skeleton = _find_skeleton()
 	if _skeleton == null:
 		push_error("FRONTLINE: Skeleton3D not found. Check skeleton_path on the character root.")
@@ -152,10 +161,16 @@ func set_ragdoll(enabled: bool, hit_dir: Vector3 = Vector3.ZERO, is_headshot: bo
 	_ragdoll_side = -1.0 if (get_instance_id() % 2 == 0) else 1.0
 	_ragdoll_settled = false
 	_ragdoll_physics_time = 0.0
-	_ragdoll_physics_active = false
-	_ragdoll_physics_pending = _build_physics_ragdoll()
-	if _ragdoll_physics_pending:
-		call_deferred("_start_physics_ragdoll")
+	_ragdoll_physics_check = 0.0
+	_ragdoll_pending_timer = 0.0
+	_ragdoll_physics_checked = false
+	if USE_PHYSICS_RAGDOLL:
+		_ragdoll_physics_pending = _build_physics_ragdoll()
+		if _ragdoll_physics_pending:
+			call_deferred("_start_physics_ragdoll")
+	else:
+		_ragdoll_physics_pending = false
+		_ragdoll_physics_active = false
 	set_process(true)
 
 func is_physics_ragdoll_active() -> bool:
@@ -287,7 +302,13 @@ func _start_physics_ragdoll() -> void:
 		_ragdoll_settled = false
 		return
 	_ragdoll_physics_time = 0.0
+	_ragdoll_physics_check = 0.0
+	_ragdoll_pending_timer = 0.0
+	_ragdoll_physics_checked = false
 	_register_physics_ragdoll()
+	var hips_start := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
+	if hips_start != null:
+		_ragdoll_physics_hips_start = hips_start.global_position
 	var impulse := _ragdoll_dir * (2.0 if _ragdoll_headshot else 1.35) + Vector3.UP * 0.45
 	var chest := _ragdoll_physics_bones.get("Chest") as PhysicalBone3D
 	if chest != null:
@@ -295,6 +316,22 @@ func _start_physics_ragdoll() -> void:
 	var hips := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
 	if hips != null:
 		hips.apply_central_impulse(impulse * 0.35)
+
+func _fallback_to_procedural_ragdoll() -> void:
+	if is_instance_valid(_ragdoll_physics):
+		_ragdoll_physics.physical_bones_stop_simulation()
+		_ragdoll_physics.queue_free()
+	_ragdoll_physics = null
+	_ragdoll_physics_bones.clear()
+	_ragdoll_physics_active = false
+	_ragdoll_physics_pending = false
+	_ragdoll_physics_checked = false
+	_ragdoll_timer = 0.0
+	_ragdoll_fall = 0.0
+	_ragdoll_settled = false
+	rotation = _base_rotation
+	position = Vector3.ZERO
+	set_process(true)
 
 func _freeze_physics_ragdoll() -> void:
 	if not _ragdoll_physics_active or _skeleton == null:
@@ -336,6 +373,8 @@ func _reset_ragdoll() -> void:
 	_ragdoll_settled = false
 	_ragdoll_timer = 0.0
 	_hip_drop = 0.0
+	rotation = _base_rotation
+	position = Vector3.ZERO
 	if _skeleton != null and is_instance_valid(_skeleton):
 		for bone_id in range(_skeleton.get_bone_count()):
 			_skeleton.set_bone_pose_position(bone_id, _skeleton.get_bone_rest(bone_id).origin)
@@ -479,9 +518,22 @@ func _process_ragdoll(delta: float) -> void:
 	if _ragdoll_settled:
 		return
 	if _ragdoll_physics_pending:
+		_ragdoll_pending_timer += delta
+		if _ragdoll_pending_timer > 0.3:
+			_fallback_to_procedural_ragdoll()
 		return
 	if _ragdoll_physics_active:
 		_ragdoll_physics_time += delta
+		_ragdoll_physics_check += delta
+		if not _ragdoll_physics_checked and _ragdoll_physics_check > 0.4:
+			_ragdoll_physics_checked = true
+			var hips_now := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
+			var dropped := hips_now != null and _ragdoll_physics_hips_start.y - hips_now.global_position.y > 0.15
+			if not dropped:
+				# PhysicalBoneSimulator не ожил (частая беда на мобильном GL).
+				# Переключаемся на надёжный процедурный завал.
+				_fallback_to_procedural_ragdoll()
+				return
 		if _ragdoll_physics_time >= RAGDOLL_PHYSICS_TIME:
 			_freeze_physics_ragdoll()
 		return
@@ -498,6 +550,12 @@ func _process_ragdoll(delta: float) -> void:
 	# Проверяем вектор попадания относительно бойца
 	var forward := -global_transform.basis.z
 	var hit_front := _ragdoll_dir.dot(forward) < 0.2
+
+	# Заваливаем всё тело целиком: кости дают позу, корень — падение.
+	var fall_angle := (-PI * 0.5 if hit_front else PI * 0.5) * t
+	rotation.x = lerpf(rotation.x, _base_rotation.x + fall_angle, clampf(delta * 5.0, 0.0, 1.0))
+	rotation.z = lerpf(rotation.z, _base_rotation.z + _ragdoll_side * 0.22 * t, clampf(delta * 5.0, 0.0, 1.0))
+	position.y = lerpf(position.y, 0.08, clampf(delta * 5.0, 0.0, 1.0))
 
 	if hit_front:
 		# Попадание спереди: корпус откидывается назад, колени подкашиваются вперёд
