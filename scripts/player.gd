@@ -276,6 +276,8 @@ func set_input_locked(locked: bool) -> void:
 		mobile_fire = false
 		if mobile_controls != null:
 			mobile_controls.visible = false
+		if death_screen != null:
+			death_screen.visible = false
 
 func _build_audio() -> void:
 	sfx_shot = _make_sfx()
@@ -680,12 +682,12 @@ func _apply_look() -> void:
 	)
 
 func _down_action() -> void:
-	if is_dead:
+	if is_dead or input_locked:
 		return
 	stance = mini(2, stance + 1)
 
 func _up_action() -> void:
-	if is_dead:
+	if is_dead or input_locked:
 		return
 	if stance > 0:
 		stance -= 1
@@ -697,7 +699,7 @@ func _shoot() -> void:
 		return
 	var weapon := _weapon_data()
 	if ammo <= 0:
-		if reserve_ammo > 0 and not is_reloading:
+		if reserve_ammo > 0:
 			_reload()
 		else:
 			_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
@@ -724,8 +726,9 @@ func _shoot() -> void:
 	var spread := float(weapon.spread) * (0.42 if aiming else 1.0)
 	if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
 		spread += 0.012
-	var damage_totals: Dictionary = {}
-	var hit_details: Dictionary = {}
+	var hit_actors: Array[Node] = []
+	var hit_damage: Array[int] = []
+	var hit_details: Array[Dictionary] = []
 	var pellet_count := int(weapon.pellets)
 	for pellet_index in range(pellet_count):
 		var dir := -camera.global_transform.basis.z
@@ -748,7 +751,7 @@ func _shoot() -> void:
 		var actor = body.get_meta("owner_actor", body.get_meta("owner_dummy", null))
 		if actor == null and body.has_method("receive_hit"):
 			actor = body
-		if actor == null or not actor.has_method("receive_hit"):
+		if actor == null or not (actor is Node) or not actor.has_method("receive_hit"):
 			continue
 		var target_team: String = ""
 		if "team_name" in actor:
@@ -760,16 +763,22 @@ func _shoot() -> void:
 		match region:
 			"head": damage = int(round(float(damage) * 2.2))
 			"leg": damage = int(round(float(damage) * 0.45))
-		damage_totals[actor] = int(damage_totals.get(actor, 0)) + damage
-		if not hit_details.has(actor):
-			hit_details[actor] = {"region": region, "position": hit.position, "direction": dir}
+		var actor_node := actor as Node
+		var actor_index := hit_actors.find(actor_node)
+		if actor_index < 0:
+			actor_index = hit_actors.size()
+			hit_actors.append(actor_node)
+			hit_damage.append(0)
+			hit_details.append({"region": region, "position": hit.position, "direction": dir})
+		hit_damage[actor_index] += damage
 
 	var confirmed_hit := false
-	for actor in damage_totals.keys():
-		var detail: Dictionary = hit_details[actor]
+	for i in range(hit_actors.size()):
+		var actor := hit_actors[i]
+		var detail: Dictionary = hit_details[i]
 		var region := str(detail.region)
 		var was_alive := not ("health" in actor) or float(actor.health) > 0.0
-		var damage_applied: int = actor.receive_hit(int(damage_totals[actor]), camera.global_position, region, "Player")
+		var damage_applied: int = actor.receive_hit(hit_damage[i], camera.global_position, region, "Player")
 		if damage_applied <= 0:
 			continue
 		confirmed_hit = true
@@ -789,7 +798,7 @@ func _shoot() -> void:
 
 func _reload() -> void:
 	var weapon := _weapon_data()
-	if is_reloading or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
+	if is_reloading or is_healing or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
 		return
 	is_reloading = true
 	reload_timer = float(weapon.reload)

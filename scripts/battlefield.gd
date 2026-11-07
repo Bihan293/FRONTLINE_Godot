@@ -405,6 +405,10 @@ func _end_match(winner: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if player != null and is_instance_valid(player) and player.has_method("set_input_locked"):
 		player.call("set_input_locked", true)
+	for bot in get_tree().get_nodes_in_group("bots"):
+		if is_instance_valid(bot):
+			bot.set_physics_process(false)
+			bot.set_process(false)
 
 	var is_player_winner: bool = (team_name == winner)
 

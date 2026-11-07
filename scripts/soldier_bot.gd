@@ -549,7 +549,8 @@ func _fire_single_shot() -> void:
 					"chest": dmg = 38
 					"leg": dmg = 18
 				actor.receive_hit(dmg, global_position, region, soldier_name)
-				HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
+				if not actor.is_in_group("explosive_barrels"):
+					HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
 		elif collider.is_in_group("player") or collider.name == "Player":
 			var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 			if player_team != team_name and collider.has_method("receive_hit"):
