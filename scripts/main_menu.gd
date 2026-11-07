@@ -1,6 +1,7 @@
 extends Control
 
 const MAP_PREVIEW_SCRIPT = preload("res://scripts/map_preview.gd")
+const BATTLEFIELD_PREVIEW_SCRIPT = preload("res://scripts/battlefield_map_preview.gd")
 const LAYOUT = preload("res://scripts/map_layout.gd")
 const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
 
@@ -132,16 +133,26 @@ func _show_maps() -> void:
 	preview.add_child(details)
 
 	var image = MAP_PREVIEW_SCRIPT.new()
+	image.name = "PolygonPreview"
 	image.custom_minimum_size = Vector2(560, 260)
 	image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	image.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	details.add_child(image)
+	var battlefield_image = BATTLEFIELD_PREVIEW_SCRIPT.new()
+	battlefield_image.name = "BattlefieldPreview"
+	battlefield_image.visible = false
+	battlefield_image.custom_minimum_size = Vector2(560, 260)
+	battlefield_image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	battlefield_image.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	details.add_child(battlefield_image)
 
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
 	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_teams, Vector2(0,58))
 
 	set_meta("map_details", details)
+	set_meta("polygon_preview", image)
+	set_meta("battlefield_preview", battlefield_image)
 	set_meta("map_placeholder", placeholder)
 	set_meta("title_lbl", title_lbl)
 	set_meta("desc_lbl", desc_lbl)
@@ -158,6 +169,8 @@ func _select_battlefield() -> void:
 	var desc_lbl: Label = get_meta("desc_lbl")
 	details.visible = true
 	placeholder.visible = false
+	(get_meta("polygon_preview") as Control).visible = false
+	(get_meta("battlefield_preview") as Control).visible = true
 	title_lbl.text = "BATTLEFIELD  /  TRENCHES & NO MAN'S LAND (240×180м)"
 	desc_lbl.text = "Масштабная боевая карта: сеть окопов, траншеи, артиллерийские воронки, разрушенные руины, укреплённые базы Железного Легиона и Красного Фронта. Бои умных ботов, захват секторов A, B, C, рэгдолл и реалистичная баллистика."
 
@@ -170,6 +183,8 @@ func _select_polygon() -> void:
 	var desc_lbl: Label = get_meta("desc_lbl")
 	details.visible = true
 	placeholder.visible = false
+	(get_meta("polygon_preview") as Control).visible = true
+	(get_meta("battlefield_preview") as Control).visible = false
 	title_lbl.text = "POLYGON  /  TRAINING RANGE"
 	desc_lbl.text = "Тренировочный полигон: дистанционные мишени, укрытия, движущиеся и стреляющие бойцы с процедурными анимациями и физическим падением при попадании."
 
@@ -230,10 +245,13 @@ func _show_deployment() -> void:
 	var map_overlay := Control.new()
 	map_holder.add_child(map_overlay)
 	map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var image = MAP_PREVIEW_SCRIPT.new()
+	var image = BATTLEFIELD_PREVIEW_SCRIPT.new() if selected_map == "BATTLEFIELD" else MAP_PREVIEW_SCRIPT.new()
+	if selected_map == "BATTLEFIELD":
+		image.team_name = selected_team
 	image.show_spawns = true
 	image.interactive = true
 	image.custom_minimum_size = Vector2(460, 300)
+	image.set_selected(0)
 	image.spawn_selected.connect(_select_spawn)
 	map_overlay.add_child(image)
 	image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

@@ -7,7 +7,6 @@ class_name FRONTLINECompassBar
 
 const COMPASS_WIDTH := 380.0
 const COMPASS_HEIGHT := 36.0
-const FOV_ANGLE := deg_to_rad(90.0)
 
 var player_camera: Camera3D
 var sectors: Array[Dictionary] = []
@@ -37,6 +36,17 @@ func _process(delta: float) -> void:
 		i -= 1
 	queue_redraw()
 
+func _horizontal_fov() -> float:
+	var viewport_size := player_camera.get_viewport().get_visible_rect().size
+	var aspect := viewport_size.x / maxf(viewport_size.y, 1.0)
+	var camera_fov := deg_to_rad(player_camera.fov)
+	if player_camera.keep_aspect == Camera3D.KEEP_WIDTH:
+		return camera_fov
+	return 2.0 * atan(tan(camera_fov * 0.5) * aspect)
+
+func _angle_to_x(angle_diff: float, center: float, half_width: float, fov_angle: float) -> float:
+	return center + (tan(angle_diff) / tan(fov_angle * 0.5)) * half_width
+
 func _draw() -> void:
 	if player_camera == null or not is_instance_valid(player_camera):
 		return
@@ -52,6 +62,7 @@ func _draw() -> void:
 	draw_line(Vector2(center, 0), Vector2(center, 12), Color(1.0, 0.85, 0.25, 0.9), 2.0)
 
 	var cam_yaw: float = -player_camera.global_rotation.y
+	var fov_angle := _horizontal_fov()
 	var font := ThemeDB.fallback_font
 
 	# Деления сторон света
@@ -65,8 +76,8 @@ func _draw() -> void:
 		var deg: float = d[1]
 		var rad: float = deg_to_rad(deg)
 		var diff := fposmod(rad - cam_yaw + PI, TAU) - PI
-		if absf(diff) < FOV_ANGLE * 0.5:
-			var x := center + (diff / (FOV_ANGLE * 0.5)) * half_w
+		if absf(diff) < fov_angle * 0.5:
+			var x := _angle_to_x(diff, center, half_w, fov_angle)
 			draw_line(Vector2(x, 4), Vector2(x, 14), Color(0.8, 0.85, 0.9, 0.7), 1.0)
 			var sz := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
 			draw_string(font, Vector2(x - sz.x * 0.5, 28), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.9))
@@ -79,8 +90,8 @@ func _draw() -> void:
 		var angle_to_sec := atan2(-to_sec.x, -to_sec.z)
 		var diff := fposmod(angle_to_sec - cam_yaw + PI, TAU) - PI
 
-		if absf(diff) < FOV_ANGLE * 0.5:
-			var x := center + (diff / (FOV_ANGLE * 0.5)) * half_w
+		if absf(diff) < fov_angle * 0.5:
+			var x := _angle_to_x(diff, center, half_w, fov_angle)
 			var label_text := "[%s] %dm" % [sec.name, dist]
 			var owner: String = str(sec.get("owner", "NEUTRAL"))
 			var col := Color(0.85, 0.85, 0.85)
@@ -96,7 +107,7 @@ func _draw() -> void:
 		var to_ping: Vector3 = ping.pos - player_camera.global_position
 		var angle_ping := atan2(-to_ping.x, -to_ping.z)
 		var diff := fposmod(angle_ping - cam_yaw + PI, TAU) - PI
-		if absf(diff) < FOV_ANGLE * 0.5:
-			var x := center + (diff / (FOV_ANGLE * 0.5)) * half_w
+		if absf(diff) < fov_angle * 0.5:
+			var x := _angle_to_x(diff, center, half_w, fov_angle)
 			var alpha: float = clampf(ping.time / 1.5, 0.0, 1.0)
 			draw_circle(Vector2(x, COMPASS_HEIGHT - 4), 4.5, Color(1.0, 0.15, 0.1, alpha))
