@@ -7,6 +7,8 @@ extends Node
 
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
+const SOLDIER_BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
+const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 
 var _failures: Array[String] = []
 
@@ -17,6 +19,7 @@ func _ready() -> void:
 	_test_minimap_alignment()
 	_test_combat_roles_and_drone()
 	_test_positional_combat_audio()
+	await _test_physics_ragdoll()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	_report()
@@ -116,6 +119,73 @@ func _test_positional_combat_audio() -> void:
 		var drone_listener = dummy_d.get_node_or_null("DroneCamera/DroneListener")
 		_check(drone_listener != null and drone_listener is AudioListener3D, "Drone missing DroneListener under DroneCamera")
 		dummy_d.queue_free()
+
+func _test_physics_ragdoll() -> void:
+	var floor := StaticBody3D.new()
+	floor.name = "RagdollSmokeFloor"
+	floor.collision_layer = 1
+	floor.collision_mask = 0
+	var floor_shape := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(12.0, 0.2, 12.0)
+	floor_shape.shape = floor_box
+	floor_shape.position.y = -0.1
+	floor.add_child(floor_shape)
+	add_child(floor)
+
+	var bot: FRONTLINESoldierBot = SOLDIER_BOT_SCRIPT.new()
+	bot.bot_weapon_index = 0
+	bot.position = Vector3.ZERO
+	add_child(bot)
+	await get_tree().process_frame
+	var procedural := bot.get("_proc") as FRONTLINEProceduralSoldier
+	_check(procedural != null, "ragdoll smoke bot has no procedural soldier rig")
+	if procedural == null:
+		bot.queue_free()
+		floor.queue_free()
+		return
+	var skeleton := procedural.get("_skeleton") as Skeleton3D
+	_check(skeleton != null, "ragdoll smoke bot has no Skeleton3D")
+	if skeleton == null:
+		bot.queue_free()
+		floor.queue_free()
+		return
+	var hips_id := skeleton.find_bone("Hips")
+	var hips_y_before := skeleton.get_bone_global_pose(hips_id).origin.y if hips_id >= 0 else 0.0
+	bot.receive_hit(1000, Vector3(0.0, 0.9, 2.0), "chest", "Smoke Test")
+	for _i in range(24):
+		await get_tree().physics_frame
+	_check(bool(procedural.call("is_physics_ragdoll_active")), "death did not start physical ragdoll simulation")
+	_check(int(procedural.call("get_physics_ragdoll_bone_count")) >= 8, "physical ragdoll has too few simulated bones")
+	if hips_id >= 0:
+		var hips_y_after := skeleton.get_bone_global_pose(hips_id).origin.y
+		_check(hips_y_after < hips_y_before - 0.04, "ragdoll skeleton did not fall under physics")
+		procedural.call("_freeze_physics_ragdoll")
+		await get_tree().process_frame
+		_check(not bool(procedural.call("is_physics_ragdoll_active")), "settled corpse kept simulating physics")
+		_check(skeleton.get_node_or_null("RagdollPhysics") == null, "settled corpse kept physical bone nodes")
+		_check(absf(skeleton.get_bone_global_pose(hips_id).origin.y - hips_y_after) < 0.02, "frozen corpse pose changed after physics cleanup")
+	bot.queue_free()
+
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	player.position = Vector3(1.5, 0.0, 0.0)
+	add_child(player)
+	await get_tree().process_frame
+	player.receive_hit(1000, player.global_position + Vector3(0.0, 0.9, 2.0), "chest", "Smoke Test")
+	for _i in range(24):
+		await get_tree().physics_frame
+	var player_body := player.get("player_body") as Node3D
+	var player_visual := player_body.get("body_visual") as FRONTLINEProceduralSoldier if player_body != null else null
+	_check(player_visual != null and bool(player_visual.call("is_physics_ragdoll_active")), "player death did not start physical ragdoll")
+	_check(player.collision_layer == 0, "dead player collision layer still blocks ragdoll physics")
+	_check((player.get("camera") as Camera3D).position.z > 2.0, "death camera did not pull back to show the body")
+	player.respawn()
+	_check(player.collision_layer == 1, "player collision layer was not restored on respawn")
+	if player_visual != null:
+		_check(not bool(player_visual.call("is_physics_ragdoll_active")), "player ragdoll remained active after respawn")
+	player.queue_free()
+	floor.queue_free()
+	await get_tree().process_frame
 
 func _test_weapon_definitions() -> void:
 	var player_script: Script = load("res://scripts/player.gd")

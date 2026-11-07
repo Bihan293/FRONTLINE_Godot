@@ -40,6 +40,16 @@ var _ragdoll_dir := Vector3.ZERO
 var _ragdoll_headshot := false
 var _ragdoll_side := 1.0
 var _ragdoll_settled := false
+var _ragdoll_physics: PhysicalBoneSimulator3D
+var _ragdoll_physics_bones: Dictionary = {}
+var _ragdoll_physics_pending := false
+var _ragdoll_physics_active := false
+var _ragdoll_physics_time := 0.0
+var _ragdoll_started_msec := 0
+
+const RAGDOLL_PHYSICS_TIME := 2.6
+const RAGDOLL_WORLD_LAYER := 1
+const MAX_ACTIVE_RAGDOLLS := 8
 
 func _ready() -> void:
 	_skeleton = _find_skeleton()
@@ -129,17 +139,229 @@ func set_hide_head(enabled: bool) -> void:
 	_hide_head = enabled
 	_apply_hidden_bones()
 
-## Включает физико-подобный рэгдолл при смерти.
+## Включает физический рэгдолл при смерти.
 func set_ragdoll(enabled: bool, hit_dir: Vector3 = Vector3.ZERO, is_headshot: bool = false) -> void:
+	if not enabled:
+		_reset_ragdoll()
+		return
 	_is_ragdoll = enabled
-	if enabled:
-		_ragdoll_timer = 0.0
-		_ragdoll_fall = 0.0
-		_ragdoll_dir = hit_dir.normalized() if hit_dir.length_squared() > 0.01 else Vector3.FORWARD
-		_ragdoll_headshot = is_headshot
-		_ragdoll_side = -1.0 if (get_instance_id() % 2 == 0) else 1.0
+	_ragdoll_timer = 0.0
+	_ragdoll_fall = 0.0
+	_ragdoll_dir = hit_dir.normalized() if hit_dir.length_squared() > 0.01 else Vector3.FORWARD
+	_ragdoll_headshot = is_headshot
+	_ragdoll_side = -1.0 if (get_instance_id() % 2 == 0) else 1.0
+	_ragdoll_settled = false
+	_ragdoll_physics_time = 0.0
+	_ragdoll_physics_active = false
+	_ragdoll_physics_pending = _build_physics_ragdoll()
+	if _ragdoll_physics_pending:
+		call_deferred("_start_physics_ragdoll")
+	set_process(true)
+
+func is_physics_ragdoll_active() -> bool:
+	return _ragdoll_physics_active
+
+func get_physics_ragdoll_bone_count() -> int:
+	return _ragdoll_physics_bones.size()
+
+func _build_physics_ragdoll() -> bool:
+	if _skeleton == null or not is_instance_valid(_skeleton):
+		return false
+	if _ragdoll_physics != null and is_instance_valid(_ragdoll_physics):
+		return not _ragdoll_physics_bones.is_empty()
+
+	_ragdoll_physics = PhysicalBoneSimulator3D.new()
+	_ragdoll_physics.name = "RagdollPhysics"
+	_ragdoll_physics.active = false
+	_skeleton.add_child(_ragdoll_physics)
+	_ragdoll_physics_bones.clear()
+
+	for child_id in range(_skeleton.get_bone_count()):
+		var parent_id := _skeleton.get_bone_parent(child_id)
+		if parent_id < 0:
+			continue
+		var bone_name := _skeleton.get_bone_name(parent_id)
+		# The synthetic root has no volume and would add a useless body to each corpse.
+		if bone_name == "Root" or _ragdoll_physics_bones.has(bone_name):
+			continue
+
+		var child_rest := _skeleton.get_bone_rest(child_id)
+		var segment_length := child_rest.origin.length()
+		var half_height := maxf(segment_length * 0.5, 0.055)
+		var radius := _ragdoll_radius(bone_name, segment_length)
+		var physical_bone := PhysicalBone3D.new()
+		physical_bone.name = "Physical Bone " + bone_name
+		physical_bone.mass = _ragdoll_mass(bone_name)
+		physical_bone.friction = 0.85
+		physical_bone.bounce = 0.0
+		physical_bone.linear_damp = 0.5
+		physical_bone.angular_damp = 2.0
+		physical_bone.can_sleep = true
+		physical_bone.collision_layer = 1 << 5
+		physical_bone.collision_mask = RAGDOLL_WORLD_LAYER
+
+		var collision := CollisionShape3D.new()
+		collision.name = "CollisionShape3D"
+		if segment_length <= 0.03:
+			var joint_sphere := SphereShape3D.new()
+			joint_sphere.radius = radius
+			collision.shape = joint_sphere
+		else:
+			var capsule := CapsuleShape3D.new()
+			capsule.radius = radius
+			capsule.height = maxf(segment_length, radius * 2.2)
+			collision.shape = capsule
+			collision.transform.basis = Basis(Vector3.RIGHT, Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0, 0.0))
+		physical_bone.add_child(collision)
+
+		var up := Vector3.UP
+		if absf(up.dot(child_rest.origin.normalized())) > 0.98:
+			up = Vector3.FORWARD
+		var body_basis := Basis.IDENTITY
+		var joint_offset := Vector3.ZERO
+		if segment_length > 0.03:
+			body_basis = Basis.looking_at(child_rest.origin, up)
+			physical_bone.body_offset = Transform3D(body_basis, body_basis * Vector3(0.0, 0.0, -half_height))
+			joint_offset = Vector3(0.0, 0.0, half_height)
+		physical_bone.joint_offset = Transform3D(Basis.IDENTITY, joint_offset)
+
+		_ragdoll_physics.add_child(physical_bone)
+		physical_bone.bone_name = bone_name
+		var grandparent_id := _skeleton.get_bone_parent(parent_id)
+		if grandparent_id >= 0 and _skeleton.get_bone_name(grandparent_id) != "Root":
+			physical_bone.joint_type = PhysicalBone3D.JOINT_TYPE_PIN
+		_ragdoll_physics_bones[bone_name] = physical_bone
+
+	if _ragdoll_physics_bones.size() >= 8:
+		return true
+	_ragdoll_physics.queue_free()
+	_ragdoll_physics = null
+	_ragdoll_physics_bones.clear()
+	return false
+
+func _ragdoll_radius(bone_name: String, segment_length: float) -> float:
+	if bone_name in ["Hips", "Spine", "Chest"]:
+		return 0.13 if bone_name != "Hips" else 0.16
+	if bone_name.contains("UpperLeg"):
+		return 0.085
+	if bone_name.contains("LowerLeg"):
+		return 0.065
+	if bone_name.contains("UpperArm"):
+		return 0.06
+	if bone_name.contains("LowerArm"):
+		return 0.05
+	if bone_name.contains("Shoulder"):
+		return 0.075
+	return clampf(segment_length * 0.20, 0.045, 0.075)
+
+func _ragdoll_mass(bone_name: String) -> float:
+	if bone_name == "Hips":
+		return 4.0
+	if bone_name in ["Spine", "Chest"]:
+		return 2.4
+	if bone_name.contains("UpperLeg"):
+		return 1.5
+	if bone_name.contains("LowerLeg"):
+		return 0.9
+	return 0.65
+
+func _start_physics_ragdoll() -> void:
+	_ragdoll_physics_pending = false
+	if not _is_ragdoll or _skeleton == null or not is_instance_valid(_ragdoll_physics):
+		return
+	_skeleton.force_update_all_bone_transforms()
+	_ragdoll_physics.physical_bones_start_simulation()
+	await get_tree().physics_frame
+	if not _is_ragdoll or not is_instance_valid(_ragdoll_physics):
+		return
+	_ragdoll_physics_active = false
+	for value in _ragdoll_physics_bones.values():
+		var physical_bone := value as PhysicalBone3D
+		if physical_bone != null and physical_bone.is_simulating_physics():
+			_ragdoll_physics_active = true
+			break
+	if not _ragdoll_physics_active:
+		_ragdoll_physics.queue_free()
+		_ragdoll_physics = null
+		_ragdoll_physics_bones.clear()
 		_ragdoll_settled = false
-		set_process(true)
+		return
+	_ragdoll_physics_time = 0.0
+	_register_physics_ragdoll()
+	var impulse := _ragdoll_dir * (2.0 if _ragdoll_headshot else 1.35) + Vector3.UP * 0.45
+	var chest := _ragdoll_physics_bones.get("Chest") as PhysicalBone3D
+	if chest != null:
+		chest.apply_central_impulse(impulse)
+	var hips := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
+	if hips != null:
+		hips.apply_central_impulse(impulse * 0.35)
+
+func _freeze_physics_ragdoll() -> void:
+	if not _ragdoll_physics_active or _skeleton == null:
+		return
+	remove_from_group("active_physics_ragdolls")
+	_skeleton.force_update_all_bone_transforms()
+	var positions: Array[Vector3] = []
+	var rotations: Array[Quaternion] = []
+	var scales: Array[Vector3] = []
+	for bone_id in range(_skeleton.get_bone_count()):
+		positions.append(_skeleton.get_bone_pose_position(bone_id))
+		rotations.append(_skeleton.get_bone_pose_rotation(bone_id))
+		scales.append(_skeleton.get_bone_pose_scale(bone_id))
+	if is_instance_valid(_ragdoll_physics):
+		_ragdoll_physics.physical_bones_stop_simulation()
+		_ragdoll_physics.active = false
+		_ragdoll_physics.queue_free()
+	_ragdoll_physics = null
+	_ragdoll_physics_bones.clear()
+	_ragdoll_physics_active = false
+	for bone_id in range(positions.size()):
+		_skeleton.set_bone_pose_position(bone_id, positions[bone_id])
+		_skeleton.set_bone_pose_rotation(bone_id, rotations[bone_id])
+		_skeleton.set_bone_pose_scale(bone_id, scales[bone_id])
+	_skeleton.force_update_all_bone_transforms()
+	_ragdoll_settled = true
+	set_process(false)
+
+func _reset_ragdoll() -> void:
+	_is_ragdoll = false
+	_ragdoll_physics_pending = false
+	remove_from_group("active_physics_ragdolls")
+	if _ragdoll_physics != null and is_instance_valid(_ragdoll_physics):
+		_ragdoll_physics.physical_bones_stop_simulation()
+		_ragdoll_physics.queue_free()
+	_ragdoll_physics = null
+	_ragdoll_physics_bones.clear()
+	_ragdoll_physics_active = false
+	_ragdoll_settled = false
+	_ragdoll_timer = 0.0
+	_hip_drop = 0.0
+	if _skeleton != null and is_instance_valid(_skeleton):
+		for bone_id in range(_skeleton.get_bone_count()):
+			_skeleton.set_bone_pose_position(bone_id, _skeleton.get_bone_rest(bone_id).origin)
+			_skeleton.set_bone_pose_rotation(bone_id, Quaternion.IDENTITY)
+			_skeleton.set_bone_pose_scale(bone_id, Vector3.ONE)
+		_pose.clear()
+		for bone_name in _bone_ids:
+			_pose[bone_name] = Quaternion.IDENTITY
+		_apply_hidden_bones()
+	set_process(true)
+
+func _register_physics_ragdoll() -> void:
+	_ragdoll_started_msec = Time.get_ticks_msec()
+	add_to_group("active_physics_ragdolls")
+	var active := get_tree().get_nodes_in_group("active_physics_ragdolls")
+	if active.size() <= MAX_ACTIVE_RAGDOLLS:
+		return
+	var oldest: FRONTLINEProceduralSoldier
+	for candidate in active:
+		var procedural := candidate as FRONTLINEProceduralSoldier
+		if procedural == null or procedural == self or not procedural._ragdoll_physics_active:
+			continue
+		if oldest == null or procedural._ragdoll_started_msec < oldest._ragdoll_started_msec:
+			oldest = procedural
+	if oldest != null:
+		oldest._freeze_physics_ragdoll()
 
 func _process(delta: float) -> void:
 	if _skeleton == null:
@@ -255,6 +477,13 @@ func _process(delta: float) -> void:
 ## Процедурная физика рэгдолла при гибели в стиле Dummy War.
 func _process_ragdoll(delta: float) -> void:
 	if _ragdoll_settled:
+		return
+	if _ragdoll_physics_pending:
+		return
+	if _ragdoll_physics_active:
+		_ragdoll_physics_time += delta
+		if _ragdoll_physics_time >= RAGDOLL_PHYSICS_TIME:
+			_freeze_physics_ragdoll()
 		return
 	_ragdoll_timer += delta
 	_ragdoll_fall = minf(1.0, _ragdoll_fall + delta * 3.2)

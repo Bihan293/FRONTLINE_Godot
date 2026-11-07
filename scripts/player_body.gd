@@ -27,6 +27,7 @@ var wrist_right: Node3D
 var stance := 0
 var look_down := 0.0
 var _red := false
+var _death_ragdoll_active := false
 var _cuffs: Array = []
 var _cuff_mat: StandardMaterial3D
 
@@ -130,8 +131,25 @@ func set_stance(value: int) -> void:
 func set_look_down(value: float) -> void:
     look_down = clampf(value, 0.0, 1.0)
 
+func set_ragdoll(enabled: bool, hit_dir: Vector3 = Vector3.ZERO, is_headshot: bool = false) -> void:
+    _death_ragdoll_active = enabled
+    if body_visual == null or not is_instance_valid(body_visual):
+        return
+    body_visual.set_hide_head(not enabled)
+    if enabled and skeleton != null:
+        for bone_name in ["LeftShoulder", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand"]:
+            var bone_id := skeleton.find_bone(bone_name)
+            if bone_id >= 0:
+                skeleton.set_bone_pose_rotation(bone_id, Quaternion.IDENTITY)
+                skeleton.set_bone_pose_scale(bone_id, Vector3.ONE)
+    body_visual.set_ragdoll(enabled, hit_dir, is_headshot)
+
 func _process(_delta: float) -> void:
     if body_visual == null or skeleton == null:
+        return
+    if _death_ragdoll_active:
+        if torso_mesh != null:
+            torso_mesh.visible = true
         return
     if stance == 2:
         body_visual.rotation.x = PI * 0.5

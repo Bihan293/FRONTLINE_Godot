@@ -176,6 +176,7 @@ func _ready() -> void:
 	_apply_look()
 
 func _build_player() -> void:
+	collision_layer = WORLD_LAYER_MASK
 	collision_mask = WORLD_LAYER_MASK | SOLDIER_LAYER_MASK
 	player_collision = CollisionShape3D.new()
 	player_capsule = CapsuleShape3D.new()
@@ -1663,9 +1664,9 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 	_refresh_health()
 
 	if health <= 0.0:
-		_die(attacker_name)
+		_die(attacker_name, attacker_pos, region)
 
-func _die(killer_name: String) -> void:
+func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: String = "chest") -> void:
 	if active_drone != null and is_instance_valid(active_drone):
 		active_drone.return_to_operator()
 	_cancel_healing()
@@ -1677,6 +1678,10 @@ func _die(killer_name: String) -> void:
 	is_dead = true
 	health = 0.0
 	velocity = Vector3.ZERO
+	collision_layer = 0
+	if player_body != null and player_body.has_method("set_ragdoll"):
+		var hit_dir := global_position - attacker_pos
+		player_body.call("set_ragdoll", true, hit_dir, region == "head")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var world := get_parent()
 	if world != null and world.has_method("record_player_death"):
@@ -1686,8 +1691,13 @@ func _die(killer_name: String) -> void:
 	if mobile_controls != null:
 		mobile_controls.set_interact_visible(false)
 
-	camera.position.y = 0.28
-	camera.rotation.z = deg_to_rad(35.0)
+	# Pull back from the eyes so the death is visible as a body, not only a red overlay.
+	camera.position = Vector3(0.0, 2.15, 3.1)
+	camera.rotation = Vector3(deg_to_rad(-27.0), 0.0, 0.0)
+	if weapon_root != null:
+		weapon_root.visible = false
+	if crosshair != null:
+		crosshair.visible = false
 
 	if death_info_label != null:
 		death_info_label.text = "Вас уничтожил: " + killer_name
@@ -1701,7 +1711,12 @@ func respawn() -> void:
 		camera.current = true
 
 	is_dead = false
+	collision_layer = WORLD_LAYER_MASK
 	health = MAX_HEALTH
+	if player_body != null and player_body.has_method("set_ragdoll"):
+		player_body.call("set_ragdoll", false)
+	if weapon_root != null:
+		weapon_root.visible = true
 	for i in range(WEAPON_DEFS.size()):
 		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
 		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)
