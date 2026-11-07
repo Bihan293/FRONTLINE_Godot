@@ -1,8 +1,8 @@
 # TASK-0008 — Combat roles and tethered radio drone
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** Codex (role systems and gameplay) / Antigravity (models, animations, visual review) / OpenCode (mobile controls, performance and regression tests)
+- **Status:** in progress
+- **Owner:** OpenCode (single implementation owner; use real, isolated agents for gameplay, art and regression QA)
 - **Dependencies:** TASK-0005 eight-weapon arsenal; TASK-0006 bodycam and weapon handling; TASK-0007 ballistic projectiles
 - **Related:** `TASKS/TASK-0001-android-qa.md`
 

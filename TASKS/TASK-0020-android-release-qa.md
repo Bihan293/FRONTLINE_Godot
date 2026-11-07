@@ -2,7 +2,7 @@
 
 - **Priority:** P0
 - **Status:** ready for device test
-- **Owner:** Antigravity / QA
+- **Owner:** OpenCode (QA coordinator; Android result requires an actual device run)
 - **Dependencies:** Latest `main` APK
 - **Related:** `TASK-0001`, `RELEASE_GATE.md`
 

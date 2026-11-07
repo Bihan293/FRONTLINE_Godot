@@ -2,7 +2,7 @@
 
 - **Priority:** P2
 - **Status:** planned
-- **Owner:** Antigravity / OpenCode
+- **Owner:** OpenCode
 - **Dependencies:** Stable maps and lighting
 - **Related:** `ROADMAP.md` → Карты, разрушение
 

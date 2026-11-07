@@ -2,7 +2,7 @@
 
 - **Priority:** P1
 - **Status:** in progress
-- **Owner:** Codex (projectile and reticle implementation) / Antigravity (visual review and Android retest)
+- **Owner:** OpenCode (single implementation owner; use real, isolated agents for projectiles, reticle and QA)
 - **Dependencies:** Current eight-weapon arsenal and TASK-0002 weapon drops
 - **Related:** `TASKS/TASK-0006-bodycam-realism-optimization.md`
 

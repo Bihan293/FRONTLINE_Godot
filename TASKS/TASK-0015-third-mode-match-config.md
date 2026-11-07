@@ -2,7 +2,7 @@
 
 - **Priority:** P1
 - **Status:** planned
-- **Owner:** Antigravity / Codex
+- **Owner:** OpenCode
 - **Dependencies:** Existing Conquest/TDM
 - **Related:** `ROADMAP.md` → Режимы игры
 

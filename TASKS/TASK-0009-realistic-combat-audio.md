@@ -1,8 +1,8 @@
 # TASK-0009 — Realistic positional combat audio
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** Codex (audio behavior and gameplay integration) / Antigravity (sound direction and asset review) / OpenCode (implementation support, profiling and regression checks)
+- **Status:** in progress
+- **Owner:** OpenCode (single implementation owner; use real, isolated agents for sound design, QA and profiling)
 - **Dependencies:** TASK-0006 bodycam and Android optimization; TASK-0007 ballistic bullets and combat feedback
 - **Related:** `TASKS/TASK-0001-android-qa.md`, `TASKS/TASK-0008-combat-roles-radio-drone.md`
 
@@ -30,3 +30,7 @@ Make combat sound place the player in a believable space. Players should be able
 - Attach short comparison recordings or video with audio for indoor/outdoor, occluded/unoccluded, near/distant gunfire, and grenade tests; include device, map, and audio settings for Android results.
 
 Keep this task in progress until desktop and Android audio comparisons are captured and reviewed. A static code review alone does not satisfy the acoustic acceptance criteria.
+
+## Progress
+
+Transient combat audio now uses a shared 16-voice limit: out-of-range explosions are skipped and nearby blasts can displace farther transient sounds. Merged in PR #11 as `134978e`; smoke tests and Android export passed in CI run `42398720261`. The acoustic comparison and real-device listening criteria remain open.

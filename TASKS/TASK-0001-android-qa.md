@@ -2,7 +2,7 @@
 
 - **Priority:** P0
 - **Status:** ready for device test
-- **Owner:** Antigravity / QA agents
+- **Owner:** OpenCode (QA coordinator; Android result requires an actual device run)
 - **Dependencies:** Latest main build contains the current local main commits
 - **Related:** `BUGS/OPEN.md`
 

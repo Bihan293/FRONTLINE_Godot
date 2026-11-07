@@ -2,7 +2,7 @@
 
 - **Priority:** P1
 - **Status:** in progress
-- **Owner:** Antigravity (visual direction) / Codex (camera and combat feel) / OpenCode (profiling and settings)
+- **Owner:** OpenCode (single implementation owner; use real, isolated agents for art, QA and profiling)
 - **Dependencies:** TASK-0001 device QA baseline; TASK-0004 settings and pause; TASK-0005 eight-weapon arsenal
 - **Related:** `ROADMAP.md` → Combat, presentation, and performance
 

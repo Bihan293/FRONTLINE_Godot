@@ -2,7 +2,7 @@
 
 - **Priority:** P3
 - **Status:** blocked until single-player v1.0
-- **Owner:** Codex / Antigravity
+- **Owner:** OpenCode (after single-player v1.0)
 - **Dependencies:** All P0/P1 single-player work, stable netcode design
 - **Related:** `ROADMAP.md` → Сеть
 

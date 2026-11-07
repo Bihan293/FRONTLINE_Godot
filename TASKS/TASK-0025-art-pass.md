@@ -2,7 +2,7 @@
 
 - **Priority:** P1
 - **Status:** planned
-- **Owner:** Antigravity / OpenCode
+- **Owner:** OpenCode
 - **Dependencies:** Stable gameplay
 - **Related:** `ROADMAP.md` → Графика
 
