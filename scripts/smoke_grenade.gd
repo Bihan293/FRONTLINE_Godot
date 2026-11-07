@@ -144,11 +144,11 @@ func deploy_smoke() -> void:
 	smoke_deployed.emit(deploy_pos)
 
 	# Завершение дымовой завесы через 15 секунд
-	get_tree().create_timer(SMOKE_DURATION).timeout.connect(func():
+	get_tree().create_timer(SMOKE_DURATION, false).timeout.connect(func():
 		active_clouds.erase(cloud_record)
 		if is_instance_valid(p):
 			p.emitting = false
-			get_tree().create_timer(2.5).timeout.connect(func():
+			get_tree().create_timer(2.5, false).timeout.connect(func():
 				if is_instance_valid(p):
 					p.queue_free()
 			)

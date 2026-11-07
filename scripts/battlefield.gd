@@ -11,6 +11,7 @@ const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
+const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 
 const TDM_TARGET_KILLS := 50
 
@@ -35,6 +36,7 @@ var sector_indicators: Dictionary = {}
 var sector_data: Array = []
 var compass: FRONTLINECompassBar
 var ambience: FRONTLINEAmbience
+var minimap: FRONTLINEMinimap
 var victory_panel: PanelContainer
 var is_game_over := false
 var _ticket_bleed_timer := 4.0
@@ -229,15 +231,14 @@ func _spawn_initial_squads() -> void:
 	var iron_spawns: Array = _layout().spawns_iron()
 	for i in range(7):
 		var sp: Vector3 = iron_spawns[i % iron_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
-		var name := GERMAN_NAMES[i % GERMAN_NAMES.size()]
-		_create_bot(sp, "IRON LEGION", name)
+		var name_str: String = GERMAN_NAMES[i % GERMAN_NAMES.size()]
+		_create_bot(sp, "IRON LEGION", name_str)
 
 	var red_spawns: Array = _layout().spawns_red()
 	for i in range(7):
 		var sp: Vector3 = red_spawns[i % red_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
-		var name := SOVIET_NAMES[i % SOVIET_NAMES.size()]
-		_create_bot(sp, "RED FRONT", name)
-		_create_bot(sp, "RED FRONT", name)
+		var name_str: String = SOVIET_NAMES[i % SOVIET_NAMES.size()]
+		_create_bot(sp, "RED FRONT", name_str)
 
 func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldierBot:
 	var bot := CharacterBody3D.new()
@@ -286,7 +287,7 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 
 	# Запуск подкрепления через 7 секунд
 	var v_team := victim.team_name
-	get_tree().create_timer(7.0).timeout.connect(func():
+	get_tree().create_timer(7.0, false).timeout.connect(func():
 		if is_instance_valid(self):
 			_spawn_reinforcement(v_team)
 	)
@@ -360,16 +361,26 @@ func _build_hud() -> void:
 	if player != null and player.camera != null:
 		compass.setup(player.camera, sector_data)
 
-	# Кнопка меню
+	# Круговая мини-карта под здоровьем, слева
+	minimap = MINIMAP_SCRIPT.new()
+	minimap.offset_left = 24.0
+	minimap.offset_top = 124.0
+	minimap.offset_right = 212.0
+	minimap.offset_bottom = 312.0
+	hud.add_child(minimap)
+	minimap.setup(player, _active_bots, sector_data, _layout().spawns_iron(), _layout().spawns_red())
+
+	# Кнопка паузы
 	var menu_btn := Button.new()
-	menu_btn.text = "МЕНЮ"
+	menu_btn.text = "ПАУЗА"
 	menu_btn.offset_left = 28
 	menu_btn.offset_top = 70
-	menu_btn.offset_right = 115
+	menu_btn.offset_right = 126
 	menu_btn.offset_bottom = 112
-	menu_btn.add_theme_font_size_override("font_size", 16)
+	menu_btn.add_theme_font_size_override("font_size", 15)
 	menu_btn.pressed.connect(func():
-		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+		if player != null and is_instance_valid(player) and player.has_method("open_pause_menu"):
+			player.call("open_pause_menu")
 	)
 	hud.add_child(menu_btn)
 
@@ -397,7 +408,7 @@ func _add_killfeed_entry(killer: String, victim: String, victim_team: String) ->
 	killfeed_container.add_child(entry)
 
 	# Удаление записи через 4.5 секунды
-	get_tree().create_timer(4.5).timeout.connect(func():
+	get_tree().create_timer(4.5, false).timeout.connect(func():
 		if is_instance_valid(entry):
 			entry.queue_free()
 	)

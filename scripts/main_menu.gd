@@ -366,38 +366,62 @@ func _deploy() -> void:
 
 func _show_settings() -> void:
 	var root := _make_shell("НАСТРОЙКИ")
-	_label(root, "ГРАФИКА", 20, Color(0.85, 0.88, 0.84))
-	var quality_button := _button(root, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, Vector2(0, 56))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 10)
+	scroll.add_child(content)
+
+	_label(content, "УПРАВЛЕНИЕ", 20, Color(0.85, 0.88, 0.84))
+	_settings_slider(content, "ЧУВСТВИТЕЛЬНОСТЬ", GameSettings.look_sensitivity, GameSettings.MIN_LOOK_SENSITIVITY, GameSettings.MAX_LOOK_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_look_sensitivity)
+	_settings_slider(content, "ЧУВСТВ. ПРИЦЕЛА", GameSettings.aim_sensitivity, GameSettings.MIN_AIM_SENSITIVITY, GameSettings.MAX_AIM_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_aim_sensitivity)
+	_label(content, "При прицеливании используется отдельная чувствительность.", 14, Color(0.66, 0.71, 0.68))
+
+	var invert := CheckBox.new()
+	invert.text = "ИНВЕРТИРОВАТЬ ОСЬ Y"
+	invert.button_pressed = GameSettings.invert_y
+	invert.add_theme_font_size_override("font_size", 16)
+	invert.toggled.connect(func(value: bool): GameSettings.set_invert_y(value))
+	content.add_child(invert)
+
+	_label(content, "ГРАФИКА", 20, Color(0.85, 0.88, 0.84))
+	_settings_slider(content, "УГОЛ ОБЗОРА (FOV)", GameSettings.fov, GameSettings.MIN_FOV, GameSettings.MAX_FOV, 1.0, 1.0, "°", GameSettings.set_fov)
+	var quality_button := _button(content, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, Vector2(0, 52))
 	quality_button.pressed.connect(func():
 		GameSettings.cycle_quality()
 		quality_button.text = "КАЧЕСТВО: " + GameSettings.quality_name()
 	)
-	_label(root, "НИЗКОЕ — максимум FPS. СРЕДНЕЕ — баланс. ВЫСОКОЕ — тени и сглаживание.", 15, Color(0.66, 0.71, 0.68))
-	var gap := Control.new()
-	gap.custom_minimum_size.y = 12
-	root.add_child(gap)
-	_label(root, "ЗВУК", 20, Color(0.85, 0.88, 0.84))
-	var volume_row := HBoxContainer.new()
-	volume_row.add_theme_constant_override("separation", 18)
-	root.add_child(volume_row)
-	var volume_label := _label(volume_row, "ГРОМКОСТЬ: %d%%" % int(round(GameSettings.master_volume * 100.0)), 16)
-	volume_label.custom_minimum_size.x = 190
-	var slider := HSlider.new()
-	slider.min_value = 0.0
-	slider.max_value = 1.0
-	slider.step = 0.05
-	slider.value = GameSettings.master_volume
-	slider.custom_minimum_size = Vector2(360, 45)
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.value_changed.connect(func(value: float):
-		GameSettings.set_master_volume(value)
-		volume_label.text = "ГРОМКОСТЬ: %d%%" % int(round(value * 100.0))
-	)
-	volume_row.add_child(slider)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
+	_label(content, "НИЗКОЕ — максимум FPS. СРЕДНЕЕ — баланс. ВЫСОКОЕ — тени и сглаживание.", 14, Color(0.66, 0.71, 0.68))
+
+	_label(content, "ЗВУК", 20, Color(0.85, 0.88, 0.84))
+	_settings_slider(content, "ГРОМКОСТЬ", GameSettings.master_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_master_volume)
+
 	_button(root, "НАЗАД", _show_main, Vector2(0, 52))
+
+func _settings_slider(parent: Control, caption: String, value: float, min_value: float, max_value: float, step: float, display_scale: float, suffix: String, setter: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	parent.add_child(row)
+
+	var label := _label(row, "%s: %d%s" % [caption, int(round(value * display_scale)), suffix], 16)
+	label.custom_minimum_size.x = 270
+
+	var slider := HSlider.new()
+	slider.min_value = min_value
+	slider.max_value = max_value
+	slider.step = step
+	slider.value = value
+	slider.custom_minimum_size = Vector2(360, 44)
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(func(new_value: float):
+		setter.call(new_value)
+		label.text = "%s: %d%s" % [caption, int(round(new_value * display_scale)), suffix]
+	)
+	row.add_child(slider)
 
 func _quit() -> void:
 	get_tree().quit()
