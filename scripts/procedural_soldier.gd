@@ -11,6 +11,8 @@ var _skeleton: Skeleton3D
 var _bone_ids: Dictionary = {}
 var _hips_id: int = -1
 var _hips_rest := Vector3.ZERO
+var _left_shoulder_rest := Vector3.ZERO
+var _left_support_shift := 0.35
 var _hip_drop := 0.0
 var _phase: float = 0.0
 var _idle_time: float = 0.0
@@ -49,6 +51,8 @@ func _ready() -> void:
     if _bone_ids.has("Hips"):
         _hips_id = _bone_ids["Hips"]
         _hips_rest = _skeleton.get_bone_rest(_hips_id).origin
+    if _bone_ids.has("LeftShoulder"):
+        _left_shoulder_rest = _skeleton.get_bone_rest(_bone_ids["LeftShoulder"]).origin
 
 func _find_skeleton() -> Skeleton3D:
     var direct := get_node_or_null(skeleton_path)
@@ -77,6 +81,9 @@ func set_aiming(enabled: bool) -> void:
 
 func set_aim_forward_sign(value: float) -> void:
     _aim_forward_sign = -1.0 if value < 0.0 else 1.0
+
+func set_left_support_shift(distance: float) -> void:
+    _left_support_shift = maxf(distance, 0.0)
 
 func set_crouching(enabled: bool) -> void:
     _crouch_amount = 1.0 if enabled else 0.0
@@ -112,6 +119,10 @@ func _process(delta: float) -> void:
     if _hips_id >= 0:
         var body_bob := bounce * 0.035 + breath * 0.008
         _skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -_hip_drop + body_bob, 0))
+    if _bone_ids.has("LeftShoulder"):
+        var shoulder_target := _left_shoulder_rest + Vector3(_left_support_shift * aim, 0.0, 0.0)
+        var shoulder_current := _skeleton.get_bone_pose_position(_bone_ids["LeftShoulder"])
+        _skeleton.set_bone_pose_position(_bone_ids["LeftShoulder"], shoulder_current.lerp(shoulder_target, blend))
 
     # Lower body: alternating hip/knee/foot motion with a softer planted-foot phase.
     _set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.25), blend)
