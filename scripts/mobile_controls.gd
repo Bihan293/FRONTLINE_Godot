@@ -19,6 +19,7 @@ const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
 const FIRE_RADIUS := 76.0
 const SMALL_RADIUS := 42.0
+const LOOK_REFERENCE_SIZE := Vector2(1280.0, 720.0)
 
 var _joy_origin := Vector2.ZERO
 var _joy_value := Vector2.ZERO
@@ -96,7 +97,13 @@ func _touch_drag(index: int, pos: Vector2, relative: Vector2) -> void:
             d = d.normalized() * JOY_RADIUS
         _set_joy(d / JOY_RADIUS)
     elif index == _look_touch:
-        look_delta.emit(relative)
+        # Keep swipe rotation proportional to screen size. Without this, the
+        # same thumb movement turns much farther on low-resolution phones.
+        var normalized_relative := Vector2(
+            relative.x * LOOK_REFERENCE_SIZE.x / maxf(size.x, 1.0),
+            relative.y * LOOK_REFERENCE_SIZE.y / maxf(size.y, 1.0)
+        )
+        look_delta.emit(normalized_relative)
 
 func _press(id: String) -> void:
     match id:

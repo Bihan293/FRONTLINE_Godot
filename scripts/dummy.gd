@@ -6,6 +6,7 @@ const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_So
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
+const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 
 # Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
 const MODEL_LIFT := 0.0
@@ -300,38 +301,44 @@ func _build_audio() -> void:
     _sfx.unit_size = 12.0
     _gun_pivot.add_child(_sfx)
 
-func receive_hit(region: String) -> int:
+func receive_hit(param1, param2 = Vector3.ZERO, param3 = "", _param4 = "") -> int:
     if _dead:
         return 0
     var damage := 15
-    match region:
-        "head":
-            damage = 100
-        "chest":
-            damage = 45
-        "stomach":
-            damage = 35
-        "arm":
-            damage = 15
-        "leg":
-            damage = 20
+    var region := "chest"
+    var attacker_pos := Vector3.ZERO
+    if param1 is int or param1 is float:
+        damage = int(param1)
+        attacker_pos = param2 if param2 is Vector3 else Vector3.ZERO
+        region = param3 if not param3.is_empty() else "chest"
+    else:
+        region = str(param1)
+        match region:
+            "head": damage = 100
+            "chest": damage = 45
+            "stomach": damage = 35
+            "arm": damage = 15
+            "leg": damage = 20
     health -= damage
     if health <= 0.0:
-        _die()
+        _die(attacker_pos, region == "head")
     return damage
 
-func _die() -> void:
+func _die(attacker_pos: Vector3 = Vector3.ZERO, is_headshot: bool = false) -> void:
     _dead = true
     _fall = 0.0
-    _respawn_timer = 2.6
+    _respawn_timer = 3.5
     set_process(true)
     for box in _hitboxes:
         box.collision_layer = 0
     if _gun_pivot != null:
         _gun_pivot.visible = false
     if _label != null:
-        _label.text = "УБИТ"
+        _label.text = "КИА"
         _label.modulate = Color(1.0, 0.35, 0.30)
+    var hit_dir := (global_position - attacker_pos).normalized() if attacker_pos.length_squared() > 0.1 else Vector3.FORWARD
+    if _proc != null:
+        _proc.set_ragdoll(true, hit_dir, is_headshot)
 
 func _process(delta: float) -> void:
     if _dead:
@@ -410,6 +417,9 @@ func _fire() -> void:
     if _sfx != null:
         _sfx.pitch_scale = randf_range(0.92, 1.05)
         _sfx.play()
+    var casing_pos := global_position + Vector3(0, 1.25, 0)
+    var eject_dir := global_transform.basis.x * 2.0 + Vector3.UP * 1.4 - global_transform.basis.z * 0.3
+    HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, eject_dir)
 
 func _update_effects(delta: float) -> void:
     if _flash_time > 0.0:
@@ -444,6 +454,7 @@ func _respawn() -> void:
         _label.text = dummy_name
         _label.modulate = Color(1, 1, 1)
     if _proc != null:
+        _proc.set_ragdoll(false)
         _proc.set_firing(false)
         _proc.set_motion(0.0, false)
     if shooting:
