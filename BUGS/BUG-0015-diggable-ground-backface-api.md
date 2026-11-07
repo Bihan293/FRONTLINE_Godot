@@ -1,13 +1,13 @@
 # BUG-0015 — Diggable terrain collision uses an invalid backface property
 
-- **Status:** ready for retest
+- **Status:** verified
 - **Severity:** major
-- **Build / commit:** CI build at `7d43157`; fix commit pending
+- **Build / commit:** CI build `v0.1.59`, commit `877dbd9`
 - **Platform / device:** GitHub Actions, Godot 4.3 headless
 - **Found by:** Codex CI review
 - **Frequency:** Every battlefield smoke-test run
 - **Owner:** Codex
-- **Fix commit:** pending
+- **Fix commit:** `877dbd9`
 
 ## Reproduction
 
@@ -29,4 +29,4 @@ GitHub Actions run `42393954279`, job `128467238679`, step “Run gameplay smoke
 
 ## Retest
 
-Fix uses the documented `set_backface_collision_enabled(true)` method. Awaiting a passing CI build and terrain collision smoke test.
+GitHub Actions run `42394325003` completed successfully at `877dbd9`. All four gameplay smoke scenes passed, including the diggable-ground berm collision ray check; the Android APK also exported successfully.

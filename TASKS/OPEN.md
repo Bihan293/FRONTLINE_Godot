@@ -12,7 +12,7 @@
 | TASK-0008 | P1 | in progress | Codex / Antigravity / OpenCode | Add selectable combat roles: medic, sniper, anti-tank, and radio operator with a tethered kamikaze drone (v0.1.46 built & delivered) |
 | TASK-0009 | P1 | in progress | Codex / Antigravity / OpenCode | Build immersive positional combat audio with distance, occlusion, indoor reverberation, and grenade acoustics |
 | TASK-0010 | P2 | in progress | OpenCode | Prepare the itch.io page, screenshots and press kit |
-| TASK-0011 | P1 | in progress | Codex | Add a guaranteed backup M1911, a terrain-digging entrenching shovel, and black icon-only mobile controls |
+| TASK-0011 | P1 | done | Codex | Add a guaranteed backup M1911, a terrain-digging entrenching shovel, and black icon-only mobile controls |
 | TASK-0012 | P1 | planned | Antigravity / Codex | Add vehicles, transport and static turrets |
 | TASK-0013 | P1 | planned | OpenCode / Antigravity | Add sandbox mode with spawn menu, slow motion and free camera |
 | TASK-0014 | P1 | planned | Antigravity | Build a fourth battle map (factory/port) |
