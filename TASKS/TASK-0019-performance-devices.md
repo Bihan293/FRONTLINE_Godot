@@ -1,8 +1,8 @@
 # TASK-0019 — Performance and device optimisation
 
 - **Priority:** P1
-- **Status:** in progress (baseline/profile audit)
-- **Owner:** OpenCode (separate performance/QA workstream)
+- **Status:** queued after current model audit; performance agent not confirmed
+- **Owner:** OpenCode
 - **Dependencies:** Current 20v20 bot load
 - **Related:** `ROADMAP.md` → Графика и производительность
 

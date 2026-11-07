@@ -1,7 +1,7 @@
 # TASK-0012 — Vehicles, transport and emplacements
 
 - **Priority:** P1
-- **Status:** in progress
+- **Status:** deferred until 2026-11-08 (user request)
 - **Owner:** OpenCode (implementation lead; use isolated specialist agents/worktrees where available)
 - **Dependencies:** Stable bot navigation, vehicle collision layer
 - **Related:** `ROADMAP.md` → Техника и турели
