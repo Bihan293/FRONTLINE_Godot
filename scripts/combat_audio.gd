@@ -314,6 +314,9 @@ static func get_active_3d_voice_count() -> int:
 	_clean_active_players()
 	return _active_3d_players.size()
 
+static func get_active_3d_voice_limit() -> int:
+	return MAX_ACTIVE_3D_SFX
+
 static func _clean_active_players() -> void:
 	var i := _active_3d_players.size() - 1
 	while i >= 0:

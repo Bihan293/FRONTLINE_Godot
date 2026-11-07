@@ -128,7 +128,7 @@ func _test_explosion_audio_budget() -> void:
 	add_child(listener)
 	await get_tree().process_frame
 
-	var limit := int(COMBAT_AUDIO.get_script_constant_map().get("MAX_ACTIVE_3D_SFX", 16))
+	var limit := COMBAT_AUDIO.get_active_3d_voice_limit()
 	for i in range(limit):
 		COMBAT_AUDIO.play_surface_impact(self, Vector3(100.0 + float(i), 0.0, 0.0), Vector3.UP, "metal")
 	_check(COMBAT_AUDIO.get_active_3d_voice_count() == limit, "combat audio did not fill to its configured voice budget")
