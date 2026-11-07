@@ -647,7 +647,7 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	soldier_killed.emit(self, killer_name, "AK-47")
 
 	# Очистка трупа через 25 секунд
-	get_tree().create_timer(25.0).timeout.connect(func():
+	get_tree().create_timer(25.0, false).timeout.connect(func():
 		if is_instance_valid(self):
 			queue_free()
 	)

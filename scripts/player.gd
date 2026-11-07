@@ -7,6 +7,7 @@ const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
+const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -115,6 +116,7 @@ var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
 var mobile_fire := false
 var sprint_hold := 0.0
+var pause_menu: FRONTLINEPauseMenu
 
 var sfx_shot: AudioStreamPlayer
 var sfx_empty: AudioStreamPlayer
@@ -138,6 +140,7 @@ func _ready() -> void:
 	_build_audio()
 	_build_mobile_controls()
 	_build_hud()
+	_build_pause_menu()
 	if not OS.has_feature("mobile"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_apply_look()
@@ -153,7 +156,7 @@ func _build_player() -> void:
 	add_child(player_collision)
 	camera = Camera3D.new()
 	camera.position = Vector3(0, 1.80, -0.10)
-	camera.fov = 78.0
+	camera.fov = GameSettings.fov
 	camera.current = true
 	add_child(camera)
 
@@ -268,6 +271,41 @@ func _set_aiming(enabled: bool) -> void:
 	if aiming == enabled or is_dead or input_locked:
 		return
 	aiming = enabled
+
+func _update_camera_fov(delta: float) -> void:
+	if camera == null:
+		return
+	var target_fov := GameSettings.fov
+	if aiming:
+		target_fov *= 0.78
+	camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 9.0, 0.0, 1.0))
+
+func _build_pause_menu() -> void:
+	pause_menu = PAUSE_MENU.new()
+	add_child(pause_menu)
+	pause_menu.resumed.connect(_on_pause_resumed)
+
+	# Кнопка паузы для телефона и мыши; клавиатура использует ESC.
+	var pause_btn := Button.new()
+	pause_btn.text = "II"
+	pause_btn.anchor_left = 1.0
+	pause_btn.anchor_right = 1.0
+	pause_btn.offset_left = -108.0
+	pause_btn.offset_right = -20.0
+	pause_btn.offset_top = 16.0
+	pause_btn.offset_bottom = 56.0
+	pause_btn.add_theme_font_size_override("font_size", 18)
+	pause_btn.pressed.connect(open_pause_menu)
+	if hud != null:
+		hud.add_child(pause_btn)
+
+func open_pause_menu() -> void:
+	if pause_menu != null and not get_tree().paused:
+		pause_menu.open()
+
+func _on_pause_resumed() -> void:
+	if not OS.has_feature("mobile"):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func set_input_locked(locked: bool) -> void:
 	input_locked = locked
@@ -470,8 +508,12 @@ func _on_move_changed(value: Vector2) -> void:
 func _on_look_delta(delta: Vector2) -> void:
 	if is_dead:
 		return
-	yaw -= delta.x * TOUCH_SENS
-	pitch = clampf(pitch - delta.y * TOUCH_SENS, -1.35, 1.35)
+	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming)
+	yaw -= delta.x * sense
+	var pitch_delta := delta.y * sense
+	if GameSettings.invert_y:
+		pitch_delta = -pitch_delta
+	pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
 	look_sway += Vector2(delta.x, delta.y) * 0.00006
 	look_sway = look_sway.limit_length(0.035)
 
@@ -488,8 +530,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if is_dead or input_locked:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x * MOUSE_SENS
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.35, 1.35)
+		var sense := MOUSE_SENS * GameSettings.sensitivity_scale(aiming)
+		yaw -= event.relative.x * sense
+		var pitch_delta: float = event.relative.y * sense
+		if GameSettings.invert_y:
+			pitch_delta = -pitch_delta
+		pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
 		look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
 		look_sway = look_sway.limit_length(0.035)
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
@@ -540,6 +586,7 @@ func _physics_process(delta: float) -> void:
 	weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
 	var blend := 1.0 - exp(-delta * 13.0)
 	aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
+	_update_camera_fov(delta)
 	var planar_speed := Vector2(velocity.x, velocity.z).length()
 	if planar_speed > 0.4 and is_on_floor():
 		bob_time += delta * (11.0 if planar_speed > SPEED + 0.5 else 7.5)
@@ -767,8 +814,8 @@ func _shoot() -> void:
 	var confirmed_hit := false
 	for actor in damage_totals.keys():
 		var detail: Dictionary = hit_details[actor]
-		var region := str(detail.region)
-		var was_alive := not ("health" in actor) or float(actor.health) > 0.0
+		var region: String = str(detail.region)
+		var was_alive: bool = not ("health" in actor) or float(actor.health) > 0.0
 		var damage_applied: int = actor.receive_hit(int(damage_totals[actor]), camera.global_position, region, "Player")
 		if damage_applied <= 0:
 			continue

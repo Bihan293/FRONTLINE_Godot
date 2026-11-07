@@ -6,8 +6,19 @@ extends Node
 const CONFIG_PATH := "user://frontline_settings.cfg"
 const QUALITY_NAMES := ["НИЗКАЯ", "СРЕДНЯЯ", "ВЫСОКАЯ"]
 
+const MIN_LOOK_SENSITIVITY := 0.30
+const MAX_LOOK_SENSITIVITY := 2.50
+const MIN_AIM_SENSITIVITY := 0.20
+const MAX_AIM_SENSITIVITY := 1.50
+const MIN_FOV := 60.0
+const MAX_FOV := 100.0
+
 var quality := 1
 var master_volume := 0.8
+var look_sensitivity := 1.0
+var aim_sensitivity := 0.70
+var invert_y := false
+var fov := 78.0
 
 func _ready() -> void:
 	load_settings()
@@ -18,6 +29,10 @@ func load_settings() -> void:
 	if cfg.load(CONFIG_PATH) == OK:
 		quality = clampi(int(cfg.get_value("video", "quality", 1)), 0, 2)
 		master_volume = clampf(float(cfg.get_value("audio", "master", 0.8)), 0.0, 1.0)
+		look_sensitivity = clampf(float(cfg.get_value("controls", "look_sensitivity", 1.0)), MIN_LOOK_SENSITIVITY, MAX_LOOK_SENSITIVITY)
+		aim_sensitivity = clampf(float(cfg.get_value("controls", "aim_sensitivity", 0.70)), MIN_AIM_SENSITIVITY, MAX_AIM_SENSITIVITY)
+		invert_y = bool(cfg.get_value("controls", "invert_y", false))
+		fov = clampf(float(cfg.get_value("video", "fov", 78.0)), MIN_FOV, MAX_FOV)
 	else:
 		# На мобилках по умолчанию средний пресет: заметно быстрее High,
 		# но без «мыла» низкого разрешения.
@@ -27,7 +42,11 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("video", "quality", quality)
+	cfg.set_value("video", "fov", fov)
 	cfg.set_value("audio", "master", master_volume)
+	cfg.set_value("controls", "look_sensitivity", look_sensitivity)
+	cfg.set_value("controls", "aim_sensitivity", aim_sensitivity)
+	cfg.set_value("controls", "invert_y", invert_y)
 	cfg.save(CONFIG_PATH)
 
 func quality_name() -> String:
@@ -46,6 +65,33 @@ func set_quality(value: int) -> void:
 func set_master_volume(value: float) -> void:
 	master_volume = clampf(value, 0.0, 1.0)
 	apply_audio()
+	save_settings()
+
+func set_look_sensitivity(value: float) -> void:
+	look_sensitivity = clampf(value, MIN_LOOK_SENSITIVITY, MAX_LOOK_SENSITIVITY)
+	save_settings()
+
+func set_aim_sensitivity(value: float) -> void:
+	aim_sensitivity = clampf(value, MIN_AIM_SENSITIVITY, MAX_AIM_SENSITIVITY)
+	save_settings()
+
+func set_invert_y(value: bool) -> void:
+	invert_y = value
+	save_settings()
+
+func set_fov(value: float) -> void:
+	fov = clampf(value, MIN_FOV, MAX_FOV)
+	save_settings()
+
+## Множитель чувствительности: при прицеливании используется отдельная настройка.
+func sensitivity_scale(is_aiming: bool) -> float:
+	return aim_sensitivity if is_aiming else look_sensitivity
+
+func reset_controls() -> void:
+	look_sensitivity = 1.0
+	aim_sensitivity = 0.70
+	invert_y = false
+	fov = 78.0
 	save_settings()
 
 func apply_all() -> void:
