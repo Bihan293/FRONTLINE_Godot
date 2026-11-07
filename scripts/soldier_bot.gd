@@ -14,6 +14,7 @@ const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
+const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -497,6 +498,12 @@ func _fire_single_shot() -> void:
 	query.exclude = _get_self_collision_rids()
 	query.collide_with_areas = true
 	var hit := space.intersect_ray(query)
+	var bullet_end: Vector3 = hit.position if not hit.is_empty() else to
+	var player = get_tree().get_first_node_in_group("player")
+	if player != null and is_instance_valid(player) and "camera" in player:
+		var player_camera := player.get("camera") as Camera3D
+		if player_camera != null:
+			AMBIENCE.check_bullet_flyby(from, bullet_end, player_camera.global_position)
 
 	if hit:
 		var collider = hit.collider
