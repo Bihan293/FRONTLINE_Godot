@@ -22,11 +22,14 @@ class CasingNode extends Node3D:
 	var angular_vel := Vector3.ZERO
 	var life := 4.5
 	var bounces := 0
+	var settled := false
 
 	func _process(delta: float) -> void:
 		life -= delta
 		if life <= 0.0:
 			queue_free()
+			return
+		if settled:
 			return
 		velocity.y -= 16.0 * delta
 		position += velocity * delta
@@ -40,7 +43,8 @@ class CasingNode extends Node3D:
 			bounces += 1
 			if bounces > 2:
 				velocity = Vector3.ZERO
-				set_process(false)
+				angular_vel = Vector3.ZERO
+				settled = true
 
 class DroppedWeaponNode extends Node3D:
 	var velocity := Vector3.ZERO
@@ -66,7 +70,8 @@ class DroppedWeaponNode extends Node3D:
 			angular_vel *= 0.35
 			if velocity.length_squared() < 0.06:
 				settled = true
-				set_process(false)
+				velocity = Vector3.ZERO
+				angular_vel = Vector3.ZERO
 
 static func spawn_casing(parent: Node, spawn_pos: Vector3, eject_velocity: Vector3) -> void:
 	if parent == null:
