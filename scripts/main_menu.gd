@@ -2,12 +2,15 @@ extends Control
 
 const MAP_PREVIEW_SCRIPT = preload("res://scripts/map_preview.gd")
 const BATTLEFIELD_PREVIEW_SCRIPT = preload("res://scripts/battlefield_map_preview.gd")
+const VILLAGE_PREVIEW_SCRIPT = preload("res://scripts/village_map_preview.gd")
 const LAYOUT = preload("res://scripts/map_layout.gd")
 const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
 
 var map_selected := false
 var selected_map := "BATTLEFIELD"
 var selected_team := "IRON LEGION"
+var selected_mode := "CONQUEST"
 
 func _ready() -> void:
 	_show_main()
@@ -91,21 +94,45 @@ func _show_maps() -> void:
 	list.custom_minimum_size = Vector2(320,0)
 	list.add_theme_constant_override("separation", 14)
 	body.add_child(list)
+
+	# Селектор режима игры
+	var mode_btn := Button.new()
+	mode_btn.text = "РЕЖИМ: " + ("КОМАНДНЫЙ БОЙ (TDM)" if selected_mode == "TDM" else "ЗАХВАТ (CONQUEST)")
+	mode_btn.custom_minimum_size = Vector2(310, 48)
+	mode_btn.add_theme_font_size_override("font_size", 15)
+	mode_btn.pressed.connect(func():
+		if selected_mode == "CONQUEST":
+			selected_mode = "TDM"
+		else:
+			selected_mode = "CONQUEST"
+		get_tree().set_meta("selected_mode", selected_mode)
+		mode_btn.text = "РЕЖИМ: " + ("КОМАНДНЫЙ БОЙ (TDM)" if selected_mode == "TDM" else "ЗАХВАТ (CONQUEST)")
+	)
+	list.add_child(mode_btn)
+
 	_label(list, "ДОСТУПНЫЕ КАРТЫ", 17, Color(0.68,0.73,0.7))
 
 	# Карточка BATTLEFIELD (Окопная война)
 	var card_bf := Button.new()
 	card_bf.text = "BATTLEFIELD (ФРОНТ)\nОкопы и нейтральная полоса (240x180м)"
-	card_bf.custom_minimum_size = Vector2(310, 85)
-	card_bf.add_theme_font_size_override("font_size", 17)
+	card_bf.custom_minimum_size = Vector2(310, 75)
+	card_bf.add_theme_font_size_override("font_size", 16)
 	card_bf.pressed.connect(_select_battlefield)
 	list.add_child(card_bf)
+
+	# Карточка VILLAGE (Деревня)
+	var card_vil := Button.new()
+	card_vil.text = "VILLAGE (ДЕРЕВНЯ)\nУлицы, церковь, мельница (180x150м)"
+	card_vil.custom_minimum_size = Vector2(310, 75)
+	card_vil.add_theme_font_size_override("font_size", 16)
+	card_vil.pressed.connect(_select_village)
+	list.add_child(card_vil)
 
 	# Карточка POLYGON (Полигон)
 	var card_poly := Button.new()
 	card_poly.text = "POLYGON (ПОЛИГОН)\nТренировочное стрельбище"
-	card_poly.custom_minimum_size = Vector2(310, 85)
-	card_poly.add_theme_font_size_override("font_size", 17)
+	card_poly.custom_minimum_size = Vector2(310, 65)
+	card_poly.add_theme_font_size_override("font_size", 16)
 	card_poly.pressed.connect(_select_polygon)
 	list.add_child(card_poly)
 
@@ -146,6 +173,14 @@ func _show_maps() -> void:
 	battlefield_image.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	details.add_child(battlefield_image)
 
+	var village_image = VILLAGE_PREVIEW_SCRIPT.new()
+	village_image.name = "VillagePreview"
+	village_image.visible = false
+	village_image.custom_minimum_size = Vector2(560, 260)
+	village_image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	village_image.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	details.add_child(village_image)
+
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
 	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_teams, Vector2(0,58))
@@ -153,6 +188,7 @@ func _show_maps() -> void:
 	set_meta("map_details", details)
 	set_meta("polygon_preview", image)
 	set_meta("battlefield_preview", battlefield_image)
+	set_meta("village_preview", village_image)
 	set_meta("map_placeholder", placeholder)
 	set_meta("title_lbl", title_lbl)
 	set_meta("desc_lbl", desc_lbl)
@@ -170,9 +206,25 @@ func _select_battlefield() -> void:
 	details.visible = true
 	placeholder.visible = false
 	(get_meta("polygon_preview") as Control).visible = false
+	(get_meta("village_preview") as Control).visible = false
 	(get_meta("battlefield_preview") as Control).visible = true
 	title_lbl.text = "BATTLEFIELD  /  TRENCHES & NO MAN'S LAND (240×180м)"
 	desc_lbl.text = "Масштабная боевая карта: сеть окопов, траншеи, артиллерийские воронки, разрушенные руины, укреплённые базы Железного Легиона и Красного Фронта. Бои умных ботов, захват секторов A, B, C, рэгдолл и реалистичная баллистика."
+
+func _select_village() -> void:
+	selected_map = "VILLAGE"
+	get_tree().set_meta("selected_map", "VILLAGE")
+	var details = get_meta("map_details")
+	var placeholder = get_meta("map_placeholder")
+	var title_lbl: Label = get_meta("title_lbl")
+	var desc_lbl: Label = get_meta("desc_lbl")
+	details.visible = true
+	placeholder.visible = false
+	(get_meta("polygon_preview") as Control).visible = false
+	(get_meta("battlefield_preview") as Control).visible = false
+	(get_meta("village_preview") as Control).visible = true
+	title_lbl.text = "VILLAGE  /  RURAL WARFARE (180×150м)"
+	desc_lbl.text = "Деревенская карта: узкие улочки, жилые дома с простреливаемыми комнатами, колокольня церкви святого Иуды, старая мельница с амбаром, каменные колодцы и стога сена. Бои на ближних и средних дистанциях, тактические обходы флангов."
 
 func _select_polygon() -> void:
 	selected_map = "POLYGON"
@@ -185,6 +237,7 @@ func _select_polygon() -> void:
 	placeholder.visible = false
 	(get_meta("polygon_preview") as Control).visible = true
 	(get_meta("battlefield_preview") as Control).visible = false
+	(get_meta("village_preview") as Control).visible = false
 	title_lbl.text = "POLYGON  /  TRAINING RANGE"
 	desc_lbl.text = "Тренировочный полигон: дистанционные мишени, укрытия, движущиеся и стреляющие бойцы с процедурными анимациями и физическим падением при попадании."
 
@@ -245,9 +298,17 @@ func _show_deployment() -> void:
 	var map_overlay := Control.new()
 	map_holder.add_child(map_overlay)
 	map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var image = BATTLEFIELD_PREVIEW_SCRIPT.new() if selected_map == "BATTLEFIELD" else MAP_PREVIEW_SCRIPT.new()
-	if selected_map == "BATTLEFIELD":
-		image.team_name = selected_team
+	var image: Control
+	if selected_map == "VILLAGE":
+		var vil_prev = VILLAGE_PREVIEW_SCRIPT.new()
+		vil_prev.team_name = selected_team
+		image = vil_prev
+	elif selected_map == "BATTLEFIELD":
+		var bf_prev = BATTLEFIELD_PREVIEW_SCRIPT.new()
+		bf_prev.team_name = selected_team
+		image = bf_prev
+	else:
+		image = MAP_PREVIEW_SCRIPT.new()
 	image.show_spawns = true
 	image.interactive = true
 	image.custom_minimum_size = Vector2(460, 300)
@@ -286,10 +347,17 @@ func _deploy() -> void:
 	if index < 0:
 		index = 0
 	var map: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
-	if map == "BATTLEFIELD":
+	if map == "VILLAGE":
+		var spawns: Array = VILLAGE_LAYOUT.spawns_red() if selected_team.contains("RED") else VILLAGE_LAYOUT.spawns_iron()
+		var sp: Vector3 = spawns[index % spawns.size()]
+		get_tree().set_meta("spawn_position", sp)
+		get_tree().set_meta("selected_mode", selected_mode)
+		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
+	elif map == "BATTLEFIELD":
 		var spawns: Array = BATTLEFIELD_LAYOUT.spawns_red() if selected_team.contains("RED") else BATTLEFIELD_LAYOUT.spawns_iron()
 		var sp: Vector3 = spawns[index % spawns.size()]
 		get_tree().set_meta("spawn_position", sp)
+		get_tree().set_meta("selected_mode", selected_mode)
 		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
 	else:
 		var spawn_positions: Array = LAYOUT.spawns()

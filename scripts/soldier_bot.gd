@@ -395,25 +395,29 @@ func _advance_behavior(delta: float) -> void:
 	var forward_z: float = 1.0 if team_name.contains("RED") else -1.0
 
 	# Распределение ботов по тактическим направлениям:
-	# 0: левый фланг к Сектору [A] (-52м)
-	# 1: центр к Сектору [B] (0м)
-	# 2: правый фланг к Сектору [C] (+52м)
+	# 0: левый фланг к Сектору [A] (Церковь / Окопы)
+	# 1: центр к Сектору [B] (Площадь / Руины)
+	# 2: правый фланг к Сектору [C] (Мельница / Склад)
+	var is_village: bool = str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE"
+	var flank_dist: float = 45.0 if is_village else 52.0
+	var enemy_base_z: float = 48.0 if is_village else 56.0
+
 	var squad := int(get_instance_id() % 3)
 	var sector_x := 0.0
 	match squad:
-		0: sector_x = -52.0
+		0: sector_x = -flank_dist
 		1: sector_x = 0.0
-		2: sector_x = 52.0
+		2: sector_x = flank_dist
 
 	var offset_x := float(int(get_instance_id() % 5) - 2) * 2.5
 	var target_sector := Vector3(sector_x + offset_x, 0.0, 0.0)
 
-	# Если бот уже вышел к линии секторов (Z около 0), развиваем наступление вглубь вражеских траншей
+	# Если бот уже вышел к линии секторов (Z около 0), развиваем наступление вглубь вражеских рубежей
 	var current_z := global_position.z
 	var objective: Vector3
 	if (forward_z > 0.0 and current_z > 8.0) or (forward_z < 0.0 and current_z < -8.0):
-		# Продвижение на вражескую половину карты к передовым окопам
-		objective = Vector3(sector_x + offset_x, 0.0, forward_z * 56.0)
+		# Продвижение на вражескую половину карты
+		objective = Vector3(sector_x + offset_x, 0.0, forward_z * enemy_base_z)
 	else:
 		# Штурм ключевого сектора
 		objective = target_sector

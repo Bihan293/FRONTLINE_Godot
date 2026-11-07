@@ -5,17 +5,27 @@ extends Node3D
 
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
-const LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
 
+const TDM_TARGET_KILLS := 50
+
 var player: CharacterBody3D
 var team_name := "IRON LEGION"
+var game_mode := "CONQUEST"
 var score_iron := 60
 var score_red := 60
 var score_kills := 0
+
+func _layout():
+	var map_name: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	if map_name == "VILLAGE":
+		return VILLAGE_LAYOUT
+	return BATTLEFIELD_LAYOUT
 
 var hud: CanvasLayer
 var score_label: Label
@@ -49,6 +59,13 @@ const GERMAN_NAMES := [
 
 func _ready() -> void:
 	team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	game_mode = str(get_tree().get_meta("selected_mode", "CONQUEST"))
+	if game_mode == "TDM":
+		score_iron = 0
+		score_red = 0
+	else:
+		score_iron = 60
+		score_red = 60
 	ambience = AMBIENCE_SCRIPT.new()
 	add_child(ambience)
 	_build_world()
@@ -137,11 +154,12 @@ func _build_world() -> void:
 	add_child(sun)
 
 	# Построение блоков карты
-	for box in LAYOUT.boxes():
+	var layout = _layout()
+	for box in layout.boxes():
 		_build_box(box)
 
 	# Спавн взрывных тактических бочек с горючим
-	for barrel_pos in LAYOUT.barrels():
+	for barrel_pos in layout.barrels():
 		_spawn_barrel(barrel_pos)
 
 func _spawn_barrel(pos: Vector3) -> void:
@@ -178,13 +196,13 @@ func _build_box(data: Dictionary) -> void:
 func _spawn_player() -> void:
 	player = CharacterBody3D.new()
 	player.set_script(PLAYER_SCRIPT)
-	var default_spawn: Vector3 = LAYOUT.spawns_red()[0] if team_name.contains("RED") else LAYOUT.spawns_iron()[0]
+	var default_spawn: Vector3 = _layout().spawns_red()[0] if team_name.contains("RED") else _layout().spawns_iron()[0]
 	var spawn: Vector3 = get_tree().get_meta("spawn_position", default_spawn)
 	player.position = spawn
 	add_child(player)
 
 func _build_sectors() -> void:
-	sector_data = LAYOUT.sectors()
+	sector_data = _layout().sectors()
 	for sec in sector_data:
 		var pos: Vector3 = sec.pos
 		var pole := MeshInstance3D.new()
@@ -208,16 +226,17 @@ func _build_sectors() -> void:
 
 ## Создание стартовых отрядов ботов (по 7 бойцов с каждой стороны)
 func _spawn_initial_squads() -> void:
-	var iron_spawns := LAYOUT.spawns_iron()
+	var iron_spawns: Array = _layout().spawns_iron()
 	for i in range(7):
-		var sp := iron_spawns[i % iron_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
+		var sp: Vector3 = iron_spawns[i % iron_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
 		var name := GERMAN_NAMES[i % GERMAN_NAMES.size()]
 		_create_bot(sp, "IRON LEGION", name)
 
-	var red_spawns := LAYOUT.spawns_red()
+	var red_spawns: Array = _layout().spawns_red()
 	for i in range(7):
-		var sp := red_spawns[i % red_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
+		var sp: Vector3 = red_spawns[i % red_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
 		var name := SOVIET_NAMES[i % SOVIET_NAMES.size()]
+		_create_bot(sp, "RED FRONT", name)
 		_create_bot(sp, "RED FRONT", name)
 
 func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldierBot:
@@ -240,13 +259,27 @@ func _on_bot_fired(pos: Vector3) -> void:
 		compass.add_gunfire_ping(pos)
 
 func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon_name: String) -> void:
-	# Списание билетов
-	if victim.team_name.contains("RED"):
-		score_red = maxi(0, score_red - 1)
+	if game_mode == "TDM":
+		if victim.team_name.contains("RED"):
+			score_iron += 1
+		else:
+			score_red += 1
+		_refresh_score()
+		if score_iron >= TDM_TARGET_KILLS:
+			_end_match("IRON LEGION")
+		elif score_red >= TDM_TARGET_KILLS:
+			_end_match("RED FRONT")
 	else:
-		score_iron = maxi(0, score_iron - 1)
-
-	_refresh_score()
+		# Списание билетов в Conquest
+		if victim.team_name.contains("RED"):
+			score_red = maxi(0, score_red - 1)
+		else:
+			score_iron = maxi(0, score_iron - 1)
+		_refresh_score()
+		if score_red <= 0:
+			_end_match("IRON LEGION")
+		elif score_iron <= 0:
+			_end_match("RED FRONT")
 
 	# Добавление в киллфид
 	_add_killfeed_entry(killer_name, victim.soldier_name, victim.team_name)
@@ -259,8 +292,8 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 	)
 
 func _spawn_reinforcement(team: String) -> void:
-	var spawns := LAYOUT.spawns_red() if team.contains("RED") else LAYOUT.spawns_iron()
-	var sp := spawns[randi() % spawns.size()] + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
+	var spawns: Array = _layout().spawns_red() if team.contains("RED") else _layout().spawns_iron()
+	var sp: Vector3 = spawns[randi() % spawns.size()] + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
 	var names_arr := SOVIET_NAMES if team.contains("RED") else GERMAN_NAMES
 	_bot_name_idx += 1
 	var name_str: String = names_arr[_bot_name_idx % names_arr.size()]
@@ -344,7 +377,10 @@ func _build_hud() -> void:
 
 func _refresh_score() -> void:
 	if score_label != null:
-		score_label.text = "IRON LEGION: %d   ⚔   RED FRONT: %d" % [score_iron, score_red]
+		if game_mode == "TDM":
+			score_label.text = "TDM (ДО 50)  •  IRON LEGION: %d   ⚔   RED FRONT: %d" % [score_iron, score_red]
+		else:
+			score_label.text = "IRON LEGION: %d   ⚔   RED FRONT: %d" % [score_iron, score_red]
 
 func _add_killfeed_entry(killer: String, victim: String, victim_team: String) -> void:
 	if killfeed_container == null:
@@ -373,6 +409,8 @@ func _process(delta: float) -> void:
 	_update_ticket_bleed(delta)
 
 func _update_ticket_bleed(delta: float) -> void:
+	if game_mode == "TDM":
+		return
 	_ticket_bleed_timer -= delta
 	if _ticket_bleed_timer > 0.0:
 		return

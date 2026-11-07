@@ -3,7 +3,8 @@ class_name FRONTLINEBotNavigation
 
 ## Общая сетка путей для пехоты. Граф строится один раз по твёрдой геометрии карты.
 
-const LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
 const CELL_SIZE := 3.0
 const MIN_X := -108.0
 const MIN_Z := -84.0
@@ -14,6 +15,14 @@ const AGENT_HEIGHT := 1.8
 
 var _astar := AStar2D.new()
 var _ready_to_use := false
+
+func _get_layout():
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.has_meta("selected_map"):
+		var map_name: String = str(tree.get_meta("selected_map"))
+		if map_name == "VILLAGE":
+			return VILLAGE_LAYOUT
+	return BATTLEFIELD_LAYOUT
 
 func _ready() -> void:
 	_build_graph()
@@ -39,7 +48,8 @@ func _build_graph() -> void:
 	var blocked := PackedByteArray()
 	blocked.resize(GRID_WIDTH * GRID_HEIGHT)
 
-	for box_data in LAYOUT.boxes():
+	var layout = _get_layout()
+	for box_data in layout.boxes():
 		if not bool(box_data.get("solid", false)):
 			continue
 		var center: Vector3 = box_data.pos
