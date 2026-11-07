@@ -29,6 +29,10 @@ const RESERVE_START := 150
 const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
+const WORLD_LAYER_MASK := 1 << 0
+const HITBOX_LAYER_MASK := 1 << 1
+const SOLDIER_LAYER_MASK := 1 << 2
+const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
 var camera: Camera3D
 var player_capsule: CapsuleShape3D
@@ -110,6 +114,7 @@ func _ready() -> void:
 	_apply_look()
 
 func _build_player() -> void:
+	collision_mask = WORLD_LAYER_MASK | SOLDIER_LAYER_MASK
 	player_collision = CollisionShape3D.new()
 	player_capsule = CapsuleShape3D.new()
 	player_capsule.radius = 0.34
@@ -573,7 +578,9 @@ func _shoot() -> void:
 	var from := camera.global_position
 	var to := from + dir * 140.0
 	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.exclude = [self]
+	query.collision_mask = RAY_COLLISION_MASK
+	query.exclude = [get_rid()]
+	query.collide_with_areas = true
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if hit:
 		var body = hit.collider

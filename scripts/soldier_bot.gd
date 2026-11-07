@@ -24,6 +24,10 @@ const SPEED_SPRINT := 5.6
 const SPEED_CROUCH := 1.9
 const MAX_HEALTH := 100.0
 const MAG_SIZE := 30
+const WORLD_LAYER_MASK := 1 << 0
+const HITBOX_LAYER_MASK := 1 << 1
+const SOLDIER_LAYER_MASK := 1 << 2
+const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
 @export var team_name: String = "IRON LEGION"
 @export var soldier_name: String = "Soldier"
@@ -62,9 +66,12 @@ var _hitboxes: Array[Area3D] = []
 func _ready() -> void:
 	add_to_group("bots")
 	add_to_group("damageable_actor")
+	collision_layer = SOLDIER_LAYER_MASK
+	collision_mask = WORLD_LAYER_MASK | SOLDIER_LAYER_MASK
 	floor_snap_length = 0.3
 	floor_max_angle = deg_to_rad(45.0)
 
+	_build_body_collision()
 	_build_visuals()
 	_build_weapon()
 	_build_hitboxes()
@@ -73,6 +80,16 @@ func _ready() -> void:
 
 	target_check_timer = randf_range(0.1, 0.4)
 	fire_cooldown = randf_range(0.4, 1.2)
+
+func _build_body_collision() -> void:
+	var body_collision := CollisionShape3D.new()
+	body_collision.name = "BodyCollision"
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.32
+	capsule.height = 1.8
+	body_collision.shape = capsule
+	body_collision.position.y = capsule.height * 0.5
+	add_child(body_collision)
 
 func _build_visuals() -> void:
 	_pivot = Node3D.new()
@@ -148,7 +165,7 @@ func _build_hitboxes() -> void:
 
 func _add_hitbox(region: String, local_pos: Vector3, shape: Shape3D) -> void:
 	var area := Area3D.new()
-	area.collision_layer = 2
+	area.collision_layer = HITBOX_LAYER_MASK
 	area.collision_mask = 0
 	area.set_meta("owner_actor", self)
 	area.set_meta("region", region)
@@ -249,7 +266,7 @@ func _find_target() -> void:
 		var player_dead: bool = player.get("is_dead") if "is_dead" in player else false
 		if not player_dead and player_team != team_name:
 			var dist := global_position.distance_to(player.global_position)
-			if dist < best_dist and _has_line_of_sight(player.global_position + Vector3(0, 1.4, 0)):
+			if dist < best_dist and _has_line_of_sight(player, player.global_position + Vector3(0, 1.4, 0)):
 				best_dist = dist
 				best_target = player
 
@@ -261,27 +278,33 @@ func _find_target() -> void:
 		var bot = b as FRONTLINESoldierBot
 		if bot != null and not bot.is_dead and bot.team_name != team_name:
 			var dist := global_position.distance_to(bot.global_position)
-			if dist < best_dist and _has_line_of_sight(bot.global_position + Vector3(0, 1.4, 0)):
+			if dist < best_dist and _has_line_of_sight(bot, bot.global_position + Vector3(0, 1.4, 0)):
 				best_dist = dist
 				best_target = bot
 
 	current_target = best_target
 
 ## Проверка прямой видимости (нет ли стен/земли между ботом и целью)
-func _has_line_of_sight(target_pos_3d: Vector3) -> bool:
+func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
 	var space := get_world_3d().direct_space_state
 	var from := global_position + Vector3(0, 1.5, 0)
 	var query := PhysicsRayQueryParameters3D.create(from, target_pos_3d)
-	query.exclude = [self]
+	query.exclude = _get_self_collision_rids()
+	query.collide_with_areas = true
 	var hit := space.intersect_ray(query)
-	if hit:
-		var col = hit.collider
-		if col == current_target or (col.has_meta("owner_actor") and col.get_meta("owner_actor") == current_target):
-			return true
-		if hit.position.distance_to(target_pos_3d) < 1.2:
-			return true
+	if hit.is_empty():
 		return false
-	return true
+	var collider = hit.collider
+	if collider == target_actor:
+		return true
+	return collider is Area3D and collider.get_meta("owner_actor", null) == target_actor
+
+func _get_self_collision_rids() -> Array[RID]:
+	var rids: Array[RID] = [get_rid()]
+	for hitbox in _hitboxes:
+		if is_instance_valid(hitbox):
+			rids.append(hitbox.get_rid())
+	return rids
 
 ## Тактическое поведение в бою
 func _combat_behavior(delta: float) -> void:
@@ -389,7 +412,9 @@ func _fire_single_shot() -> void:
 	var to := from + shoot_dir * 120.0
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.exclude = [self]
+	query.collision_mask = RAY_COLLISION_MASK
+	query.exclude = _get_self_collision_rids()
+	query.collide_with_areas = true
 	var hit := space.intersect_ray(query)
 
 	if hit:
@@ -450,6 +475,9 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	is_dead = true
 	health = 0.0
 	velocity = Vector3.ZERO
+	# Труп продолжает держаться на земле, но не блокирует живых бойцов невидимой капсулой.
+	collision_layer = 0
+	collision_mask = WORLD_LAYER_MASK
 
 	# Отключаем хитбоксы попаданий
 	for hb in _hitboxes:
