@@ -5,6 +5,7 @@ const CROSSHAIR = preload("res://scripts/crosshair.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -29,6 +30,7 @@ const RESERVE_START := 150
 const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
+
 const WORLD_LAYER_MASK := 1 << 0
 const HITBOX_LAYER_MASK := 1 << 1
 const SOLDIER_LAYER_MASK := 1 << 2
@@ -68,6 +70,12 @@ var reserve_ammo := RESERVE_START
 var is_reloading := false
 var reload_timer := 0.0
 
+# Снаряжение игрока
+var grenades := 3
+var medkits := 2
+var is_healing := false
+var heal_timer := 0.0
+
 # Здоровье и статус игрока
 var health := MAX_HEALTH
 var is_dead := false
@@ -76,6 +84,7 @@ var respawn_position := Vector3.ZERO
 
 var hud: CanvasLayer
 var ammo_label: Label
+var equip_label: Label
 var health_label: Label
 var health_bar: ProgressBar
 var blood_overlay: ColorRect
@@ -83,7 +92,7 @@ var death_screen: Control
 var death_info_label: Label
 var crosshair
 
-var mobile_controls
+var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
 var mobile_fire := false
 var sprint_hold := 0.0
@@ -240,13 +249,14 @@ func _build_mobile_controls() -> void:
 	mobile_controls.reload_pressed.connect(_reload)
 	mobile_controls.stance_down_pressed.connect(_down_action)
 	mobile_controls.stance_up_pressed.connect(_up_action)
+	mobile_controls.grenade_pressed.connect(_throw_grenade)
+	mobile_controls.heal_pressed.connect(_use_heal)
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
 	hud.layer = 10
 	add_child(hud)
 
-	# Красный оверлей крови при ранении
 	blood_overlay = ColorRect.new()
 	blood_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	blood_overlay.color = Color(0.7, 0.0, 0.0, 0.0)
@@ -256,7 +266,6 @@ func _build_hud() -> void:
 	crosshair = CROSSHAIR.new()
 	hud.add_child(crosshair)
 
-	# Индикатор здоровья
 	var health_box := HBoxContainer.new()
 	health_box.offset_left = 28.0
 	health_box.offset_top = 24.0
@@ -280,7 +289,6 @@ func _build_hud() -> void:
 	health_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	health_box.add_child(health_bar)
 
-	# Патроны
 	ammo_label = Label.new()
 	ammo_label.anchor_left = 1.0
 	ammo_label.anchor_right = 1.0
@@ -299,7 +307,21 @@ func _build_hud() -> void:
 	ammo_label.add_theme_constant_override("shadow_offset_y", 2)
 	hud.add_child(ammo_label)
 
-	# Всплывающий урон
+	equip_label = Label.new()
+	equip_label.anchor_left = 1.0
+	equip_label.anchor_right = 1.0
+	equip_label.anchor_top = 1.0
+	equip_label.anchor_bottom = 1.0
+	equip_label.offset_left = -310.0
+	equip_label.offset_right = -24.0
+	equip_label.offset_top = -198.0
+	equip_label.offset_bottom = -168.0
+	equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	equip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	equip_label.add_theme_font_size_override("font_size", 16)
+	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
+	hud.add_child(equip_label)
+
 	damage_label = Label.new()
 	damage_label.anchor_left = 0.5
 	damage_label.anchor_right = 0.5
@@ -318,10 +340,10 @@ func _build_hud() -> void:
 	damage_label.visible = false
 	hud.add_child(damage_label)
 
-	# Экран гибели (K.I.A.)
 	_build_death_screen()
 	_refresh_ammo()
 	_refresh_health()
+	_refresh_equipment()
 
 func _build_death_screen() -> void:
 	death_screen = Control.new()
@@ -406,6 +428,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_down_action()
 		elif event.keycode == KEY_SPACE:
 			_up_action()
+		elif event.keycode == KEY_G:
+			_throw_grenade()
+		elif event.keycode == KEY_H:
+			_use_heal()
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -432,12 +458,22 @@ func _physics_process(delta: float) -> void:
 		bob_time = fposmod(bob_time, TAU)
 		breathing_time += delta
 
+	# Таймер лечения
+	if is_healing:
+		heal_timer -= delta
+		if heal_timer <= 0.0:
+			is_healing = false
+			medkits = maxi(0, medkits - 1)
+			health = minf(MAX_HEALTH, health + 45.0)
+			_refresh_health()
+			_refresh_equipment()
+			_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
+
 	# Вспышка крови на экране
 	if blood_vignette_time > 0.0:
 		blood_vignette_time = maxf(0.0, blood_vignette_time - delta * 2.5)
 		blood_overlay.color.a = blood_vignette_time * 0.45
 	else:
-		# Постоянный лёгкий красный оттенок при низком здоровье
 		var low_hp_alpha := clampf((35.0 - health) / 35.0, 0.0, 0.3) if health < 35.0 else 0.0
 		blood_overlay.color.a = low_hp_alpha
 
@@ -556,12 +592,10 @@ func _shoot() -> void:
 	_refresh_ammo()
 	_play_sfx(sfx_shot, SFX_SHOT, -2.0, randf_range(0.94, 1.06))
 
-	# Выброс гильзы из оружия
 	var casing_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.35
 	var casing_vel := camera.global_transform.basis.x * 2.6 + camera.global_transform.basis.y * 1.4 - camera.global_transform.basis.z * 0.4
 	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, casing_vel)
 
-	# Отдача оружия
 	recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
 	recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
 	weapon_kick = 0.07
@@ -579,7 +613,7 @@ func _shoot() -> void:
 	var to := from + dir * 140.0
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.collision_mask = RAY_COLLISION_MASK
-	query.exclude = [get_rid()]
+	query.exclude = [self]
 	query.collide_with_areas = true
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if hit:
@@ -615,6 +649,29 @@ func _reload() -> void:
 	reload_timer = RELOAD_TIME
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
+func _throw_grenade() -> void:
+	if grenades <= 0 or is_dead:
+		return
+	grenades -= 1
+	_refresh_equipment()
+	var g := GRENADE_SCRIPT.new()
+	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.5
+	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+	g.position = spawn_pos
+	g.linear_velocity = throw_dir.normalized() * 19.5 + velocity * 0.4
+	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
+	g.thrower_name = "Player"
+	g.team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	get_parent().add_child(g)
+	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
+
+func _use_heal() -> void:
+	if medkits <= 0 or is_dead or is_healing or health >= MAX_HEALTH:
+		return
+	is_healing = true
+	heal_timer = 2.2
+	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
+
 func _refresh_ammo() -> void:
 	ammo_label.text = "AK-47   %d / %d" % [ammo, reserve_ammo]
 
@@ -623,6 +680,10 @@ func _refresh_health() -> void:
 		health_label.text = "HP %d" % int(round(health))
 	if health_bar != null:
 		health_bar.value = health
+
+func _refresh_equipment() -> void:
+	if equip_label != null:
+		equip_label.text = "ГРАНАТЫ: %d   •   БИНТЫ: %d" % [grenades, medkits]
 
 func _pop_damage(amount: int) -> void:
 	if damage_label == null:
@@ -634,7 +695,6 @@ func _pop_damage(amount: int) -> void:
 	damage_label.offset_bottom = -34.0
 	damage_time = 0.65
 
-## Получение урона игроком
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Enemy") -> void:
 	if is_dead:
 		return
@@ -642,7 +702,6 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 	blood_vignette_time = 1.0
 	_play_sfx(sfx_hit, SFX_HIT_FLESH, 0.0, randf_range(0.9, 1.1))
 
-	# Толчок камеры от направления попадания
 	var to_attacker := (attacker_pos - global_position).normalized()
 	recoil.y += randf_range(0.02, 0.05)
 	recoil.x += clampf(-to_attacker.x * 0.04, -0.06, 0.06)
@@ -652,14 +711,12 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 	if health <= 0.0:
 		_die(attacker_name)
 
-## Гибель игрока
 func _die(killer_name: String) -> void:
 	is_dead = true
 	health = 0.0
 	velocity = Vector3.ZERO
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-	# Камера падает на землю
 	camera.position.y = 0.28
 	camera.rotation.z = deg_to_rad(35.0)
 
@@ -668,12 +725,14 @@ func _die(killer_name: String) -> void:
 	if death_screen != null:
 		death_screen.visible = true
 
-## Возрождение на базе
 func respawn() -> void:
 	is_dead = false
 	health = MAX_HEALTH
 	ammo = MAG_SIZE
 	reserve_ammo = RESERVE_START
+	grenades = 3
+	medkits = 2
+	is_healing = false
 	stance = 0
 	position = respawn_position
 	camera.position = Vector3(0, 1.80, -0.10)
@@ -682,6 +741,7 @@ func respawn() -> void:
 	yaw = 0.0
 	_refresh_ammo()
 	_refresh_health()
+	_refresh_equipment()
 
 	if death_screen != null:
 		death_screen.visible = false

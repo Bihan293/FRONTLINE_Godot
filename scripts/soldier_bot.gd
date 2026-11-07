@@ -6,11 +6,13 @@ class_name FRONTLINESoldierBot
 ## стрельбу очередями, перезарядку, подавление и физический рэгдолл при гибели.
 
 signal soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon_name: String)
+signal soldier_fired(pos: Vector3)
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -39,6 +41,8 @@ var ammo := MAG_SIZE
 var is_reloading := false
 var reload_timer := 0.0
 var suppression := 0.0
+var grenades := 1
+var grenade_cooldown := randf_range(8.0, 20.0)
 
 # ИИ-состояния: 0: ПАТРУЛЬ/НАСТУПЛЕНИЕ, 1: ПЕРЕБЕЖКА В УКРЫТИЕ, 2: ПЕРЕСТРЕЛКА
 var ai_state := 0
@@ -345,10 +349,31 @@ func _combat_behavior(delta: float) -> void:
 		else:
 			stance = 0 if randf() > 0.3 else 1
 
+	# Бросок гранаты при подходящей дистанции
+	if dist >= 14.0 and dist <= 32.0 and grenades > 0:
+		grenade_cooldown -= delta
+		if grenade_cooldown <= 0.0:
+			_throw_bot_grenade(tpos)
+
 	# Стрельба очередями
 	fire_cooldown -= delta
 	if fire_cooldown <= 0.0:
 		_shoot_burst()
+
+func _throw_bot_grenade(target_pt: Vector3) -> void:
+	grenades -= 1
+	grenade_cooldown = randf_range(25.0, 45.0)
+	var g := GRENADE_SCRIPT.new()
+	var from := global_position + Vector3(0, 1.4, 0)
+	var to_vec := target_pt - from
+	var horiz_dist := Vector2(to_vec.x, to_vec.z).length()
+	var dir := to_vec.normalized() + Vector3.UP * 0.35
+	g.position = from + dir * 0.6
+	g.linear_velocity = dir.normalized() * clampf(horiz_dist * 0.85 + 5.0, 11.0, 22.0)
+	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
+	g.thrower_name = soldier_name
+	g.team_name = team_name
+	get_parent().add_child(g)
 
 ## Наступление и патрулирование в сторону вражеской базы
 func _advance_behavior(delta: float) -> void:
@@ -384,6 +409,7 @@ func _shoot_burst() -> void:
 		fire_cooldown = 0.11
 
 func _fire_single_shot() -> void:
+	soldier_fired.emit(global_position)
 	if _sfx_shot != null:
 		_sfx_shot.pitch_scale = randf_range(0.92, 1.08)
 		_sfx_shot.play()

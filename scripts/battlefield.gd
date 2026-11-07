@@ -7,6 +7,8 @@ const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
 const LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
+const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
+const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 
 var player: CharacterBody3D
 var team_name := "IRON LEGION"
@@ -20,6 +22,8 @@ var killfeed_container: VBoxContainer
 var sectors_container: HBoxContainer
 var sector_indicators: Dictionary = {}
 var sector_data: Array = []
+var compass: FRONTLINECompassBar
+var ambience: FRONTLINEAmbience
 
 var _mat_cache: Dictionary = {}
 var _detail_texture: Texture2D
@@ -41,6 +45,8 @@ const GERMAN_NAMES := [
 
 func _ready() -> void:
 	team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	ambience = AMBIENCE_SCRIPT.new()
+	add_child(ambience)
 	_build_world()
 	_spawn_player()
 	_build_sectors()
@@ -208,9 +214,14 @@ func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldi
 	bot.team_name = team
 	bot.soldier_name = bot_name
 	bot.soldier_killed.connect(_on_soldier_killed)
+	bot.soldier_fired.connect(_on_bot_fired)
 	add_child(bot)
 	_active_bots.append(bot)
 	return bot
+
+func _on_bot_fired(pos: Vector3) -> void:
+	if compass != null:
+		compass.add_gunfire_ping(pos)
 
 func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon_name: String) -> void:
 	# Списание билетов
@@ -287,6 +298,18 @@ func _build_hud() -> void:
 	killfeed_container.offset_bottom = 260
 	killfeed_container.add_theme_constant_override("separation", 6)
 	hud.add_child(killfeed_container)
+
+	# Тактический компас
+	compass = COMPASS_SCRIPT.new()
+	compass.anchor_left = 0.5
+	compass.anchor_right = 0.5
+	compass.offset_left = -190.0
+	compass.offset_right = 190.0
+	compass.offset_top = 74.0
+	compass.offset_bottom = 110.0
+	hud.add_child(compass)
+	if player != null and player.camera != null:
+		compass.setup(player.camera, sector_data)
 
 	# Кнопка меню
 	var menu_btn := Button.new()
