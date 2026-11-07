@@ -2,6 +2,21 @@ extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const CROSSHAIR = preload("res://scripts/crosshair.gd")
+
+const SFX_SHOT = preload("res://assets/audio/shot.wav")
+const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
+const SFX_RELOAD_OUT = preload("res://assets/audio/reload_out.ogg")
+const SFX_RELOAD_IN = preload("res://assets/audio/reload_in.wav")
+const SFX_HIT = preload("res://assets/audio/hit_flesh.ogg")
+const SFX_METAL = preload("res://assets/audio/hit_metal.ogg")
+const SFX_KILL = preload("res://assets/audio/kill.ogg")
+const SFX_UI = preload("res://assets/audio/ui_click.ogg")
+const SFX_FOOTSTEPS = [
+    preload("res://assets/audio/footstep_000.ogg"),
+    preload("res://assets/audio/footstep_001.ogg"),
+    preload("res://assets/audio/footstep_002.ogg"),
+]
+
 const MOUSE_SENS := 0.0022
 const TOUCH_SENS := 0.0030
 const SPEED := 5.2
@@ -41,12 +56,24 @@ var mobile_move := Vector2.ZERO
 var mobile_fire := false
 var sprint_hold := 0.0
 
+var sfx_shot: AudioStreamPlayer
+var sfx_empty: AudioStreamPlayer
+var sfx_reload_out: AudioStreamPlayer
+var sfx_reload_in: AudioStreamPlayer
+var sfx_hit: AudioStreamPlayer
+var sfx_metal: AudioStreamPlayer
+var sfx_kill: AudioStreamPlayer
+var sfx_ui: AudioStreamPlayer
+var sfx_footstep: AudioStreamPlayer
+var footstep_timer := 0.0
+
 func _ready() -> void:
     add_to_group("player")
     floor_snap_length = 0.25
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
     _build_weapon()
+    _build_audio()
     _build_mobile_controls()
     _build_hud()
     if not OS.has_feature("mobile"):
@@ -56,20 +83,21 @@ func _ready() -> void:
 func _build_player() -> void:
     var collision := CollisionShape3D.new()
     var capsule := CapsuleShape3D.new()
-    capsule.radius = 0.38
-    capsule.height = 1.8
+    capsule.radius = 0.45
+    capsule.height = 2.4
     collision.shape = capsule
-    collision.position.y = 0.9
+    collision.position.y = 1.2
     add_child(collision)
     camera = Camera3D.new()
-    camera.position = Vector3(0, 1.55, 0)
+    camera.position = Vector3(0, 2.05, 0)
     camera.fov = 75.0
     camera.current = true
     add_child(camera)
 
 func _build_weapon() -> void:
     weapon_root = Node3D.new()
-    weapon_root.position = Vector3(0.24, -0.20, -0.32)
+    weapon_root.position = Vector3(0.30, -0.26, -0.42)
+    weapon_root.scale = Vector3.ONE * 1.12
     weapon_base = weapon_root.position
     camera.add_child(weapon_root)
 
@@ -108,6 +136,31 @@ func _build_weapon() -> void:
     muzzle_flash.position = Vector3.ZERO
     muzzle_flash.visible = false
     muzzle_anchor.add_child(muzzle_flash)
+
+func _build_audio() -> void:
+    sfx_shot = _make_sfx()
+    sfx_empty = _make_sfx()
+    sfx_reload_out = _make_sfx()
+    sfx_reload_in = _make_sfx()
+    sfx_hit = _make_sfx()
+    sfx_metal = _make_sfx()
+    sfx_kill = _make_sfx()
+    sfx_ui = _make_sfx()
+    sfx_footstep = _make_sfx()
+
+func _make_sfx() -> AudioStreamPlayer:
+    var p := AudioStreamPlayer.new()
+    p.max_polyphony = 4
+    add_child(p)
+    return p
+
+func _play_sfx(player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
+    if player == null or stream == null:
+        return
+    player.stream = stream
+    player.volume_db = volume_db
+    player.pitch_scale = pitch
+    player.play()
 
 func _build_mobile_controls() -> void:
     var layer := CanvasLayer.new()
@@ -197,6 +250,16 @@ func _physics_process(delta: float) -> void:
     var bob_amount := clampf(planar_speed / SPEED, 0.0, 1.2)
     var bob := Vector3(sin(bob_time) * 0.006, absf(cos(bob_time)) * 0.005, 0.0) * bob_amount
     weapon_root.position = weapon_base + Vector3(0.0, weapon_kick * 0.25, weapon_kick) + bob
+
+    # Шаги: частота зависит от скорости, звук — случайный из трёх вариантов.
+    if planar_speed > 0.6 and is_on_floor():
+        footstep_timer -= delta
+        if footstep_timer <= 0.0:
+            var step_index := randi() % SFX_FOOTSTEPS.size()
+            _play_sfx(sfx_footstep, SFX_FOOTSTEPS[step_index], -13.0, randf_range(0.92, 1.08))
+            footstep_timer = clampf(0.66 - planar_speed * 0.05, 0.26, 0.62)
+    else:
+        footstep_timer = 0.12
     if muzzle_flash_time > 0.0:
         muzzle_flash_time -= delta
         if muzzle_flash_time <= 0.0:
@@ -210,6 +273,7 @@ func _physics_process(delta: float) -> void:
             ammo += take
             reserve_ammo -= take
             is_reloading = false
+            _play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
             _set_notice("ПЕРЕЗАРЯЖЕНО", 1.2)
             _refresh_ammo()
 
@@ -249,7 +313,7 @@ func _physics_process(delta: float) -> void:
     move_and_slide()
 
     recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
-    var target_y := 1.55 if stance == 0 else (1.05 if stance == 1 else 0.58)
+    var target_y := 2.05 if stance == 0 else (1.38 if stance == 1 else 0.65)
     camera.position.y = lerpf(camera.position.y, target_y, delta * 10.0)
     _apply_look()
 
@@ -262,10 +326,12 @@ func _apply_look() -> void:
     )
 
 func _down_action() -> void:
+    _play_sfx(sfx_ui, SFX_UI, -8.0, randf_range(0.96, 1.04))
     stance = mini(2, stance + 1)
     _update_stance()
 
 func _up_action() -> void:
+    _play_sfx(sfx_ui, SFX_UI, -8.0, randf_range(0.96, 1.04))
     if stance > 0:
         stance -= 1
         _update_stance()
@@ -279,11 +345,14 @@ func _shoot() -> void:
     if is_reloading or fire_cooldown > 0.0:
         return
     if ammo <= 0:
+        _play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
+        fire_cooldown = 0.25
         _set_notice("НЕТ ПАТРОНОВ — ПЕРЕЗАРЯДКА", 1.4)
         return
     ammo -= 1
     fire_cooldown = FIRE_INTERVAL
     _refresh_ammo()
+    _play_sfx(sfx_shot, SFX_SHOT, -2.0, randf_range(0.94, 1.06))
     # Отдача: подброс вверх + лёгкий горизонтальный разброс.
     recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
     recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
@@ -310,14 +379,17 @@ func _shoot() -> void:
             var dummy = body.get_meta("owner_dummy")
             var was_alive: bool = dummy.health > 0.0
             var damage: int = dummy.receive_hit(region)
+            _play_sfx(sfx_hit, SFX_HIT, -4.0, randf_range(0.92, 1.06))
             _set_notice("ПОПАДАНИЕ: %s  −%d HP" % [region.to_upper(), damage], 1.1)
             if crosshair != null:
                 crosshair.flash_hit()
             if was_alive and dummy.health <= 0.0:
+                _play_sfx(sfx_kill, SFX_KILL, -3.0, 1.0)
                 var world = get_parent()
                 if world.has_method("add_kill"):
                     world.add_kill()
         else:
+            _play_sfx(sfx_metal, SFX_METAL, -6.0, randf_range(0.94, 1.06))
             _set_notice("ПОПАДАНИЕ В УКРЫТИЕ", 0.8)
     else:
         _set_notice("ПРОМАХ", 0.7)
@@ -327,6 +399,7 @@ func _reload() -> void:
         return
     is_reloading = true
     reload_timer = RELOAD_TIME
+    _play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
     _set_notice("ПЕРЕЗАРЯДКА...", RELOAD_TIME)
 
 func _refresh_ammo() -> void:

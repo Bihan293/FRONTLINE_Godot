@@ -2,6 +2,9 @@ extends Node3D
 
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const DUMMY_SCRIPT = preload("res://scripts/dummy.gd")
+const LAYOUT = preload("res://scripts/map_layout.gd")
+const SFX_UI = preload("res://assets/audio/ui_click.ogg")
+
 var player: CharacterBody3D
 var score_kills := 0
 var score_deaths := 0
@@ -9,6 +12,7 @@ var team_name := "IRON LEGION"
 var hud: CanvasLayer
 var scoreboard: PanelContainer
 var stats_label: Label
+var ui_click: AudioStreamPlayer
 
 func _ready() -> void:
     team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -21,16 +25,6 @@ func _mat(color: Color) -> StandardMaterial3D:
     m.albedo_color = color
     m.roughness = 1.0
     return m
-
-func _box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
-    var mesh := BoxMesh.new()
-    mesh.size = size
-    var inst := MeshInstance3D.new()
-    inst.mesh = mesh
-    inst.position = pos
-    inst.material_override = _mat(color)
-    parent.add_child(inst)
-    return inst
 
 func _build_world() -> void:
     var env := WorldEnvironment.new()
@@ -48,49 +42,103 @@ func _build_world() -> void:
     sun.light_energy = 1.15
     add_child(sun)
 
-    # Real static floor collider. The previous version had only a visible mesh,
-    # so CharacterBody3D had no physical surface and fell through the map.
-    var floor_body := StaticBody3D.new()
-    floor_body.position = Vector3(0,-0.35,0)
-    add_child(floor_body)
-    var floor_mesh := MeshInstance3D.new()
-    var floor_box := BoxMesh.new()
-    floor_box.size = Vector3(90,0.6,90)
-    floor_mesh.mesh = floor_box
-    floor_mesh.material_override = _mat(Color(0.27,0.31,0.25))
-    floor_body.add_child(floor_mesh)
-    var floor_collision := CollisionShape3D.new()
-    var floor_shape := BoxShape3D.new()
-    floor_shape.size = Vector3(90,0.6,90)
-    floor_collision.shape = floor_shape
-    floor_body.add_child(floor_collision)
+    for box in LAYOUT.boxes():
+        _build_box(box)
 
-    for x in [-18.0, -9.0, 0.0, 9.0, 18.0]:
-        _box(self, Vector3(x,0.015,-12), Vector3(0.16,0.03,42), Color(0.65,0.62,0.48))
-    for x in [-20.0,-10.0,10.0,20.0]:
-        _box(self, Vector3(x,0.8,4), Vector3(5,1.6,1.1), Color(0.48,0.43,0.32))
-    for z in [-18.0,-8.0,4.0]:
-        _box(self, Vector3(-29,0.7,z), Vector3(1.2,1.4,7), Color(0.43,0.45,0.43))
-        _box(self, Vector3(29,0.7,z), Vector3(1.2,1.4,7), Color(0.43,0.45,0.43))
-    _box(self, Vector3(0,2,-32), Vector3(52,4,1.5), Color(0.34,0.35,0.32))
-    for i in range(7):
-        var d = Node3D.new()
-        d.set_script(DUMMY_SCRIPT)
-        d.position = Vector3(-18 + i * 6, 0.0, -19 - (i % 2) * 5)
-        d.team_name = "RED FRONT" if i % 2 == 0 else "IRON LEGION"
-        d.dummy_name = "TARGET-%02d" % (i + 1)
-        add_child(d)
-    _box(self, Vector3(-34,0.1,24), Vector3(5,0.2,5), Color(0.18,0.2,0.22))
-    _box(self, Vector3(34,0.1,24), Vector3(5,0.2,5), Color(0.55,0.12,0.12))
+    for board in LAYOUT.target_boards():
+        _build_target_center(board)
+
+    _spawn_dummies()
+
+func _build_box(data: Dictionary) -> void:
+    var size: Vector3 = data.size
+    var pos: Vector3 = data.pos
+    var solid: bool = data.solid
+    var parent: Node3D = self
+    if solid:
+        var body := StaticBody3D.new()
+        body.position = pos
+        add_child(body)
+        parent = body
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    var inst := MeshInstance3D.new()
+    inst.mesh = mesh
+    inst.material_override = _mat(data.color)
+    if not solid:
+        inst.position = pos
+    parent.add_child(inst)
+
+func _build_target_center(pos: Vector3) -> void:
+    var disc := MeshInstance3D.new()
+    var cyl := CylinderMesh.new()
+    cyl.top_radius = 0.36
+    cyl.bottom_radius = 0.36
+    cyl.height = 0.06
+    cyl.radial_segments = 20
+    disc.mesh = cyl
+    disc.rotation.x = PI * 0.5
+    disc.position = pos + Vector3(0, 0, 0.1)
+    disc.material_override = _mat(Color(0.75, 0.12, 0.10))
+    add_child(disc)
+
+func _spawn_dummies() -> void:
+    # Статичные мишени.
+    _add_dummy("TARGET-01", Vector3(-18, 0, -19), "IRON LEGION", "stand")
+    _add_dummy("TARGET-02", Vector3(-6, 0, -19), "RED FRONT", "stand")
+    _add_dummy("TARGET-03", Vector3(6, 0, -19), "IRON LEGION", "stand")
+    _add_dummy("TARGET-04", Vector3(18, 0, -19), "RED FRONT", "stand")
+
+    # Движущиеся: вперёд-назад и боком.
+    _add_dummy("WALK-FWD-01", Vector3(-12, 0, -14), "RED FRONT", "stand", Vector3(0, 0, 1), 3.5, 0.80)
+    _add_dummy("WALK-FWD-02", Vector3(12, 0, -14), "IRON LEGION", "stand", Vector3(0, 0, 1), 3.5, 0.65)
+    _add_dummy("STRAFE-01", Vector3(0, 0, -8), "RED FRONT", "stand", Vector3(1, 0, 0), 4.5, 0.90)
+    _add_dummy("STRAFE-02", Vector3(0, 0, -24), "IRON LEGION", "stand", Vector3(1, 0, 0), 4.5, 0.60)
+    _add_dummy("CROUCH-WALK-01", Vector3(-24, 0, -14), "IRON LEGION", "crouch", Vector3(1, 0, 0), 2.5, 0.50)
+
+    # Сидящие и лежащие.
+    _add_dummy("SIT-01", Vector3(24, 0, -14), "RED FRONT", "sit")
+    _add_dummy("PRONE-01", Vector3(27, 0, -18), "IRON LEGION", "prone")
+    _add_dummy("PRONE-02", Vector3(-27, 0, -18), "RED FRONT", "prone")
+
+    # Стреляющие по неподвижной точке: стоя, сидя, лёжа и в приседе.
+    var boards: Array = LAYOUT.target_boards()
+    _add_dummy("SHOOT-STAND-01", Vector3(-12, 0, -4), "RED FRONT", "stand", Vector3.ZERO, 0.0, 1.0, true, boards[0])
+    _add_dummy("SHOOT-SIT-01", Vector3(-4, 0, -4), "IRON LEGION", "sit", Vector3.ZERO, 0.0, 1.0, true, boards[0])
+    _add_dummy("SHOOT-CROUCH-01", Vector3(4, 0, -4), "RED FRONT", "crouch", Vector3.ZERO, 0.0, 1.0, true, boards[1])
+    _add_dummy("SHOOT-PRONE-01", Vector3(12, 0, -4), "IRON LEGION", "prone", Vector3.ZERO, 0.0, 1.0, true, boards[2])
+
+func _add_dummy(
+    dummy_name: String,
+    pos: Vector3,
+    team: String,
+    stance: String,
+    patrol_axis: Vector3 = Vector3.ZERO,
+    patrol_range: float = 0.0,
+    patrol_speed: float = 1.0,
+    shooting: bool = false,
+    shoot_target: Vector3 = Vector3.ZERO
+) -> void:
+    var d = Node3D.new()
+    d.set_script(DUMMY_SCRIPT)
+    d.position = pos
+    d.team_name = team
+    d.dummy_name = dummy_name
+    d.stance = stance
+    d.patrol_axis = patrol_axis
+    d.patrol_range = patrol_range
+    d.patrol_speed = patrol_speed
+    d.shooting = shooting
+    d.shoot_target = shoot_target
+    add_child(d)
 
 func _spawn_player() -> void:
     player = CharacterBody3D.new()
     player.set_script(PLAYER_SCRIPT)
-    var spawn: Vector3 = get_tree().get_meta("spawn_position", Vector3(0,0.9,30))
-    # Clamp the requested spawn to the playable floor and ray-check the ground.
+    var spawn: Vector3 = get_tree().get_meta("spawn_position", Vector3(0, LAYOUT.SPAWN_Y, 30))
     spawn.x = clampf(spawn.x, -40.0, 40.0)
     spawn.z = clampf(spawn.z, -40.0, 40.0)
-    spawn.y = 0.9
+    spawn.y = LAYOUT.SPAWN_Y
     player.position = spawn
     add_child(player)
 
@@ -98,6 +146,11 @@ func _build_hud() -> void:
     hud = CanvasLayer.new()
     hud.layer = 5
     add_child(hud)
+
+    ui_click = AudioStreamPlayer.new()
+    ui_click.stream = SFX_UI
+    ui_click.volume_db = -8.0
+    add_child(ui_click)
 
     var top := Label.new()
     top.text = "FRONTLINE  |  POLYGON  |  " + team_name
@@ -126,7 +179,10 @@ func _build_hud() -> void:
     back.offset_top = 12.0
     back.offset_bottom = 56.0
     back.add_theme_font_size_override("font_size", 16)
-    back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/MainMenu.tscn"))
+    back.pressed.connect(func():
+        _play_ui()
+        get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+    )
     hud.add_child(back)
 
     var board_btn := Button.new()
@@ -138,7 +194,10 @@ func _build_hud() -> void:
     board_btn.offset_top = 62.0
     board_btn.offset_bottom = 102.0
     board_btn.add_theme_font_size_override("font_size", 14)
-    board_btn.pressed.connect(func(): scoreboard.visible = not scoreboard.visible)
+    board_btn.pressed.connect(func():
+        _play_ui()
+        scoreboard.visible = not scoreboard.visible
+    )
     hud.add_child(board_btn)
 
     scoreboard = PanelContainer.new()
@@ -172,6 +231,11 @@ func add_kill() -> void:
     score_kills += 1
     stats_label.text = "УБИЙСТВА: %d   СМЕРТИ: %d" % [score_kills, score_deaths]
 
+func _play_ui() -> void:
+    if ui_click != null:
+        ui_click.play()
+
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
+        _play_ui()
         scoreboard.visible = not scoreboard.visible

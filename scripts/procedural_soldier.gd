@@ -9,12 +9,16 @@ class_name FRONTLINEProceduralSoldier
 
 var _skeleton: Skeleton3D
 var _bone_ids: Dictionary = {}
+var _hips_id: int = -1
+var _hips_rest := Vector3.ZERO
+var _hip_drop := 0.0
 var _phase: float = 0.0
 var _speed: float = 0.0
 var _move_amount: float = 0.0
 var _run_amount: float = 0.0
 var _aim_amount: float = 0.0
 var _crouch_amount: float = 0.0
+var _sit_amount: float = 0.0
 var _fire_amount: float = 0.0
 var _look_yaw: float = 0.0
 var _look_pitch: float = 0.0
@@ -40,6 +44,9 @@ func _ready() -> void:
             _pose[bone_name] = Quaternion.IDENTITY
         else:
             push_warning("FRONTLINE: missing rig bone: " + bone_name)
+    if _bone_ids.has("Hips"):
+        _hips_id = _bone_ids["Hips"]
+        _hips_rest = _skeleton.get_bone_rest(_hips_id).origin
 
 func _find_skeleton() -> Skeleton3D:
     var direct := get_node_or_null(skeleton_path)
@@ -69,6 +76,9 @@ func set_aiming(enabled: bool) -> void:
 func set_crouching(enabled: bool) -> void:
     _crouch_amount = 1.0 if enabled else 0.0
 
+func set_sitting(enabled: bool) -> void:
+    _sit_amount = 1.0 if enabled else 0.0
+
 func set_firing(enabled: bool) -> void:
     _fire_amount = 1.0 if enabled else 0.0
 
@@ -86,19 +96,26 @@ func _process(delta: float) -> void:
     var run_scale := 1.0 + 0.35 * _run_amount
     var aim := _aim_amount
     var crouch := _crouch_amount
+    var sit := _sit_amount
     var fire := _fire_amount
 
+    # Опускаем таз, чтобы присед/сидение читались, а ступни оставались у пола.
+    var target_hip_drop := crouch * 0.28 + sit * 0.75
+    _hip_drop = lerpf(_hip_drop, target_hip_drop, blend)
+    if _hips_id >= 0:
+        _skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -_hip_drop, 0))
+
     # Lower body: alternating hip/knee/foot motion with a softer planted-foot phase.
-    _set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.28), blend)
-    _set_pose("RightUpperLeg", _q(Vector3.RIGHT, opposite_stride * 0.48 * run_scale - crouch * 0.28), blend)
-    _set_pose("LeftLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -stride) * 0.72 + crouch * 0.62), blend)
-    _set_pose("RightLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -opposite_stride) * 0.72 + crouch * 0.62), blend)
-    _set_pose("LeftFoot", _q(Vector3.RIGHT, -maxf(0.0, stride) * 0.20), blend)
-    _set_pose("RightFoot", _q(Vector3.RIGHT, -maxf(0.0, opposite_stride) * 0.20), blend)
+    _set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.25), blend)
+    _set_pose("RightUpperLeg", _q(Vector3.RIGHT, opposite_stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.25), blend)
+    _set_pose("LeftLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -stride) * 0.72 + crouch * 0.62 + sit * 1.45), blend)
+    _set_pose("RightLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -opposite_stride) * 0.72 + crouch * 0.62 + sit * 1.45), blend)
+    _set_pose("LeftFoot", _q(Vector3.RIGHT, -maxf(0.0, stride) * 0.20 - sit * 0.20), blend)
+    _set_pose("RightFoot", _q(Vector3.RIGHT, -maxf(0.0, opposite_stride) * 0.20 - sit * 0.20), blend)
 
     # Torso follows the gait with damped counter-rotation and a subtle vertical rhythm.
     _set_pose("Hips", _q(Vector3.UP, sin(_phase) * 0.035 * _move_amount), blend)
-    _set_pose("Spine", _q(Vector3.RIGHT, -0.05 * _run_amount - 0.10 * crouch), blend)
+    _set_pose("Spine", _q(Vector3.RIGHT, -0.05 * _run_amount - 0.10 * crouch + 0.12 * sit), blend)
     _set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.045 * _move_amount) * _q(Vector3.RIGHT, -0.08 * aim), blend)
     _set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.25), blend)
     _set_pose("Head", _q(Vector3.UP, _look_yaw) * _q(Vector3.RIGHT, _look_pitch * 0.75), blend)

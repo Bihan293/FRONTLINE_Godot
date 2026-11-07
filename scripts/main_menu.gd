@@ -1,6 +1,7 @@
 extends Control
 
-const MAP_PREVIEW = preload("res://maps/polygon/polygon_preview.png")
+const MAP_PREVIEW_SCRIPT = preload("res://scripts/map_preview.gd")
+const LAYOUT = preload("res://scripts/map_layout.gd")
 var map_selected := false
 var selected_team := "IRON LEGION"
 
@@ -65,14 +66,14 @@ func _show_main() -> void:
     center.add_theme_constant_override("separation", 14)
     root.add_child(center)
     _label(center, "FRONTLINE", 54, Color(0.93,0.94,0.9), HORIZONTAL_ALIGNMENT_CENTER)
-    _label(center, "LOW-POLY TACTICAL FPS  •  PROTOTYPE 0.2", 15, Color(0.62,0.68,0.67), HORIZONTAL_ALIGNMENT_CENTER)
+    _label(center, "LOW-POLY TACTICAL FPS  •  PROTOTYPE 0.3", 15, Color(0.62,0.68,0.67), HORIZONTAL_ALIGNMENT_CENTER)
     _button(center, "ИГРАТЬ", _show_maps, Vector2(0,62))
     _button(center, "НАСТРОЙКИ", _show_settings, Vector2(0,54))
     _button(center, "ВЫХОД", _quit, Vector2(0,54))
     var spacer2 := Control.new()
     spacer2.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(spacer2)
-    _label(root, "ANDROID  •  GODOT 4  •  BUILD 0.2.0", 12, Color(0.5,0.56,0.55), HORIZONTAL_ALIGNMENT_CENTER)
+    _label(root, "ANDROID  •  GODOT 4  •  BUILD 0.3.0", 12, Color(0.5,0.56,0.55), HORIZONTAL_ALIGNMENT_CENTER)
 
 func _show_maps() -> void:
     map_selected = false
@@ -112,15 +113,13 @@ func _show_maps() -> void:
     details.name = "MapDetails"
     details.visible = false
     preview.add_child(details)
-    var image := TextureRect.new()
-    image.texture = MAP_PREVIEW
-    image.custom_minimum_size = Vector2(560,310)
+    var image = MAP_PREVIEW_SCRIPT.new()
+    image.custom_minimum_size = Vector2(560, 290)
     image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    image.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-    image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    image.size_flags_vertical = Control.SIZE_EXPAND_FILL
     details.add_child(image)
     _label(details, "POLYGON  /  TRAINING RANGE", 24)
-    _label(details, "Большой открытый тренировочный полигон: стрельбище, бетонные укрытия, мешки с песком и манекены. Карта предназначена для проверки оружия, движения и попаданий.", 16, Color(0.72,0.77,0.74))
+    _label(details, "Большой тренировочный полигон: стрельбище с мишенями, бетонные укрытия, мешки с песком, движущиеся, сидящие, лежащие и стреляющие манекены. Схема совпадает с картой в игре.", 16, Color(0.72,0.77,0.74))
     _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_teams, Vector2(0,58))
     set_meta("map_details", details)
     set_meta("map_placeholder", placeholder)
@@ -183,32 +182,18 @@ func _show_deployment() -> void:
     var map_holder := PanelContainer.new()
     map_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     map_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    map_holder.custom_minimum_size = Vector2(480, 300)
     body.add_child(map_holder)
     var map_overlay := Control.new()
-    map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     map_holder.add_child(map_overlay)
-    var image := TextureRect.new()
-    image.texture = MAP_PREVIEW
-    image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+    map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    var image = MAP_PREVIEW_SCRIPT.new()
+    image.show_spawns = true
+    image.interactive = true
+    image.custom_minimum_size = Vector2(460, 300)
+    image.spawn_selected.connect(_select_spawn)
     map_overlay.add_child(image)
-    var points := [Vector2(0.19,0.76), Vector2(0.38,0.76), Vector2(0.62,0.76), Vector2(0.81,0.76)]
-    for i in range(points.size()):
-        var spawn_index := i
-        var marker := Button.new()
-        marker.text = str(i+1)
-        marker.custom_minimum_size = Vector2(48,48)
-        marker.position = Vector2(0,0)
-        marker.anchor_left = points[i].x
-        marker.anchor_right = points[i].x
-        marker.anchor_top = points[i].y
-        marker.anchor_bottom = points[i].y
-        marker.offset_left = -24
-        marker.offset_right = 24
-        marker.offset_top = -24
-        marker.offset_bottom = 24
-        marker.pressed.connect(func(): _select_spawn(spawn_index))
-        map_overlay.add_child(marker)
+    image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     var side := VBoxContainer.new()
     side.custom_minimum_size = Vector2(250,0)
     side.add_theme_constant_override("separation", 12)
@@ -224,6 +209,7 @@ func _show_deployment() -> void:
     deploy.disabled = true
     set_meta("spawn_label", selected)
     set_meta("deploy_button", deploy)
+    set_meta("map_preview", image)
     set_meta("selected_spawn", -1)
     _button(side, "НАЗАД", _show_teams, Vector2(0,48))
 
@@ -233,18 +219,21 @@ func _select_spawn(index: int) -> void:
     label.text = "ТОЧКА %d  •  ГОТОВА" % (index + 1)
     var deploy: Button = get_meta("deploy_button")
     deploy.disabled = false
+    var preview = get_meta("map_preview", null)
+    if preview != null:
+        preview.set_selected(index)
 
 func _deploy() -> void:
     var index: int = int(get_meta("selected_spawn", -1))
     if index < 0:
         return
-    var spawn_positions := [Vector3(-30,0.9,30), Vector3(-10,0.9,30), Vector3(10,0.9,30), Vector3(30,0.9,30)]
+    var spawn_positions: Array = LAYOUT.spawns()
     get_tree().set_meta("spawn_position", spawn_positions[index])
     get_tree().change_scene_to_file("res://scenes/Polygon.tscn")
 
 func _show_settings() -> void:
     var root := _make_shell("НАСТРОЙКИ")
-    _label(root, "Прототип 0.2: настройки графики и чувствительности будут расширены в следующих сборках.", 18, Color(0.7,0.74,0.72))
+    _label(root, "Прототип 0.3: настройки графики и чувствительности будут расширены в следующих сборках.", 18, Color(0.7,0.74,0.72))
     _button(root, "НАЗАД", _show_main, Vector2(0,52))
 
 func _quit() -> void:
