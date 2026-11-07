@@ -51,6 +51,11 @@ static func rig_model(model_root: Node, arms_only: bool = false) -> Skeleton3D:
 			skeleton.set_bone_parent(index, bone_indices[parent_name])
 		var rest := Transform3D(Basis.IDENTITY, rest_position)
 		skeleton.set_bone_rest(index, rest)
+		# Newly created bones start with an identity pose unless initialized.
+		# Match the pose to rest so BoneAttachment3D parts assemble as a soldier.
+		skeleton.set_bone_pose_position(index, rest_position)
+		skeleton.set_bone_pose_rotation(index, Quaternion.IDENTITY)
+		skeleton.set_bone_pose_scale(index, Vector3.ONE)
 		rest_global[bone_name] = rest if parent_name.is_empty() else rest_global[parent_name] * rest
 
 	var attachments: Dictionary = {}

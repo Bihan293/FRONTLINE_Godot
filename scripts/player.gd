@@ -40,7 +40,6 @@ var view_arms_root: Node3D
 var view_arms_animator
 var view_arms_base := Vector3(0.15, -0.88, -0.42)
 var view_arms_aim_base := Vector3(-0.09, -0.85, -0.44)
-var weapon_aim_position := Vector3(0.04, -0.19, -0.36)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
@@ -88,8 +87,8 @@ func _ready() -> void:
     floor_snap_length = 0.25
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
-    _build_weapon()
     _build_view_arms()
+    _build_weapon()
     _build_audio()
     _build_mobile_controls()
     _build_hud()
@@ -115,8 +114,18 @@ func _build_weapon() -> void:
     weapon_root = Node3D.new()
     weapon_root.position = Vector3(0.30, -0.26, -0.42)
     weapon_root.scale = Vector3.ONE * 1.12
+    var right_hand: BoneAttachment3D
+    if view_arms_root != null:
+        right_hand = view_arms_root.find_child("Attach_RightHand", true, false) as BoneAttachment3D
+    if right_hand != null:
+        # Attach the rifle to the animated right wrist so it follows both
+        # procedural hand motion and the first-person camera as one assembly.
+        right_hand.add_child(weapon_root)
+        weapon_root.position = Vector3(0.0, 0.14, 0.0)
+        weapon_root.scale = Vector3(1.12 / 0.45, 1.12 / 0.8, 1.12 / 0.8)
+    else:
+        camera.add_child(weapon_root)
     weapon_base = weapon_root.position
-    camera.add_child(weapon_root)
 
     var packed = load("res://assets/models/ak47/ak47_lowpoly.glb")
     var muzzle_anchor: Node3D = weapon_root
@@ -173,6 +182,7 @@ func _build_view_arms() -> void:
     view_arms_animator = view_arms_root
     view_arms_animator.set_aiming(true)
     view_arms_animator.set_aim_forward_sign(1.0)
+    view_arms_animator.set_left_support_shift(0.0)
     view_arms_animator.set_motion(0.0, false)
 
 func _set_aiming(enabled: bool) -> void:
@@ -302,13 +312,12 @@ func _physics_process(delta: float) -> void:
     breathing_time += delta * 1.35
     var bob_amount := clampf(planar_speed / SPEED, 0.0, 1.2)
     var bob := Vector3(sin(bob_time) * 0.006, absf(cos(bob_time)) * 0.005, 0.0) * bob_amount
-    var base_position := weapon_base.lerp(weapon_aim_position, aim_blend)
     var reload_phase := 0.0
     if is_reloading:
         reload_phase = sin((1.0 - reload_timer / RELOAD_TIME) * PI)
     var sway := Vector3(look_sway.x, -look_sway.y, 0.0)
     var breathing := sin(breathing_time) * 0.0025 * (1.0 - aim_blend * 0.5)
-    var weapon_target := base_position + bob + Vector3(0.0, breathing + weapon_kick * 0.20 - reload_phase * 0.10, weapon_kick * 0.75)
+    var weapon_target := weapon_base + Vector3(0.0, breathing * 0.5 + weapon_kick * 0.04 - reload_phase * 0.04, weapon_kick * 0.05)
     weapon_root.position = weapon_root.position.lerp(weapon_target, blend)
     var weapon_rotation_target := Vector3(weapon_kick * 0.9 - reload_phase * 0.24, sway.x * 0.45, sway.y * 0.5 + reload_phase * 0.18)
     weapon_root.rotation = weapon_root.rotation.lerp(weapon_rotation_target, blend)

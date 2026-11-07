@@ -4,6 +4,7 @@ const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
+const AK_SCENE := "res://assets/models/ak47/ak47_lowpoly.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 
 # Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
@@ -213,27 +214,26 @@ func _build_label() -> void:
 func _build_gun() -> void:
     _gun_pivot = Node3D.new()
     _gun_pivot.name = "GunPivot"
-    var gun_height := 1.24
-    match stance:
-        "crouch":
-            gun_height = 0.98
-        "sit":
-            gun_height = 0.72
-        "prone":
-            gun_height = 0.34
-    _gun_pivot.position = Vector3(0.20, gun_height, -0.10)
-    _pivot.add_child(_gun_pivot)
+    var right_hand := _visual.find_child("Attach_RightHand", true, false) as BoneAttachment3D
+    if right_hand != null:
+        right_hand.add_child(_gun_pivot)
+        _gun_pivot.position = Vector3(0.0, 0.14, 0.0)
+    else:
+        _pivot.add_child(_gun_pivot)
 
-    var gun_root := Node3D.new()
-    _gun_pivot.add_child(gun_root)
-    _gun_box(gun_root, Vector3(0, 0, -0.22), Vector3(0.10, 0.13, 0.62), Color(0.12, 0.11, 0.09))
-    _gun_box(gun_root, Vector3(0, -0.13, -0.16), Vector3(0.08, 0.22, 0.16), Color(0.14, 0.12, 0.10))
-    _gun_box(gun_root, Vector3(0, 0.02, -0.60), Vector3(0.05, 0.05, 0.40), Color(0.20, 0.20, 0.20))
-    _gun_box(gun_root, Vector3(0, 0.06, -0.40), Vector3(0.06, 0.06, 0.22), Color(0.32, 0.25, 0.15))
-
-    _gun_muzzle = Node3D.new()
-    _gun_muzzle.position = Vector3(0, 0.02, -0.82)
-    gun_root.add_child(_gun_muzzle)
+    var muzzle_anchor: Node3D = _gun_pivot
+    var packed = load(AK_SCENE)
+    if packed != null:
+        var ak = packed.instantiate()
+        # The soldier visual is turned 180 degrees to face Godot's -Z forward.
+        # Keep the AK in its source +Z orientation so it points with the hands.
+        _gun_pivot.add_child(ak)
+        var muzzle_node = ak.find_child("Muzzle", true, false)
+        if muzzle_node is Node3D:
+            muzzle_anchor = muzzle_node
+    else:
+        push_error("FRONTLINE: cannot load mannequin AK-47 model " + AK_SCENE)
+    _gun_muzzle = muzzle_anchor
 
     _muzzle_flash = MeshInstance3D.new()
     var flash_mesh := SphereMesh.new()
@@ -251,7 +251,7 @@ func _build_gun() -> void:
     tracer_mesh.size = Vector3(0.03, 0.03, dist)
     _tracer.mesh = tracer_mesh
     _tracer.material_override = _emissive(Color(1.0, 0.86, 0.35))
-    _tracer.position = Vector3(0, 0, -dist * 0.5)
+    _tracer.position = Vector3(0, 0, dist * 0.5)
     _tracer.visible = false
     _gun_muzzle.add_child(_tracer)
 
@@ -264,19 +264,6 @@ func _build_gun() -> void:
     _impact_flash.visible = false
     add_child(_impact_flash)
     _impact_flash.global_position = shoot_target
-
-func _gun_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
-    var inst := MeshInstance3D.new()
-    var mesh := BoxMesh.new()
-    mesh.size = size
-    inst.mesh = mesh
-    inst.position = pos
-    var mat := StandardMaterial3D.new()
-    mat.albedo_color = color
-    mat.roughness = 0.7
-    mat.metallic = 0.25
-    inst.material_override = mat
-    parent.add_child(inst)
 
 func _emissive(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
@@ -379,7 +366,7 @@ func _aim_at_target(delta: float) -> void:
     var to := shoot_target - _gun_pivot.global_position
     var horizontal := Vector2(to.x, to.z).length()
     var pitch := atan2(to.y, horizontal)
-    _gun_pivot.rotation.x = pitch
+    _gun_pivot.rotation.x = -pitch
     if _proc != null:
         _proc.set_look(0.0, pitch)
 
