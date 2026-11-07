@@ -33,6 +33,12 @@ func set_selected(index: int) -> void:
 	selected_spawn = index
 	queue_redraw()
 
+func set_team(faction: String) -> void:
+	team_name = faction
+	_spawns = LAYOUT.spawns_red() if team_name.contains("RED") else LAYOUT.spawns_iron()
+	selected_spawn = 0
+	queue_redraw()
+
 func _build_world_preview() -> void:
 	var container := SubViewportContainer.new()
 	container.name = "MapWorldView"

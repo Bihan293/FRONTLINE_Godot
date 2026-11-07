@@ -323,6 +323,10 @@ func _physics_process(delta: float) -> void:
 	if _proc != null:
 		_proc.set_motion(horiz_vel, horiz_vel > SPEED_WALK + 0.5)
 		_proc.set_crouching(stance == 1)
+		_proc.set_reloading(is_reloading)
+	if _gun_pivot != null:
+		var reload_tilt := -0.32 if is_reloading else 0.0
+		_gun_pivot.rotation.z = lerpf(_gun_pivot.rotation.z, reload_tilt, clampf(delta * 8.0, 0.0, 1.0))
 
 func _update_ai(delta: float) -> void:
 	# Подавление постепенно рассеивается с учетом сложности
@@ -748,6 +752,8 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		return 0
 	health -= damage
 	suppression = minf(1.0, suppression + 0.45)
+	if _proc != null and health > 0.0:
+		_proc.add_flinch(0.55 if region == "chest" else 0.75)
 	if health > 0.0 and randf() < 0.45:
 		_shout("РАНЕН!" if team_name.contains("RED") else "GETROFFEN!", Color(0.95, 0.25, 0.25))
 
