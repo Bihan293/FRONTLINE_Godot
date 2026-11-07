@@ -67,6 +67,7 @@ jobs:
         run: |
           godot --headless --path . res://tests/pause_smoke.tscn --quit-after 1200
           godot --headless --path . res://tests/navigation_smoke.tscn --quit-after 1800
+          godot --headless --path . res://tests/gameplay_smoke.tscn --quit-after 1800
 
       - name: Build Android APK with Godot
         run: |
