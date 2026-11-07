@@ -12,6 +12,7 @@ const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
 const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
+const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 
 const TDM_TARGET_KILLS := 50
 
@@ -71,6 +72,7 @@ func _ready() -> void:
 	ambience = AMBIENCE_SCRIPT.new()
 	add_child(ambience)
 	_build_world()
+	_spawn_supply_caches()
 	_spawn_player()
 	_build_sectors()
 	_build_hud()
@@ -168,6 +170,24 @@ func _spawn_barrel(pos: Vector3) -> void:
 	var b := BARREL_SCRIPT.new()
 	b.position = pos
 	add_child(b)
+
+func _spawn_supply_caches() -> void:
+	var positions: Array[Vector3]
+	if str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE":
+		positions = [
+			Vector3(-35.0, 0.18, -40.0), Vector3(35.0, 0.18, -40.0),
+			Vector3(-35.0, 0.18, 40.0), Vector3(35.0, 0.18, 40.0),
+		]
+	else:
+		positions = [
+			Vector3(-72.0, 0.18, 0.0), Vector3(72.0, 0.18, 0.0),
+			Vector3(0.0, 0.18, -50.0), Vector3(0.0, 0.18, 50.0),
+		]
+	for pos in positions:
+		var cache = FIELD_PICKUP_SCRIPT.new()
+		cache.configure_ammo(48, 65.0)
+		cache.position = pos
+		add_child(cache)
 
 func _build_box(data: Dictionary) -> void:
 	var size: Vector3 = data.size
@@ -291,6 +311,21 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 		if is_instance_valid(self):
 			_spawn_reinforcement(v_team)
 	)
+
+func spawn_weapon_pickup(pos: Vector3, index: int, clip: int, reserve: int, initial_velocity: Vector3 = Vector3.ZERO) -> void:
+	var active_pickups := get_tree().get_nodes_in_group("field_weapon_pickups")
+	if active_pickups.size() >= 16:
+		var oldest = active_pickups[0]
+		if is_instance_valid(oldest):
+			oldest.queue_free()
+	var pickup = FIELD_PICKUP_SCRIPT.new()
+	pickup.configure_weapon(index, clip, reserve)
+	add_child(pickup)
+	pickup.global_position = pos
+	var velocity := initial_velocity
+	if velocity.is_zero_approx():
+		velocity = Vector3(randf_range(-0.8, 0.8), 1.1, randf_range(-0.8, 0.8))
+	pickup.launch(velocity)
 
 func _spawn_reinforcement(team: String) -> void:
 	var spawns: Array = _layout().spawns_red() if team.contains("RED") else _layout().spawns_iron()
@@ -454,6 +489,10 @@ func _end_match(winner: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if player != null and is_instance_valid(player) and player.has_method("set_input_locked"):
 		player.call("set_input_locked", true)
+	for bot in get_tree().get_nodes_in_group("bots"):
+		if is_instance_valid(bot):
+			bot.set_physics_process(false)
+			bot.set_process(false)
 
 	var is_player_winner: bool = (team_name == winner)
 

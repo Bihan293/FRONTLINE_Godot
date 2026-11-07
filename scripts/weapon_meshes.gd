@@ -63,6 +63,30 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			_add_cylinder(root, "MagazineTube", Vector3(0.0, -0.055, -0.40), 0.027, 0.43, dark)
 			_add_box(root, "Foregrip", Vector3(0.0, -0.06, -0.31), Vector3(0.12, 0.10, 0.20), wood)
 			muzzle_z = -0.69
+		"ppsh41":
+			_add_box(root, "WoodStock", Vector3(0.0, -0.02, 0.16), Vector3(0.12, 0.15, 0.44), wood)
+			_add_box(root, "Receiver", Vector3(0.0, 0.04, -0.10), Vector3(0.13, 0.13, 0.28), dark)
+			_add_cylinder(root, "ShroudBarrel", Vector3(0.0, 0.05, -0.40), 0.038, 0.44, steel)
+			_add_cylinder_ex(root, "DrumMag", Vector3(0.0, -0.12, -0.07), 0.11, 0.11, 0.075, dark, Vector3(0.0, 0.0, PI * 0.5))
+			_add_box(root, "MuzzleBrake", Vector3(0.0, 0.05, -0.63), Vector3(0.045, 0.05, 0.06), steel)
+			muzzle_z = -0.66
+		"kar98k":
+			_add_box(root, "WoodStock", Vector3(0.0, -0.015, 0.06), Vector3(0.13, 0.15, 0.76), wood)
+			_add_box(root, "Receiver", Vector3(0.0, 0.055, -0.17), Vector3(0.105, 0.10, 0.24), steel)
+			_add_cylinder(root, "Barrel", Vector3(0.0, 0.07, -0.50), 0.022, 0.65, steel)
+			_add_box(root, "Bolt", Vector3(0.07, 0.08, -0.13), Vector3(0.09, 0.035, 0.08), dark)
+			_add_cylinder(root, "Scope", Vector3(0.0, 0.135, -0.18), 0.026, 0.28, dark)
+			_add_box(root, "ScopeRingFront", Vector3(0.0, 0.095, -0.26), Vector3(0.045, 0.06, 0.03), steel)
+			_add_box(root, "ScopeRingRear", Vector3(0.0, 0.095, -0.10), Vector3(0.045, 0.06, 0.03), steel)
+			muzzle_z = -0.84
+		"panzerfaust":
+			var olive := _weapon_material("olive", Color(0.30, 0.35, 0.22), 0.68, 0.18)
+			_add_cylinder(root, "Tube", Vector3(0.0, 0.0, -0.12), 0.042, 0.82, olive)
+			_add_cylinder(root, "WarheadStem", Vector3(0.0, 0.0, -0.56), 0.032, 0.12, dark)
+			_add_cylinder_ex(root, "WarheadHead", Vector3(0.0, 0.0, -0.68), 0.02, 0.095, 0.18, olive)
+			_add_box(root, "SightLeaf", Vector3(0.0, 0.075, -0.36), Vector3(0.02, 0.09, 0.02), dark)
+			_add_box(root, "TriggerBox", Vector3(0.0, 0.06, -0.16), Vector3(0.035, 0.05, 0.12), dark)
+			muzzle_z = -0.78
 		_:
 			root.free()
 			return null
@@ -93,16 +117,19 @@ static func _add_box(parent: Node3D, node_name: String, pos: Vector3, dimensions
 	parent.add_child(mesh_instance)
 
 static func _add_cylinder(parent: Node3D, node_name: String, pos: Vector3, radius: float, length: float, material: Material) -> void:
+	_add_cylinder_ex(parent, node_name, pos, radius, radius, length, material, Vector3(PI * 0.5, 0.0, 0.0))
+
+static func _add_cylinder_ex(parent: Node3D, node_name: String, pos: Vector3, radius_top: float, radius_bottom: float, length: float, material: Material, rot: Vector3 = Vector3(PI * 0.5, 0.0, 0.0)) -> void:
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = node_name
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
+	mesh.top_radius = radius_top
+	mesh.bottom_radius = radius_bottom
 	mesh.height = length
 	mesh_instance.mesh = mesh
 	mesh_instance.material_override = material
 	mesh_instance.position = pos
-	mesh_instance.rotation.x = PI * 0.5
+	mesh_instance.rotation = rot
 	parent.add_child(mesh_instance)
 
 static func ak_mesh() -> ArrayMesh:

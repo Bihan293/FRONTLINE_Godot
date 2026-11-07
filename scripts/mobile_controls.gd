@@ -20,6 +20,7 @@ signal heal_pressed
 signal peek_left_changed(pressed: bool)
 signal peek_right_changed(pressed: bool)
 signal cycle_weapon_pressed
+signal interact_pressed
 
 const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
@@ -34,6 +35,7 @@ var _look_touch := -1
 var _button_touches: Dictionary = {}
 var _active: Dictionary = {}
 var _aim_on := false
+var _interact_visible := false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -56,7 +58,14 @@ func _layout() -> Dictionary:
 		"peek_left": Vector2(s.x - 386.0, s.y - 466.0),
 		"peek_right": Vector2(s.x - 294.0, s.y - 466.0),
 		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
+		"interact": Vector2(s.x - 220.0, s.y - 512.0),
 	}
+
+func set_interact_visible(is_visible: bool) -> void:
+	if _interact_visible == is_visible:
+		return
+	_interact_visible = is_visible
+	queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -71,7 +80,9 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon"]:
+	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact"]:
+		if id == "interact" and not _interact_visible:
+			continue
 		var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
 		if pos.distance_to(l[id]) <= radius * 1.15:
 			_button_touches[index] = id
@@ -144,6 +155,8 @@ func _press(id: String) -> void:
 			peek_right_changed.emit(true)
 		"weapon":
 			cycle_weapon_pressed.emit()
+		"interact":
+			interact_pressed.emit()
 
 func _set_joy(value: Vector2) -> void:
 	var v := value
@@ -178,6 +191,8 @@ func _draw() -> void:
 	_draw_button(l.peek_left, SMALL_RADIUS, "ВЛЕВО", "peek_left", Color(0.24, 0.34, 0.45, 0.50), font, 10)
 	_draw_button(l.peek_right, SMALL_RADIUS, "ВПРАВО", "peek_right", Color(0.24, 0.34, 0.45, 0.50), font, 9)
 	_draw_button(l.weapon, SMALL_RADIUS, "ОРУЖИЕ", "weapon", Color(0.50, 0.36, 0.14, 0.52), font, 10)
+	if _interact_visible:
+		_draw_button(l.interact, SMALL_RADIUS, "ВЗЯТЬ", "interact", Color(0.20, 0.48, 0.30, 0.62), font, 11)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
 	var active: bool = _aim_on if id == "aim" else bool(_active.get(id, false))

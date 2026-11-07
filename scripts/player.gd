@@ -7,6 +7,8 @@ const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
+const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
+const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
@@ -39,6 +41,9 @@ const WEAPON_DEFS := [
 	{"id": "mosin", "name": "MOSIN-NAGANT", "mag": 5, "reserve": 50, "damage": 84, "interval": 1.35, "reload": 2.6, "spread": 0.0018, "pellets": 1, "range": 220.0, "pitch": 0.76},
 	{"id": "m1911", "name": "M1911", "mag": 8, "reserve": 56, "damage": 35, "interval": 0.24, "reload": 1.5, "spread": 0.009, "pellets": 1, "range": 80.0, "pitch": 1.3},
 	{"id": "shotgun", "name": "PUMP SHOTGUN", "mag": 6, "reserve": 36, "damage": 10, "interval": 0.78, "reload": 3.2, "spread": 0.075, "pellets": 7, "range": 52.0, "pitch": 0.78},
+	{"id": "ppsh41", "name": "PPSH-41", "mag": 71, "reserve": 213, "damage": 22, "interval": 0.065, "reload": 3.1, "spread": 0.016, "pellets": 1, "range": 95.0, "pitch": 1.25},
+	{"id": "kar98k", "name": "KAR98K SNIPER", "mag": 5, "reserve": 45, "damage": 95, "interval": 1.45, "reload": 2.8, "spread": 0.0008, "pellets": 1, "range": 260.0, "pitch": 0.70},
+	{"id": "panzerfaust", "name": "PANZERFAUST", "mag": 1, "reserve": 5, "damage": 220, "interval": 2.2, "reload": 3.5, "spread": 0.003, "pellets": 1, "range": 160.0, "pitch": 0.65},
 ]
 
 const WORLD_LAYER_MASK := 1 << 0
@@ -67,6 +72,7 @@ var mobile_lean_right := false
 var current_weapon_index := 0
 var ammo_by_weapon: Array[int] = []
 var reserve_by_weapon: Array[int] = []
+var nearby_field_pickups: Array[Node3D] = []
 
 var left_arm_pivot: Node3D
 var left_arm_base := Vector3.ZERO
@@ -105,6 +111,7 @@ var respawn_position := Vector3.ZERO
 var hud: CanvasLayer
 var ammo_label: Label
 var equip_label: Label
+var pickup_label: Label
 var health_label: Label
 var health_bar: ProgressBar
 var blood_overlay: ColorRect
@@ -277,7 +284,13 @@ func _update_camera_fov(delta: float) -> void:
 		return
 	var target_fov := GameSettings.fov
 	if aiming:
-		target_fov *= 0.78
+		var wid: String = str(_weapon_data().id)
+		if wid == "kar98k":
+			target_fov *= 0.38
+		elif wid == "mosin":
+			target_fov *= 0.58
+		else:
+			target_fov *= 0.78
 	camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 9.0, 0.0, 1.0))
 
 func _build_pause_menu() -> void:
@@ -312,8 +325,13 @@ func set_input_locked(locked: bool) -> void:
 	if locked:
 		velocity = Vector3.ZERO
 		mobile_fire = false
+		if pickup_label != null:
+			pickup_label.visible = false
 		if mobile_controls != null:
 			mobile_controls.visible = false
+			mobile_controls.set_interact_visible(false)
+		if death_screen != null:
+			death_screen.visible = false
 
 func _build_audio() -> void:
 	sfx_shot = _make_sfx()
@@ -358,6 +376,7 @@ func _build_mobile_controls() -> void:
 	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
 	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
 	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
+	mobile_controls.interact_pressed.connect(_interact_with_pickup)
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
@@ -428,6 +447,26 @@ func _build_hud() -> void:
 	equip_label.add_theme_font_size_override("font_size", 16)
 	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
 	hud.add_child(equip_label)
+
+	pickup_label = Label.new()
+	pickup_label.anchor_left = 0.5
+	pickup_label.anchor_right = 0.5
+	pickup_label.anchor_top = 1.0
+	pickup_label.anchor_bottom = 1.0
+	pickup_label.offset_left = -220.0
+	pickup_label.offset_right = 220.0
+	pickup_label.offset_top = -92.0
+	pickup_label.offset_bottom = -54.0
+	pickup_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pickup_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pickup_label.add_theme_font_size_override("font_size", 20)
+	pickup_label.add_theme_color_override("font_color", Color(0.97, 0.88, 0.55))
+	pickup_label.add_theme_color_override("font_shadow_color", Color(0.02, 0.02, 0.02, 0.95))
+	pickup_label.add_theme_constant_override("shadow_offset_x", 2)
+	pickup_label.add_theme_constant_override("shadow_offset_y", 2)
+	pickup_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pickup_label.visible = false
+	hud.add_child(pickup_label)
 
 	damage_label = Label.new()
 	damage_label.anchor_left = 0.5
@@ -563,9 +602,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_throw_smoke()
 		elif event.keycode == KEY_H:
 			_use_heal()
+		elif event.keycode == KEY_F:
+			_interact_with_pickup()
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		elif event.keycode >= KEY_1 and event.keycode <= KEY_5:
+		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
 			_switch_weapon(event.keycode - KEY_1)
 
 func _physics_process(delta: float) -> void:
@@ -578,6 +619,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
+	_refresh_pickup_prompt()
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
@@ -727,12 +769,12 @@ func _apply_look() -> void:
 	)
 
 func _down_action() -> void:
-	if is_dead:
+	if is_dead or input_locked:
 		return
 	stance = mini(2, stance + 1)
 
 func _up_action() -> void:
-	if is_dead:
+	if is_dead or input_locked:
 		return
 	if stance > 0:
 		stance -= 1
@@ -756,6 +798,22 @@ func _shoot() -> void:
 	_refresh_ammo()
 	_play_sfx(sfx_shot, SFX_SHOT, -2.0, float(weapon.pitch) * randf_range(0.94, 1.06))
 
+	if str(weapon.id) == "panzerfaust":
+		recoil.y = minf(recoil.y + 0.055, 0.18)
+		recoil.x = clampf(recoil.x + randf_range(-0.015, 0.015), -0.06, 0.06)
+		weapon_kick = 0.16
+		if muzzle_flash != null:
+			muzzle_flash.visible = true
+			muzzle_flash_time = 0.08
+		_apply_look()
+		var rocket = ROCKET_PROJECTILE_SCRIPT.new()
+		var spawn_pos := camera.global_position - camera.global_transform.basis.z * 0.65 + camera.global_transform.basis.x * 0.16 - camera.global_transform.basis.y * 0.09
+		var shoot_dir := -camera.global_transform.basis.z
+		get_parent().add_child(rocket)
+		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		rocket.launch(spawn_pos, shoot_dir, "Player", player_team)
+		return
+
 	var casing_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.35
 	var casing_vel := camera.global_transform.basis.x * 2.6 + camera.global_transform.basis.y * 1.4 - camera.global_transform.basis.z * 0.4
 	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, casing_vel)
@@ -771,8 +829,9 @@ func _shoot() -> void:
 	var spread := float(weapon.spread) * (0.42 if aiming else 1.0)
 	if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
 		spread += 0.012
-	var damage_totals: Dictionary = {}
-	var hit_details: Dictionary = {}
+	var hit_actors: Array[Node] = []
+	var hit_damage: Array[int] = []
+	var hit_details: Array[Dictionary] = []
 	var pellet_count := int(weapon.pellets)
 	for pellet_index in range(pellet_count):
 		var dir := -camera.global_transform.basis.z
@@ -795,7 +854,7 @@ func _shoot() -> void:
 		var actor = body.get_meta("owner_actor", body.get_meta("owner_dummy", null))
 		if actor == null and body.has_method("receive_hit"):
 			actor = body
-		if actor == null or not actor.has_method("receive_hit"):
+		if actor == null or not (actor is Node) or not actor.has_method("receive_hit"):
 			continue
 		var target_team: String = ""
 		if "team_name" in actor:
@@ -807,16 +866,22 @@ func _shoot() -> void:
 		match region:
 			"head": damage = int(round(float(damage) * 2.2))
 			"leg": damage = int(round(float(damage) * 0.45))
-		damage_totals[actor] = int(damage_totals.get(actor, 0)) + damage
-		if not hit_details.has(actor):
-			hit_details[actor] = {"region": region, "position": hit.position, "direction": dir}
+		var actor_node := actor as Node
+		var actor_index := hit_actors.find(actor_node)
+		if actor_index < 0:
+			actor_index = hit_actors.size()
+			hit_actors.append(actor_node)
+			hit_damage.append(0)
+			hit_details.append({"region": region, "position": hit.position, "direction": dir})
+		hit_damage[actor_index] += damage
 
 	var confirmed_hit := false
-	for actor in damage_totals.keys():
-		var detail: Dictionary = hit_details[actor]
+	for i in range(hit_actors.size()):
+		var actor := hit_actors[i]
+		var detail: Dictionary = hit_details[i]
 		var region: String = str(detail.region)
 		var was_alive: bool = not ("health" in actor) or float(actor.health) > 0.0
-		var damage_applied: int = actor.receive_hit(int(damage_totals[actor]), camera.global_position, region, "Player")
+		var damage_applied: int = actor.receive_hit(hit_damage[i], camera.global_position, region, "Player")
 		if damage_applied <= 0:
 			continue
 		confirmed_hit = true
@@ -836,7 +901,7 @@ func _shoot() -> void:
 
 func _reload() -> void:
 	var weapon := _weapon_data()
-	if is_reloading or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
+	if is_reloading or is_healing or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
 		return
 	is_reloading = true
 	reload_timer = float(weapon.reload)
@@ -896,6 +961,119 @@ func _refresh_equipment() -> void:
 	if equip_label != null:
 		equip_label.text = "ГРАНАТЫ: %d   •   ДЫМ: %d   •   БИНТЫ: %d" % [grenades, smoke_grenades, medkits]
 
+func register_field_pickup(pickup: Node3D) -> void:
+	if is_instance_valid(pickup) and not nearby_field_pickups.has(pickup):
+		nearby_field_pickups.append(pickup)
+		_refresh_pickup_prompt()
+
+func unregister_field_pickup(pickup: Node3D) -> void:
+	nearby_field_pickups.erase(pickup)
+	_refresh_pickup_prompt()
+
+func _nearest_field_pickup() -> Node3D:
+	var nearest: Node3D = null
+	var nearest_distance := 2.25
+	for i in range(nearby_field_pickups.size() - 1, -1, -1):
+		var pickup: Node3D = nearby_field_pickups[i]
+		if not is_instance_valid(pickup):
+			nearby_field_pickups.remove_at(i)
+			continue
+		if not pickup.has_method("can_collect") or not bool(pickup.call("can_collect", self)):
+			continue
+		var dist := global_position.distance_to(pickup.global_position)
+		if dist < nearest_distance:
+			nearest_distance = dist
+			nearest = pickup
+	return nearest
+
+func _refresh_pickup_prompt() -> void:
+	var pickup := _nearest_field_pickup()
+	if pickup_label != null:
+		pickup_label.visible = pickup != null
+		if pickup != null and pickup.has_method("prompt_text"):
+			pickup_label.text = str(pickup.call("prompt_text", OS.has_feature("mobile")))
+	if mobile_controls != null:
+		mobile_controls.set_interact_visible(pickup != null and OS.has_feature("mobile"))
+
+func _interact_with_pickup() -> void:
+	if is_dead or input_locked:
+		return
+	var pickup := _nearest_field_pickup()
+	if pickup == null or not pickup.has_method("collect"):
+		return
+	if bool(pickup.call("collect", self)):
+		nearby_field_pickups.erase(pickup)
+		_refresh_pickup_prompt()
+		_play_sfx(sfx_ui, SFX_UI, -2.0, 1.12)
+
+func can_take_field_ammo(amount: int) -> bool:
+	if is_dead or input_locked or amount <= 0:
+		return false
+	return reserve_ammo < int(_weapon_data().reserve)
+
+func take_field_ammo(amount: int) -> int:
+	if not can_take_field_ammo(amount):
+		return 0
+	var before := reserve_ammo
+	reserve_ammo = mini(int(_weapon_data().reserve), reserve_ammo + amount)
+	_store_weapon_ammo()
+	_refresh_ammo()
+	return reserve_ammo - before
+
+func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
+	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
+		return false
+	var stored_clip := ammo if index == current_weapon_index else ammo_by_weapon[index]
+	var stored_reserve := reserve_ammo if index == current_weapon_index else reserve_by_weapon[index]
+	var definition: Dictionary = WEAPON_DEFS[index]
+	return index != current_weapon_index or stored_clip < mini(int(definition.mag), maxi(0, clip)) or stored_reserve < mini(int(definition.reserve), maxi(0, reserve))
+
+func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
+	if not can_take_weapon_pickup(index, clip, reserve):
+		return false
+	if index == current_weapon_index:
+		var definition: Dictionary = WEAPON_DEFS[index]
+		ammo = mini(int(definition.mag), maxi(ammo, clip))
+		reserve_ammo = mini(int(definition.reserve), maxi(reserve_ammo, reserve))
+		_store_weapon_ammo()
+		_refresh_ammo()
+		return true
+
+	var previous_index := current_weapon_index
+	var previous_clip := ammo
+	var previous_reserve := reserve_ammo
+	_store_weapon_ammo()
+	ammo_by_weapon[previous_index] = 0
+	reserve_by_weapon[previous_index] = 0
+	_spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
+
+	current_weapon_index = index
+	var incoming: Dictionary = WEAPON_DEFS[index]
+	ammo = mini(int(incoming.mag), maxi(ammo_by_weapon[index], clip))
+	reserve_ammo = mini(int(incoming.reserve), maxi(reserve_by_weapon[index], reserve))
+	is_reloading = false
+	reload_timer = 0.0
+	weapon_kick = 0.0
+	_store_weapon_ammo()
+	_equip_weapon_visual()
+	_refresh_ammo()
+	return true
+
+func _spawn_weapon_drop(index: int, clip: int, reserve: int) -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	var drop_pos := global_position + transform.basis.x * 0.75 + transform.basis.z * 0.45 + Vector3.UP * 0.75
+	var drop_velocity := transform.basis.x * 1.0 + transform.basis.z * 0.6 + Vector3.UP * 1.5
+	if parent.has_method("spawn_weapon_pickup"):
+		parent.call("spawn_weapon_pickup", drop_pos, index, clip, reserve, drop_velocity)
+		return
+	var dropped = FIELD_PICKUP_SCRIPT.new()
+	dropped.configure_weapon(index, clip, reserve)
+	parent.add_child(dropped)
+	dropped.global_position = drop_pos
+	dropped.launch(drop_velocity)
+
 func _pop_damage(amount: int) -> void:
 	if damage_label == null:
 		return
@@ -927,6 +1105,10 @@ func _die(killer_name: String) -> void:
 	health = 0.0
 	velocity = Vector3.ZERO
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if pickup_label != null:
+		pickup_label.visible = false
+	if mobile_controls != null:
+		mobile_controls.set_interact_visible(false)
 
 	camera.position.y = 0.28
 	camera.rotation.z = deg_to_rad(35.0)

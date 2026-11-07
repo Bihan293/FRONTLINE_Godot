@@ -12,6 +12,7 @@ const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
@@ -35,6 +36,7 @@ const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
 @export var team_name: String = "IRON LEGION"
 @export var soldier_name: String = "Soldier"
+@export var bot_weapon_index: int = -1
 
 var health: float = MAX_HEALTH
 var is_dead := false
@@ -84,6 +86,21 @@ func _ready() -> void:
 	floor_snap_length = 0.3
 	floor_max_angle = deg_to_rad(45.0)
 	_navigation = get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation
+
+	if bot_weapon_index < 0:
+		var roll := randf()
+		if roll < 0.35:
+			bot_weapon_index = 0 # AK-47
+		elif roll < 0.55:
+			bot_weapon_index = 1 # MP-40
+		elif roll < 0.70:
+			bot_weapon_index = 5 # PPSh-41
+		elif roll < 0.82:
+			bot_weapon_index = 4 # Shotgun
+		elif roll < 0.92:
+			bot_weapon_index = 2 # Mosin
+		else:
+			bot_weapon_index = 6 # Kar98k
 
 	_build_body_collision()
 	_build_visuals()
@@ -136,33 +153,51 @@ func _build_weapon() -> void:
 	_gun_pivot.position = Vector3(0.16, 1.25, -0.22)
 	_pivot.add_child(_gun_pivot)
 
-	var ak_mesh := WEAPON_MESHES.ak_mesh()
-	if ak_mesh != null:
-		_gun_mesh = MeshInstance3D.new()
-		_gun_mesh.mesh = ak_mesh
-		_gun_mesh.scale = Vector3.ONE * 0.95
-		_gun_mesh.rotation.y = PI
-		_gun_pivot.add_child(_gun_mesh)
+	var weapon_ids := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
+	var wid: String = weapon_ids[clampi(bot_weapon_index, 0, weapon_ids.size() - 1)]
 
+	if wid == "ak47":
+		var ak_mesh := WEAPON_MESHES.ak_mesh()
+		if ak_mesh != null:
+			_gun_mesh = MeshInstance3D.new()
+			_gun_mesh.mesh = ak_mesh
+			_gun_mesh.scale = Vector3.ONE * 0.95
+			_gun_mesh.rotation.y = PI
+			_gun_pivot.add_child(_gun_mesh)
+
+			_muzzle_node = Node3D.new()
+			_muzzle_node.position = WEAPON_MESHES.MUZZLE_LOCAL * 0.95
+			_muzzle_node.position.z = -_muzzle_node.position.z
+			_gun_pivot.add_child(_muzzle_node)
+	else:
+		var model: Node3D = WEAPON_MESHES.make_weapon(wid)
+		if model != null:
+			model.scale = Vector3.ONE * 0.95
+			_gun_pivot.add_child(model)
+			_muzzle_node = model.get_node_or_null("Muzzle") as Node3D
+			var meshes := model.find_children("*", "MeshInstance3D", true, false)
+			if not meshes.is_empty():
+				_gun_mesh = meshes[0] as MeshInstance3D
+
+	if _muzzle_node == null:
 		_muzzle_node = Node3D.new()
-		_muzzle_node.position = WEAPON_MESHES.MUZZLE_LOCAL * 0.95
-		_muzzle_node.position.z = -_muzzle_node.position.z
+		_muzzle_node.position = Vector3(0.0, 0.05, -0.6)
 		_gun_pivot.add_child(_muzzle_node)
 
-		_muzzle_flash = MeshInstance3D.new()
-		var flash_sphere := SphereMesh.new()
-		flash_sphere.radius = 0.06
-		flash_sphere.height = 0.12
-		_muzzle_flash.mesh = flash_sphere
-		var flash_mat := StandardMaterial3D.new()
-		flash_mat.albedo_color = Color(1.0, 0.78, 0.25)
-		flash_mat.emission_enabled = true
-		flash_mat.emission = Color(1.0, 0.6, 0.1)
-		flash_mat.emission_energy_multiplier = 4.5
-		flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_muzzle_flash.material_override = flash_mat
-		_muzzle_flash.visible = false
-		_muzzle_node.add_child(_muzzle_flash)
+	_muzzle_flash = MeshInstance3D.new()
+	var flash_sphere := SphereMesh.new()
+	flash_sphere.radius = 0.06
+	flash_sphere.height = 0.12
+	_muzzle_flash.mesh = flash_sphere
+	var flash_mat := StandardMaterial3D.new()
+	flash_mat.albedo_color = Color(1.0, 0.78, 0.25)
+	flash_mat.emission_enabled = true
+	flash_mat.emission = Color(1.0, 0.6, 0.1)
+	flash_mat.emission_energy_multiplier = 4.5
+	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_muzzle_flash.material_override = flash_mat
+	_muzzle_flash.visible = false
+	_muzzle_node.add_child(_muzzle_flash)
 
 func _build_hitboxes() -> void:
 	var shape_head := BoxShape3D.new()
@@ -553,7 +588,8 @@ func _fire_single_shot() -> void:
 					"chest": dmg = 38
 					"leg": dmg = 18
 				actor.receive_hit(dmg, global_position, region, soldier_name)
-				HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
+				if not actor.is_in_group("explosive_barrels"):
+					HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
 		elif collider.is_in_group("player") or collider.name == "Player":
 			var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 			if player_team != team_name and collider.has_method("receive_hit"):
@@ -627,7 +663,20 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	if _gun_pivot != null and _gun_mesh != null:
 		var drop_pos := _gun_pivot.global_position
 		var drop_vel := Vector3(randf_range(-1.0, 1.0), 1.5, randf_range(-1.0, 1.0))
-		HIT_EFFECTS.spawn_dropped_weapon(get_parent(), drop_pos, _gun_mesh.mesh, drop_vel)
+		var world := get_parent()
+		var drop_idx := clampi(bot_weapon_index, 0, 7)
+		var drop_clip_defs := [30, 32, 5, 8, 6, 71, 5, 1]
+		var drop_res_defs := [60, 64, 20, 24, 18, 71, 20, 2]
+		var d_clip: int = drop_clip_defs[drop_idx]
+		var d_res: int = drop_res_defs[drop_idx]
+		if world != null and world.has_method("spawn_weapon_pickup"):
+			world.call("spawn_weapon_pickup", drop_pos, drop_idx, d_clip, d_res, drop_vel)
+		elif world != null:
+			var pickup = FIELD_PICKUP_SCRIPT.new()
+			pickup.configure_weapon(drop_idx, d_clip, d_res)
+			world.add_child(pickup)
+			pickup.global_position = drop_pos
+			pickup.launch(drop_vel)
 		_gun_pivot.visible = false
 
 	# Текст статуса
