@@ -118,7 +118,10 @@ func _create_chunk(chunk: Vector2i) -> void:
 	_chunks[chunk] = {"mesh": mesh_instance, "collision": collision_shape}
 
 func _queue_cell_chunks(x: int, z: int) -> void:
-	var chunk := Vector2i(x / CHUNK_CELLS, z / CHUNK_CELLS)
+	var chunk := Vector2i(
+		floori(float(x) / float(CHUNK_CELLS)),
+		floori(float(z) / float(CHUNK_CELLS))
+	)
 	_pending_chunks[chunk] = true
 	# Vertical faces are owned by the cell on their west/north side. Refresh the
 	# adjacent chunk when this cell is the first one across a chunk seam.
