@@ -22,6 +22,7 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			var mesh_instance := MeshInstance3D.new()
 			mesh_instance.name = "AK47Mesh"
 			mesh_instance.mesh = imported
+			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(mesh_instance)
 			var imported_muzzle := Node3D.new()
 			imported_muzzle.name = "Muzzle"
@@ -123,6 +124,7 @@ static func _add_box(parent: Node3D, node_name: String, pos: Vector3, dimensions
 	mesh_instance.mesh = mesh
 	mesh_instance.material_override = material
 	mesh_instance.position = pos
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mesh_instance)
 
 static func _add_cylinder(parent: Node3D, node_name: String, pos: Vector3, radius: float, length: float, material: Material) -> void:
@@ -139,6 +141,7 @@ static func _add_cylinder_ex(parent: Node3D, node_name: String, pos: Vector3, ra
 	mesh_instance.material_override = material
 	mesh_instance.position = pos
 	mesh_instance.rotation = rot
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mesh_instance)
 
 static func ak_mesh() -> ArrayMesh:

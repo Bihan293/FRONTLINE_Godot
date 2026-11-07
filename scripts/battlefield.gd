@@ -132,29 +132,29 @@ func _build_world() -> void:
 	var environment := Environment.new()
 
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.24, 0.38, 0.55)
-	sky_mat.sky_horizon_color = Color(0.65, 0.70, 0.75)
-	sky_mat.sky_curve = 0.16
-	sky_mat.ground_bottom_color = Color(0.12, 0.14, 0.11)
-	sky_mat.ground_horizon_color = Color(0.50, 0.55, 0.50)
+	sky_mat.sky_top_color = Color(0.31, 0.55, 0.82)
+	sky_mat.sky_horizon_color = Color(0.74, 0.82, 0.90)
+	sky_mat.sky_curve = 0.12
+	sky_mat.ground_bottom_color = Color(0.55, 0.63, 0.70)
+	sky_mat.ground_horizon_color = Color(0.72, 0.80, 0.86)
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.ambient_light_sky_contribution = 0.9
-	environment.ambient_light_energy = 0.85
+	environment.ambient_light_energy = 0.70
 
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
-	environment.tonemap_exposure = 0.92
+	environment.tonemap_exposure = 1.00
 	environment.adjustment_enabled = true
-	environment.adjustment_contrast = 1.10
-	environment.adjustment_saturation = 1.15
+	environment.adjustment_contrast = 1.12
+	environment.adjustment_saturation = 1.12
 
 	environment.fog_enabled = GameSettings.fog_enabled()
-	environment.fog_light_color = Color(0.60, 0.66, 0.72)
-	environment.fog_density = 0.0032
-	environment.fog_aerial_perspective = 0.4
+	environment.fog_light_color = Color(0.62, 0.70, 0.78)
+	environment.fog_density = 0.0014
+	environment.fog_aerial_perspective = 0.35
 
 	env.environment = environment
 	_environment = environment
@@ -164,8 +164,8 @@ func _build_world() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-48, -32, 0)
-	sun.light_color = Color(1.0, 0.95, 0.85)
-	sun.light_energy = 0.95
+	sun.light_color = Color(1.0, 0.97, 0.92)
+	sun.light_energy = 1.10
 	sun.shadow_enabled = GameSettings.shadows_enabled()
 	sun.directional_shadow_max_distance = GameSettings.shadow_distance()
 	add_child(sun)

@@ -58,6 +58,9 @@ func setup(is_red: bool, left_wrist: Node3D, right_wrist: Node3D) -> void:
     body_visual.add_child(model)
     body_visual.set_script(PROCEDURAL)
     add_child(body_visual)
+    # Тени от собственного тела/рук в first-person выглядят как чёрные крылья.
+    for mesh_instance in body_visual.find_children("*", "MeshInstance3D", true, false):
+        (mesh_instance as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     skeleton = skel
     body_visual.set_t_pose_arms(false)
     body_visual.set_aiming(false)
@@ -71,13 +74,18 @@ func _add_equipment(root: Node3D) -> void:
     var helmet = load(helmet_path)
     if helmet != null:
         var h: Node3D = helmet.instantiate()
+        h.name = "Helmet"
         h.position = Vector3(0.0, 1.78, 0.0)
+        # Камера стоит внутри шлема — изнутри он закрывает половину экрана.
+        h.visible = false
         root.add_child(h)
     var vest = load(vest_path)
     if vest != null:
         var v: Node3D = vest.instantiate()
+        v.name = "Vest"
         v.position = Vector3(0.0, 1.345, 0.0)
         v.scale = Vector3(1.12, 1.03, 1.18)
+        v.visible = false
         root.add_child(v)
 
 func _build_cuffs() -> void:
@@ -94,6 +102,7 @@ func _build_cuffs() -> void:
         cuff.mesh = mesh
         cuff.material_override = _cuff_mat
         cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        cuff.visible = false
         add_child(cuff)
         _cuffs.append(cuff)
 
@@ -131,7 +140,9 @@ func _process(_delta: float) -> void:
         body_visual.rotation.x = 0.0
         body_visual.position = Vector3.ZERO
     if torso_mesh != null:
-        torso_mesh.visible = stance == 0 and look_down < 0.9
+        # Торс показываем только когда игрок реально смотрит вниз.
+        # Иначе камера оказывается внутри бронежилета и он закрывает пол-экрана.
+        torso_mesh.visible = stance == 0 and look_down > 0.55
     _apply_arm(0)
     _apply_arm(1)
 
@@ -170,9 +181,11 @@ func _apply_arm(side: int) -> void:
     var q_lower := Quaternion(Vector3.DOWN, (upper_basis.inverse() * d_lower).normalized())
     skeleton.set_bone_pose_rotation(lower, q_lower)
     skeleton.set_bone_pose_rotation(hand, Quaternion.IDENTITY)
-    # Блочные предплечья делаем тоньше, иначе они закрывают весь экран.
-    skeleton.set_bone_pose_scale(lower, Vector3(0.45, 1.0, 0.45))
-    skeleton.set_bone_pose_scale(hand, Vector3(1.25, 1.0, 1.25))
+    # Руки в first-person почти убираем: из-за IK они вытягиваются
+    # в длинные чёрные полосы поверх экрана. Оружие держит viewmodel.
+    skeleton.set_bone_pose_scale(upper, Vector3(0.02, 1.0, 0.02))
+    skeleton.set_bone_pose_scale(lower, Vector3(0.02, 1.0, 0.02))
+    skeleton.set_bone_pose_scale(hand, Vector3(1.0, 1.0, 1.0))
     if side < _cuffs.size():
         var world_target := skeleton.global_transform * target
         var world_elbow := skeleton.global_transform * elbow

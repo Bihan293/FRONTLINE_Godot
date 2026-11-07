@@ -61,7 +61,7 @@ var weapon_mount: Node3D
 var weapon_muzzle: Node3D
 var drone_controller_anchor: Marker3D
 var weapon_base := Vector3.ZERO
-var weapon_aim_position := Vector3(0.0, -0.092, -0.56)
+var weapon_aim_position := Vector3(0.0, -0.075, -0.48)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
@@ -184,8 +184,8 @@ func _build_weapon() -> void:
 	camera.add_child(drone_controller_anchor)
 	weapon_root = Node3D.new()
 	weapon_root.name = "ViewModel"
-	weapon_root.position = Vector3(0.08, -0.17, -0.52)
-	weapon_root.scale = Vector3.ONE * 0.62
+	weapon_root.position = Vector3(0.24, -0.22, -0.55)
+	weapon_root.scale = Vector3.ONE * 0.50
 	weapon_base = weapon_root.position
 	camera.add_child(weapon_root)
 	weapon_mount = Node3D.new()
@@ -466,7 +466,13 @@ func _play_sfx(player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0,
 	player.pitch_scale = pitch
 	player.play()
 
+func _touch_ui_enabled() -> bool:
+	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
+
 func _build_mobile_controls() -> void:
+	# На ПК с мышью сенсорные кнопки только засоряют экран.
+	if not _touch_ui_enabled():
+		return
 	var layer := CanvasLayer.new()
 	layer.layer = 20
 	add_child(layer)
@@ -537,8 +543,8 @@ func _build_hud() -> void:
 	ammo_label.anchor_bottom = 1.0
 	ammo_label.offset_left = -390.0
 	ammo_label.offset_right = -24.0
-	ammo_label.offset_top = -430.0
-	ammo_label.offset_bottom = -392.0
+	ammo_label.offset_top = -78.0
+	ammo_label.offset_bottom = -38.0
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ammo_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	ammo_label.add_theme_font_size_override("font_size", 24)
@@ -553,15 +559,26 @@ func _build_hud() -> void:
 	equip_label.anchor_right = 1.0
 	equip_label.anchor_top = 1.0
 	equip_label.anchor_bottom = 1.0
-	equip_label.offset_left = -360.0
+	equip_label.offset_left = -640.0
 	equip_label.offset_right = -24.0
-	equip_label.offset_top = -390.0
-	equip_label.offset_bottom = -360.0
+	equip_label.offset_top = -112.0
+	equip_label.offset_bottom = -82.0
 	equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	equip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	equip_label.add_theme_font_size_override("font_size", 16)
+	equip_label.add_theme_font_size_override("font_size", 15)
 	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
 	hud.add_child(equip_label)
+
+	# На телефоне правый нижний угол занят кнопками — переносим патроны наверх.
+	if _touch_ui_enabled():
+		ammo_label.anchor_top = 0.0
+		ammo_label.anchor_bottom = 0.0
+		ammo_label.offset_top = 270.0
+		ammo_label.offset_bottom = 306.0
+		equip_label.anchor_top = 0.0
+		equip_label.anchor_bottom = 0.0
+		equip_label.offset_top = 310.0
+		equip_label.offset_bottom = 340.0
 
 	pickup_label = Label.new()
 	pickup_label.anchor_left = 0.5
