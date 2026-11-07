@@ -1,8 +1,8 @@
 # TASK-0013 — Sandbox mode
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** OpenCode / Antigravity
+- **Status:** queued after TASK-0012
+- **Owner:** OpenCode
 - **Dependencies:** Vehicles (TASK-0012) for full value
 - **Related:** `ROADMAP.md` → Песочница; DummyWar benchmark
 

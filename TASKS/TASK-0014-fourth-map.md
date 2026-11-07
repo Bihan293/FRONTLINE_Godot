@@ -1,8 +1,8 @@
 # TASK-0014 — Fourth battle map
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** Antigravity
+- **Status:** planned (deferred until TASK-0012 and TASK-0013)
+- **Owner:** OpenCode (later queue)
 - **Dependencies:** Map contract from Village/Battlefield
 - **Related:** `ROADMAP.md` → Карты
 
@@ -19,3 +19,6 @@
 - Preview and deployment markers match real geometry.
 - 20 bots run without stuck groups or wall clipping.
 - Distinct silhouette/landmarks from Battlefield and Village.
+- When scheduled, keep the map mobile-friendly: reuse materials/meshes, bound particles and active physics, and avoid per-frame scene-wide scans.
+- When scheduled, report draw/object counts or a comparable reproducible runtime profile; mark Android device performance unverified unless tested on a named device.
+- When scheduled, add or extend automated navigation/gameplay smoke coverage and attach representative map/deployment screenshots.

@@ -1,8 +1,8 @@
 # TASK-0019 — Performance and device optimisation
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** OpenCode / Antigravity
+- **Status:** in progress (baseline/profile audit)
+- **Owner:** OpenCode (separate performance/QA workstream)
 - **Dependencies:** Current 20v20 bot load
 - **Related:** `ROADMAP.md` → Графика и производительность
 

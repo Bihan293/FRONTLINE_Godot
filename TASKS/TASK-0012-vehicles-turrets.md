@@ -1,8 +1,8 @@
 # TASK-0012 — Vehicles, transport and emplacements
 
 - **Priority:** P1
-- **Status:** planned
-- **Owner:** Antigravity / Codex
+- **Status:** in progress
+- **Owner:** OpenCode (implementation lead; use isolated specialist agents/worktrees where available)
 - **Dependencies:** Stable bot navigation, vehicle collision layer
 - **Related:** `ROADMAP.md` → Техника и турели
 
@@ -20,3 +20,5 @@
 - Player and bots can enter/exit; camera and controls switch cleanly.
 - Bots use at least static turrets; vehicle pathing does not break infantry navigation.
 - No physics explosion when a vehicle spawns or is abandoned.
+- Add smoke coverage for enter/exit, seat handoff, collision, damage/destruction, abandonment cleanup, and infantry navigation around vehicles.
+- Reuse meshes/materials and limit active physics and per-frame scans; include reproducible frame/object metrics and mark Android performance unverified unless measured on a named device.
