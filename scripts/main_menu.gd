@@ -92,14 +92,14 @@ func _show_maps() -> void:
 
 	var list := VBoxContainer.new()
 	list.custom_minimum_size = Vector2(320,0)
-	list.add_theme_constant_override("separation", 14)
+	list.add_theme_constant_override("separation", 8)
 	body.add_child(list)
 
 	# Селектор режима игры
 	var mode_btn := Button.new()
 	mode_btn.text = "РЕЖИМ: " + ("КОМАНДНЫЙ БОЙ (TDM)" if selected_mode == "TDM" else "ЗАХВАТ (CONQUEST)")
-	mode_btn.custom_minimum_size = Vector2(310, 48)
-	mode_btn.add_theme_font_size_override("font_size", 15)
+	mode_btn.custom_minimum_size = Vector2(310, 44)
+	mode_btn.add_theme_font_size_override("font_size", 14)
 	mode_btn.pressed.connect(func():
 		if selected_mode == "CONQUEST":
 			selected_mode = "TDM"
@@ -109,6 +109,39 @@ func _show_maps() -> void:
 		mode_btn.text = "РЕЖИМ: " + ("КОМАНДНЫЙ БОЙ (TDM)" if selected_mode == "TDM" else "ЗАХВАТ (CONQUEST)")
 	)
 	list.add_child(mode_btn)
+
+	# Селектор сложности ботов
+	var diff_names := ["НОВИЧОК", "БОЕЦ", "ВЕТЕРАН"]
+	var diff_btn := Button.new()
+	var current_diff: int = clampi(int(get_tree().get_meta("match_difficulty", 1)), 0, 2)
+	diff_btn.text = "СЛОЖНОСТЬ: " + diff_names[current_diff]
+	diff_btn.custom_minimum_size = Vector2(310, 44)
+	diff_btn.add_theme_font_size_override("font_size", 14)
+	diff_btn.pressed.connect(func():
+		var d: int = (clampi(int(get_tree().get_meta("match_difficulty", 1)), 0, 2) + 1) % 3
+		get_tree().set_meta("match_difficulty", d)
+		diff_btn.text = "СЛОЖНОСТЬ: " + diff_names[d]
+	)
+	list.add_child(diff_btn)
+
+	# Селектор размера боя
+	var squad_options := [7, 10, 14]
+	var squad_labels := ["14 БОЙЦОВ (7x7)", "20 БОЙЦОВ (10x10)", "28 БОЙЦОВ (14x14)"]
+	var squad_btn := Button.new()
+	var current_sq: int = int(get_tree().get_meta("match_squad_size", 7))
+	var sq_idx: int = squad_options.find(current_sq)
+	if sq_idx < 0: sq_idx = 0
+	squad_btn.text = "СИЛЫ: " + squad_labels[sq_idx]
+	squad_btn.custom_minimum_size = Vector2(310, 44)
+	squad_btn.add_theme_font_size_override("font_size", 14)
+	squad_btn.pressed.connect(func():
+		var cur: int = int(get_tree().get_meta("match_squad_size", 7))
+		var idx: int = (squad_options.find(cur) + 1) % squad_options.size()
+		if idx < 0: idx = 0
+		get_tree().set_meta("match_squad_size", squad_options[idx])
+		squad_btn.text = "СИЛЫ: " + squad_labels[idx]
+	)
+	list.add_child(squad_btn)
 
 	_label(list, "ДОСТУПНЫЕ КАРТЫ", 17, Color(0.68,0.73,0.7))
 

@@ -259,16 +259,17 @@ func _build_sectors() -> void:
 		flag.material_override = _mat(Color(0.7, 0.7, 0.7), false)
 		add_child(flag)
 
-## Создание стартовых отрядов ботов (по 7 бойцов с каждой стороны)
+## Создание стартовых отрядов ботов (по squad_size бойцов с каждой стороны)
 func _spawn_initial_squads() -> void:
+	var squad_size: int = clampi(int(get_tree().get_meta("match_squad_size", 7)), 7, 14)
 	var iron_spawns: Array = _layout().spawns_iron()
-	for i in range(7):
+	for i in range(squad_size):
 		var sp: Vector3 = iron_spawns[i % iron_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
 		var name_str: String = GERMAN_NAMES[i % GERMAN_NAMES.size()]
 		_create_bot(sp, "IRON LEGION", name_str)
 
 	var red_spawns: Array = _layout().spawns_red()
-	for i in range(7):
+	for i in range(squad_size):
 		var sp: Vector3 = red_spawns[i % red_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
 		var name_str: String = SOVIET_NAMES[i % SOVIET_NAMES.size()]
 		_create_bot(sp, "RED FRONT", name_str)

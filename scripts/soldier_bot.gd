@@ -78,6 +78,12 @@ var _route_repath_timer := 0.0
 var _route_goal := Vector3.ZERO
 var _route_has_attempted := false
 var _shout_timer := 0.0
+var bot_role: String = "ASSAULT"
+var match_difficulty: int = 1
+var difficulty_spread_mult: float = 1.0
+var difficulty_reaction_mult: float = 1.0
+var difficulty_recovery_mult: float = 1.0
+var _medic_timer: float = randf_range(3.0, 6.0)
 
 func _ready() -> void:
 	add_to_group("bots")
@@ -88,20 +94,47 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(45.0)
 	_navigation = get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation
 
+	match_difficulty = clampi(int(get_tree().get_meta("match_difficulty", 1)), 0, 2)
+	match match_difficulty:
+		0:
+			difficulty_spread_mult = 1.45
+			difficulty_reaction_mult = 1.6
+			difficulty_recovery_mult = 0.7
+		1:
+			difficulty_spread_mult = 1.0
+			difficulty_reaction_mult = 1.0
+			difficulty_recovery_mult = 1.0
+		2:
+			difficulty_spread_mult = 0.65
+			difficulty_reaction_mult = 0.65
+			difficulty_recovery_mult = 1.5
+
 	if bot_weapon_index < 0:
 		var roll := randf()
-		if roll < 0.35:
+		if roll < 0.32:
 			bot_weapon_index = 0 # AK-47
-		elif roll < 0.55:
+			bot_role = "ASSAULT"
+		elif roll < 0.50:
 			bot_weapon_index = 1 # MP-40
-		elif roll < 0.70:
+			bot_role = "ASSAULT"
+		elif roll < 0.66:
 			bot_weapon_index = 5 # PPSh-41
-		elif roll < 0.82:
+			bot_role = "GUNNER"
+		elif roll < 0.78:
 			bot_weapon_index = 4 # Shotgun
-		elif roll < 0.92:
+			bot_role = "ASSAULT"
+		elif roll < 0.88:
 			bot_weapon_index = 2 # Mosin
-		else:
+			bot_role = "SNIPER"
+		elif roll < 0.94:
 			bot_weapon_index = 6 # Kar98k
+			bot_role = "SNIPER"
+		else:
+			bot_weapon_index = 7 # Panzerfaust
+			bot_role = "ANTI_ARMOR"
+
+		if (bot_weapon_index == 1 or bot_weapon_index == 4) and randf() < 0.35:
+			bot_role = "MEDIC"
 
 	_build_body_collision()
 	_build_visuals()
@@ -110,8 +143,8 @@ func _ready() -> void:
 	_build_label()
 	_build_audio()
 
-	target_check_timer = randf_range(0.1, 0.4)
-	fire_cooldown = randf_range(0.4, 1.2)
+	target_check_timer = randf_range(0.1, 0.4) * difficulty_reaction_mult
+	fire_cooldown = randf_range(0.4, 1.2) * difficulty_reaction_mult
 
 func _build_body_collision() -> void:
 	var body_collision := CollisionShape3D.new()
@@ -227,9 +260,23 @@ func _add_hitbox(region: String, local_pos: Vector3, shape: Shape3D) -> void:
 	_pivot.add_child(area)
 	_hitboxes.append(area)
 
+func _role_title() -> String:
+	var is_red := team_name.contains("RED")
+	match bot_role:
+		"MEDIC":
+			return "САНИТАР" if is_red else "SANITÄTER"
+		"GUNNER":
+			return "ПУЛЕМЁТ" if is_red else "MG"
+		"SNIPER":
+			return "СНАЙПЕР" if is_red else "SCHARF"
+		"ANTI_ARMOR":
+			return "ПТ" if is_red else "PANZER"
+		_:
+			return "ШТУРМ" if is_red else "STURM"
+
 func _build_label() -> void:
 	_label = Label3D.new()
-	_label.text = soldier_name
+	_label.text = "%s [%s]" % [soldier_name, _role_title()]
 	_label.position = Vector3(0, 2.15, 0)
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_label.font_size = 18
@@ -274,9 +321,16 @@ func _physics_process(delta: float) -> void:
 		_proc.set_crouching(stance == 1)
 
 func _update_ai(delta: float) -> void:
-	# Подавление постепенно рассеивается
+	# Подавление постепенно рассеивается с учетом сложности
 	if suppression > 0.0:
-		suppression = maxf(0.0, suppression - delta * 0.35)
+		suppression = maxf(0.0, suppression - delta * 0.35 * difficulty_recovery_mult)
+
+	# Поведение санитара (Medic)
+	if bot_role == "MEDIC" and not is_reloading:
+		_medic_timer -= delta
+		if _medic_timer <= 0.0:
+			_medic_timer = randf_range(3.5, 6.0)
+			_try_heal_nearby_ally()
 
 	# Таймер перезарядки
 	if is_reloading:
@@ -288,10 +342,10 @@ func _update_ai(delta: float) -> void:
 		velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
 		return
 
-	# Проверка целей
+	# Проверка целей с учетом реакции на выбранной сложности
 	target_check_timer -= delta
 	if target_check_timer <= 0.0:
-		target_check_timer = randf_range(0.2, 0.45)
+		target_check_timer = randf_range(0.2, 0.45) * difficulty_reaction_mult
 		_find_target()
 
 	if current_target != null and is_instance_valid(current_target):
@@ -303,6 +357,20 @@ func _update_ai(delta: float) -> void:
 			return
 
 	_advance_behavior(delta)
+
+func _try_heal_nearby_ally() -> void:
+	var bots := get_tree().get_nodes_in_group("bots")
+	for b in bots:
+		if b == self or not is_instance_valid(b):
+			continue
+		var other := b as CharacterBody3D
+		if other != null and "team_name" in other and str(other.get("team_name")) == team_name:
+			var other_health: float = float(other.get("health"))
+			var other_dead: bool = bool(other.get("is_dead"))
+			if not other_dead and other_health < 75.0 and global_position.distance_to(other.global_position) <= 6.5:
+				other.set("health", minf(MAX_HEALTH, other_health + 25.0))
+				_shout("ПЕРЕВЯЗКА!" if team_name.contains("RED") else "VERBAND!", Color(0.35, 0.92, 0.45))
+				break
 
 ## Поиск ближайшего видимого противника (игрок или бот противоположной команды)
 func _find_target() -> void:
@@ -519,35 +587,36 @@ func _shoot_burst() -> void:
 	match bot_weapon_index:
 		2, 6:
 			burst_count = 0
-			fire_cooldown = randf_range(1.3, 2.1)
+			fire_cooldown = randf_range(1.3, 2.1) * difficulty_reaction_mult
 		4:
 			burst_count = 0
-			fire_cooldown = randf_range(0.85, 1.4)
+			fire_cooldown = randf_range(0.85, 1.4) * difficulty_reaction_mult
 		7:
 			burst_count = 0
-			fire_cooldown = randf_range(3.2, 4.8)
+			fire_cooldown = randf_range(3.2, 4.8) * difficulty_reaction_mult
 		3:
 			if burst_count >= randi_range(1, 3):
 				burst_count = 0
-				fire_cooldown = randf_range(0.6, 1.2)
+				fire_cooldown = randf_range(0.6, 1.2) * difficulty_reaction_mult
 			else:
 				fire_cooldown = 0.24
 		5:
-			if burst_count >= randi_range(6, 10):
+			var max_burst: int = randi_range(9, 15) if bot_role == "GUNNER" else randi_range(6, 10)
+			if burst_count >= max_burst:
 				burst_count = 0
-				fire_cooldown = randf_range(0.7, 1.4)
+				fire_cooldown = randf_range(0.65, 1.3) * difficulty_reaction_mult
 			else:
 				fire_cooldown = 0.065
 		1:
 			if burst_count >= randi_range(4, 7):
 				burst_count = 0
-				fire_cooldown = randf_range(0.7, 1.5)
+				fire_cooldown = randf_range(0.7, 1.5) * difficulty_reaction_mult
 			else:
 				fire_cooldown = 0.08
 		_:
 			if burst_count >= randi_range(3, 5):
 				burst_count = 0
-				fire_cooldown = randf_range(0.8, 1.8)
+				fire_cooldown = randf_range(0.8, 1.8) * difficulty_reaction_mult
 			else:
 				fire_cooldown = 0.10
 
@@ -568,7 +637,7 @@ func _fire_single_shot() -> void:
 
 	var from := _muzzle_node.global_position if _muzzle_node != null else global_position + Vector3(0, 1.3, 0)
 	var target_pt := current_target.global_position + Vector3(0, 1.25, 0) if current_target != null else from - global_transform.basis.z * 40.0
-	var spread: float = 0.02 + suppression * 0.05
+	var spread: float = (0.02 + suppression * 0.05) * difficulty_spread_mult
 	var shoot_dir := (target_pt - from).normalized()
 	shoot_dir = shoot_dir.rotated(Vector3.UP, randf_range(-spread, spread))
 	shoot_dir = shoot_dir.rotated(global_transform.basis.x, randf_range(-spread, spread))
