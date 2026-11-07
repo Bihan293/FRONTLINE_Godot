@@ -2,6 +2,10 @@ extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const CROSSHAIR = preload("res://scripts/crosshair.gd")
+const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
+const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
+const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -28,12 +32,24 @@ const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 
 var camera: Camera3D
+var player_capsule: CapsuleShape3D
+var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_base := Vector3.ZERO
+var view_arms_root: Node3D
+var view_arms_animator
+var view_arms_base := Vector3(0.15, -0.88, -0.42)
+var view_arms_aim_base := Vector3(-0.09, -0.85, -0.44)
+var weapon_aim_position := Vector3(0.04, -0.19, -0.36)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
 var bob_time := 0.0
+var breathing_time := 0.0
+var aim_blend := 0.0
+var aiming := false
+var look_sway := Vector2.ZERO
+var view_fire_time := 0.0
 
 var pitch := 0.0
 var yaw := 0.0
@@ -73,6 +89,7 @@ func _ready() -> void:
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
     _build_weapon()
+    _build_view_arms()
     _build_audio()
     _build_mobile_controls()
     _build_hud()
@@ -81,15 +98,15 @@ func _ready() -> void:
     _apply_look()
 
 func _build_player() -> void:
-    var collision := CollisionShape3D.new()
-    var capsule := CapsuleShape3D.new()
-    capsule.radius = 0.45
-    capsule.height = 2.4
-    collision.shape = capsule
-    collision.position.y = 1.2
-    add_child(collision)
+    player_collision = CollisionShape3D.new()
+    player_capsule = CapsuleShape3D.new()
+    player_capsule.radius = 0.34
+    player_capsule.height = 1.95
+    player_collision.shape = player_capsule
+    player_collision.position.y = 0.975
+    add_child(player_collision)
     camera = Camera3D.new()
-    camera.position = Vector3(0, 2.05, 0)
+    camera.position = Vector3(0, 1.78, 0)
     camera.fov = 75.0
     camera.current = true
     add_child(camera)
@@ -137,6 +154,32 @@ func _build_weapon() -> void:
     muzzle_flash.visible = false
     muzzle_anchor.add_child(muzzle_flash)
 
+func _build_view_arms() -> void:
+    var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+    var path := RED_SCENE if team.to_upper().contains("RED") else IRON_SCENE
+    var packed = load(path)
+    if packed == null:
+        push_error("FRONTLINE: cannot load first-person arms " + path)
+        return
+    var model = packed.instantiate()
+    BLOCK_RIG_BUILDER.rig_model(model, true)
+    view_arms_root = Node3D.new()
+    view_arms_root.name = "FirstPersonArms"
+    view_arms_root.position = view_arms_base
+    view_arms_root.scale = Vector3(0.45, 0.8, 0.8)
+    view_arms_root.add_child(model)
+    view_arms_root.set_script(PROCEDURAL)
+    camera.add_child(view_arms_root)
+    view_arms_animator = view_arms_root
+    view_arms_animator.set_aiming(true)
+    view_arms_animator.set_aim_forward_sign(1.0)
+    view_arms_animator.set_motion(0.0, false)
+
+func _set_aiming(enabled: bool) -> void:
+    if aiming == enabled:
+        return
+    aiming = enabled
+
 func _build_audio() -> void:
     sfx_shot = _make_sfx()
     sfx_empty = _make_sfx()
@@ -171,6 +214,7 @@ func _build_mobile_controls() -> void:
     mobile_controls.move_changed.connect(_on_move_changed)
     mobile_controls.look_delta.connect(_on_look_delta)
     mobile_controls.fire_changed.connect(_on_fire_changed)
+    mobile_controls.aim_changed.connect(_set_aiming)
     mobile_controls.reload_pressed.connect(_reload)
     mobile_controls.stance_down_pressed.connect(_down_action)
     mobile_controls.stance_up_pressed.connect(_up_action)
@@ -221,6 +265,8 @@ func _on_move_changed(value: Vector2) -> void:
 func _on_look_delta(delta: Vector2) -> void:
     yaw -= delta.x * TOUCH_SENS
     pitch = clampf(pitch - delta.y * TOUCH_SENS, -1.35, 1.35)
+    look_sway += Vector2(delta.x, delta.y) * 0.00006
+    look_sway = look_sway.limit_length(0.035)
 
 func _on_fire_changed(pressed: bool) -> void:
     mobile_fire = pressed
@@ -229,8 +275,12 @@ func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
         yaw -= event.relative.x * MOUSE_SENS
         pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.35, 1.35)
+        look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
+        look_sway = look_sway.limit_length(0.035)
     elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
         _shoot()
+    elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+        _set_aiming(event.pressed)
     elif event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_R:
             _reload()
@@ -244,12 +294,38 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
     fire_cooldown = maxf(0.0, fire_cooldown - delta)
     weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
+    var blend := 1.0 - exp(-delta * 13.0)
+    aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
     var planar_speed := Vector2(velocity.x, velocity.z).length()
     if planar_speed > 0.4 and is_on_floor():
         bob_time += delta * (6.0 + planar_speed * 0.7)
+    breathing_time += delta * 1.35
     var bob_amount := clampf(planar_speed / SPEED, 0.0, 1.2)
     var bob := Vector3(sin(bob_time) * 0.006, absf(cos(bob_time)) * 0.005, 0.0) * bob_amount
-    weapon_root.position = weapon_base + Vector3(0.0, weapon_kick * 0.25, weapon_kick) + bob
+    var base_position := weapon_base.lerp(weapon_aim_position, aim_blend)
+    var reload_phase := 0.0
+    if is_reloading:
+        reload_phase = sin((1.0 - reload_timer / RELOAD_TIME) * PI)
+    var sway := Vector3(look_sway.x, -look_sway.y, 0.0)
+    var breathing := sin(breathing_time) * 0.0025 * (1.0 - aim_blend * 0.5)
+    var weapon_target := base_position + bob + Vector3(0.0, breathing + weapon_kick * 0.20 - reload_phase * 0.10, weapon_kick * 0.75)
+    weapon_root.position = weapon_root.position.lerp(weapon_target, blend)
+    var weapon_rotation_target := Vector3(weapon_kick * 0.9 - reload_phase * 0.24, sway.x * 0.45, sway.y * 0.5 + reload_phase * 0.18)
+    weapon_root.rotation = weapon_root.rotation.lerp(weapon_rotation_target, blend)
+    camera.fov = lerpf(camera.fov, 75.0 - 23.0 * aim_blend, blend)
+    look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 5.5, 0.0, 1.0))
+    if view_arms_root != null:
+        var arms_base := view_arms_base.lerp(view_arms_aim_base, aim_blend)
+        var arms_target := arms_base + Vector3(bob.x * 2.0, bob.y * 2.0 + breathing + weapon_kick * 0.20 - reload_phase * 0.08, weapon_kick * 0.70)
+        view_arms_root.position = view_arms_root.position.lerp(arms_target, blend)
+        view_arms_root.rotation = view_arms_root.rotation.lerp(Vector3(0.0, sway.x * 0.4, sway.y * 0.5 + reload_phase * 0.12), blend)
+    if view_fire_time > 0.0:
+        view_fire_time -= delta
+        if view_fire_time <= 0.0 and view_arms_animator != null:
+            view_arms_animator.set_firing(false)
+    if view_arms_animator != null:
+        view_arms_animator.set_motion(planar_speed, planar_speed > SPEED + 0.5)
+        view_arms_animator.set_look(0.0, pitch)
 
     # Шаги: частота зависит от скорости, звук — случайный из трёх вариантов.
     if planar_speed > 0.6 and is_on_floor():
@@ -313,7 +389,10 @@ func _physics_process(delta: float) -> void:
     move_and_slide()
 
     recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
-    var target_y := 2.05 if stance == 0 else (1.38 if stance == 1 else 0.65)
+    var target_height := 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
+    player_capsule.height = lerpf(player_capsule.height, target_height, clampf(delta * 10.0, 0.0, 1.0))
+    player_collision.position.y = player_capsule.height * 0.5
+    var target_y := 1.78 if stance == 0 else (1.20 if stance == 1 else 0.52)
     camera.position.y = lerpf(camera.position.y, target_y, delta * 10.0)
     _apply_look()
 
@@ -357,6 +436,9 @@ func _shoot() -> void:
     recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
     recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
     weapon_kick = 0.07
+    if view_arms_animator != null:
+        view_arms_animator.set_firing(true)
+        view_fire_time = 0.10
     muzzle_flash.visible = true
     muzzle_flash_time = 0.045
     _apply_look()

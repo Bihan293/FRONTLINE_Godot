@@ -26,12 +26,12 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 - Team selection, then top-down deployment map with four selectable spawn points; the preview and spawn markers match the in-game polygon
 - Landscape orientation enforced for Android
 - Physical collision on the floor, walls, covers, sandbags, crates and target boards
-- Team selection: IRON LEGION (black/grey) and RED FRONT (red/brown)
+- Team selection: IRON LEGION (German grey) and RED FRONT (Soviet khaki)
 - Low-poly polygon training range with firing lanes, spawn pads, barriers and steel target boards
 - Player controller: keyboard + mouse on desktop, virtual joystick + swipe-look on Android
-- Player and soldiers are scaled together to ~2.4 m, so the first-person camera and targets match
+- Soviet and German block soldiers receive a runtime 20-bone humanoid skeleton and procedural idle, gait, stance and aiming motion
+- Team-colored first-person arms use the same skeleton, follow the camera with eased sway and recoil, and support aim-down-sights
 - AK-47 low-poly model (764 tris) with separate magazine, charging handle, `Muzzle` and `ShellEject` markers
-- Rigged soldiers (20-bone humanoid skeleton) with procedural walk/aim/idle, both IRON LEGION and RED FRONT
 - 16 training dummies: static targets, forward/back and strafing patrols, crouched walker, sitting and prone targets, plus standing/sitting/crouching/prone shooters firing at fixed target boards
 - Shooting, 30-round magazine, reload timer, upward recoil with recovery and movement spread
 - Per-part hitboxes: head 100, chest 45, stomach 35, arms 15, legs 20
@@ -51,6 +51,7 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 - WASD / arrow keys: move
 - Mouse: look
 - Left mouse: shoot
+- Hold right mouse: aim down sights
 - R: reload
 - C: lower stance (stand -> crouch -> prone)
 - Space: rise (prone -> crouch -> stand); when standing, jump
@@ -61,6 +62,7 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 ## Controls (Android)
 - Left virtual joystick: move (push to the edge for ~0.7 s to sprint)
 - Swipe anywhere outside the controls: look around
+- ПРИЦЕЛ: hold to aim down sights
 - ОГОНЬ: hold to fire
 - ПЕРЕЗАР.: reload
 - ПРИСЕСТЬ: stand -> crouch -> prone
@@ -68,7 +70,7 @@ A starter Android-friendly low-poly 3D FPS project made with Godot 4.3 / GDScrip
 - МЕНЮ and ТАБЛО: top-right corner
 
 ## Android notes
-This is a prototype, not a finished commercial game. Movement uses an analog virtual joystick on the left; look is a swipe on the rest of the screen. Fire, reload, stance and jump buttons are on the right. Sensitivity and layout may still need tuning on a specific device. Exporting an APK requires Godot Android export templates and Android SDK/JDK setup.
+This is a prototype, not a finished commercial game. Movement uses an analog virtual joystick on the left; look is a swipe on the rest of the screen. Aim, fire, reload, stance and jump buttons are on the right. Sensitivity and layout may still need tuning on a specific device. Exporting an APK requires Godot Android export templates and Android SDK/JDK setup.
 
 ## Audio
 All SFX are CC0 1.0 (public domain), see [`assets/audio/LICENSE.md`](assets/audio/LICENSE.md):
