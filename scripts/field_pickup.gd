@@ -151,10 +151,10 @@ func _build_weapon_visual() -> void:
 	if model == null:
 		return
 	model.name = "DroppedWeapon"
-	model.scale = Vector3.ONE * 0.78
-	model.rotation.x = PI * 0.5
-	model.rotation.y = PI
-	model.position.y = 0.22
+	model.scale = Vector3.ONE * 0.90
+	# Кладём оружие плашмя, а не ставим вертикальной «палкой».
+	model.rotation = Vector3(0.0, PI * 0.5, 0.0)
+	model.position.y = 0.14
 	add_child(model)
 
 func _build_ammo_visual() -> void:

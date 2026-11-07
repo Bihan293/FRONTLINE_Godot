@@ -13,6 +13,16 @@ var selected_team := "IRON LEGION"
 var selected_mode := "CONQUEST"
 var selected_role := "ASSAULT"
 var selected_loadout := "BALANCED"
+var selected_primary := -1
+var selected_grenades := -1
+var selected_smoke := -1
+var selected_medkits := -1
+var selected_rockets := -1
+var _editor_grenades := 0
+var _editor_smoke := 0
+var _editor_medkits := 0
+var _editor_rockets := 0
+var _editor_primary := 0
 
 func _ready() -> void:
 	_show_main()
@@ -408,11 +418,11 @@ func _select_role(role_id: String) -> void:
 
 func _role_data() -> Array:
 	return [
-		{"id": "ASSAULT", "title": "ШТУРМОВИК", "primary": "AK-47", "sidearm": "M1911", "ability": "Спринт и универсальный бой", "grenades": 3, "smoke": 2, "medkits": 2},
-		{"id": "MEDIC", "title": "САНИТАР", "primary": "MP-40", "sidearm": "M1911", "ability": "Лечение себя и союзников", "grenades": 2, "smoke": 2, "medkits": 5},
-		{"id": "SNIPER", "title": "СНАЙПЕР", "primary": "KAR98K", "sidearm": "M1911", "ability": "Оптика 2.6x, радар 70 м", "grenades": 1, "smoke": 2, "medkits": 2},
-		{"id": "ANTI_TANK", "title": "ПТ-СТРЕЛОК", "primary": "PANZERFAUST", "sidearm": "M1911", "ability": "Ракеты по укрытиям", "grenades": 1, "smoke": 1, "medkits": 2},
-		{"id": "RADIO_OPERATOR", "title": "РАДИСТ", "primary": "ППШ-41", "sidearm": "M1911", "ability": "FPV-дрон на кабеле", "grenades": 1, "smoke": 2, "medkits": 2},
+		{"id": "ASSAULT", "title": "ШТУРМОВИК", "primary": "AK-47", "primary_index": 0, "sidearm": "M1911", "ability": "Спринт и универсальный бой", "grenades": 3, "smoke": 2, "medkits": 2},
+		{"id": "MEDIC", "title": "САНИТАР", "primary": "MP-40", "primary_index": 1, "sidearm": "M1911", "ability": "Лечение себя и союзников", "grenades": 2, "smoke": 2, "medkits": 5},
+		{"id": "SNIPER", "title": "СНАЙПЕР", "primary": "KAR98K", "primary_index": 6, "sidearm": "M1911", "ability": "Оптика 2.6x, радар 70 м", "grenades": 1, "smoke": 2, "medkits": 2},
+		{"id": "ANTI_TANK", "title": "ПТ-СТРЕЛОК", "primary": "PANZERFAUST", "primary_index": 7, "sidearm": "M1911", "ability": "Ракеты по укрытиям", "grenades": 1, "smoke": 1, "medkits": 2},
+		{"id": "RADIO_OPERATOR", "title": "РАДИСТ", "primary": "ППШ-41", "primary_index": 5, "sidearm": "M1911", "ability": "FPV-дрон на кабеле", "grenades": 1, "smoke": 2, "medkits": 2},
 	]
 
 func _loadout_data() -> Array:
@@ -428,6 +438,52 @@ func _role_by_id(role_id: String) -> Dictionary:
 			return role
 	return _role_data()[0]
 
+func _weapon_names() -> Array:
+	return ["AK-47", "MP-40", "MOSIN-NAGANT", "M1911", "PUMP SHOTGUN", "PPSH-41", "KAR98K", "PANZERFAUST"]
+
+func _weapon_name(index: int) -> String:
+	var names := _weapon_names()
+	return str(names[clampi(index, 0, names.size() - 1)])
+
+func _primary_options(role_id: String) -> Array[int]:
+	match role_id:
+		"MEDIC":
+			return [1, 4]
+		"SNIPER":
+			return [6, 2]
+		"ANTI_TANK":
+			return [7, 5]
+		"RADIO_OPERATOR":
+			return [5, 1]
+		_:
+			return [0, 5]
+
+func _current_primary() -> int:
+	var options := _primary_options(selected_role)
+	if options.has(selected_primary):
+		return selected_primary
+	return int(_role_by_id(selected_role)["primary_index"])
+
+func _current_counts() -> Dictionary:
+	var role := _role_by_id(selected_role)
+	var grenades := int(role["grenades"])
+	var smoke := int(role["smoke"])
+	var medkits := int(role["medkits"])
+	match selected_loadout:
+		"ASSAULT":
+			grenades += 1
+			medkits = maxi(1, medkits - 1)
+		"SURVIVAL":
+			grenades = maxi(0, grenades - 1)
+			medkits += 1
+	if selected_grenades >= 0:
+		grenades = selected_grenades
+	if selected_smoke >= 0:
+		smoke = selected_smoke
+	if selected_medkits >= 0:
+		medkits = selected_medkits
+	return {"grenades": grenades, "smoke": smoke, "medkits": medkits}
+
 func _show_deployment() -> void:
 	if get_tree().has_meta("selected_role"):
 		selected_role = str(get_tree().get_meta("selected_role"))
@@ -435,6 +491,16 @@ func _show_deployment() -> void:
 		selected_loadout = str(get_tree().get_meta("selected_loadout"))
 	if get_tree().has_meta("selected_team"):
 		selected_team = str(get_tree().get_meta("selected_team"))
+	if get_tree().has_meta("selected_primary"):
+		selected_primary = int(get_tree().get_meta("selected_primary"))
+	if get_tree().has_meta("selected_grenades"):
+		selected_grenades = int(get_tree().get_meta("selected_grenades"))
+	if get_tree().has_meta("selected_smoke"):
+		selected_smoke = int(get_tree().get_meta("selected_smoke"))
+	if get_tree().has_meta("selected_medkits"):
+		selected_medkits = int(get_tree().get_meta("selected_medkits"))
+	if get_tree().has_meta("selected_rockets"):
+		selected_rockets = int(get_tree().get_meta("selected_rockets"))
 	get_tree().set_meta("selected_role", selected_role)
 	get_tree().set_meta("selected_loadout", selected_loadout)
 	get_tree().set_meta("selected_team", selected_team)
@@ -510,6 +576,17 @@ func _show_deployment() -> void:
 		class_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		class_btn.add_theme_font_size_override("font_size", 12)
 
+	# Основное оружие в рамках класса
+	_label(side, "ОСНОВНОЕ ОРУЖИЕ", 15, Color(0.85,0.88,0.84))
+	var primary_group := ButtonGroup.new()
+	var primary_row := HBoxContainer.new()
+	primary_row.add_theme_constant_override("separation", 6)
+	side.add_child(primary_row)
+	for weapon_index in _primary_options(selected_role):
+		var primary_btn := _toggle_button(primary_row, _weapon_name(weapon_index), primary_group, _current_primary() == weapon_index, _set_primary_in_place.bind(weapon_index), Vector2(0, 36))
+		primary_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		primary_btn.add_theme_font_size_override("font_size", 12)
+
 	# Снаряжение
 	_label(side, "СНАРЯЖЕНИЕ", 17, Color(0.85,0.88,0.84))
 	var loadout_group := ButtonGroup.new()
@@ -521,6 +598,16 @@ func _show_deployment() -> void:
 		var preset_btn := _toggle_button(loadout_row, str(preset["title"]), loadout_group, selected_loadout == preset_id, _set_loadout_in_place.bind(preset_id), Vector2(0, 38))
 		preset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		preset_btn.add_theme_font_size_override("font_size", 12)
+
+	_label(side, "КОЛИЧЕСТВО", 15, Color(0.85,0.88,0.84))
+	set_meta("counter_labels", {})
+	_counter_row(side, "ГРАНАТЫ", "grenades", 0, 6)
+	_counter_row(side, "ДЫМ", "smoke", 0, 5)
+	_counter_row(side, "БИНТЫ", "medkits", 0, 6)
+	if selected_role == "ANTI_TANK":
+		_counter_row(side, "РАКЕТЫ", "rockets", 1, 6)
+	elif selected_role == "RADIO_OPERATOR":
+		_label(side, "FPV-ДРОН: 1 (фиксировано)", 12, Color(0.74,0.78,0.72))
 
 	var summary := Label.new()
 	summary.name = "LoadoutSummary"
@@ -551,12 +638,15 @@ func _show_deployment() -> void:
 	var back := _button(bottom_row, "НАЗАД К КАРТЕ", _show_maps, Vector2(220, 56))
 	back.add_theme_font_size_override("font_size", 15)
 
+	var spawn_index := clampi(int(get_meta("selected_spawn", 0)), 0, 4)
 	set_meta("spawn_label", selected)
 	set_meta("deploy_button", deploy)
 	set_meta("map_preview", image)
 	set_meta("loadout_summary", summary)
-	set_meta("selected_spawn", 0)
+	set_meta("selected_spawn", spawn_index)
 	_update_loadout_summary()
+	_refresh_counter_labels()
+	_select_spawn(spawn_index)
 
 func _toggle_button(parent: Control, text: String, group: ButtonGroup, is_selected: bool, callback: Callable, min_size := Vector2(0, 40)) -> Button:
 	var button := Button.new()
@@ -594,30 +684,107 @@ func _set_team_in_place(team: String) -> void:
 
 func _set_role_in_place(role_id: String) -> void:
 	selected_role = role_id
+	selected_primary = -1
 	get_tree().set_meta("selected_role", role_id)
-	_update_loadout_summary()
+	get_tree().set_meta("selected_primary", -1)
+	_show_deployment()
 
 func _set_loadout_in_place(loadout_id: String) -> void:
 	selected_loadout = loadout_id
 	get_tree().set_meta("selected_loadout", loadout_id)
 	_update_loadout_summary()
+	_refresh_counter_labels()
+
+func _set_primary_in_place(weapon_index: int) -> void:
+	selected_primary = weapon_index
+	get_tree().set_meta("selected_primary", weapon_index)
+	_update_loadout_summary()
+
+func _counter_value(key: String) -> int:
+	if key == "rockets":
+		return selected_rockets if selected_rockets >= 0 else 5
+	var counts := _current_counts()
+	return int(counts.get(key, 0))
+
+func _adjust_stat(key: String, delta: int) -> void:
+	var value := _counter_value(key)
+	var min_value := 0
+	var max_value := 6
+	match key:
+		"grenades":
+			max_value = 6
+		"smoke":
+			max_value = 5
+		"medkits":
+			max_value = 6
+		"rockets":
+			min_value = 1
+			max_value = 6
+	value = clampi(value + delta, min_value, max_value)
+	match key:
+		"grenades":
+			selected_grenades = value
+			get_tree().set_meta("selected_grenades", value)
+		"smoke":
+			selected_smoke = value
+			get_tree().set_meta("selected_smoke", value)
+		"medkits":
+			selected_medkits = value
+			get_tree().set_meta("selected_medkits", value)
+		"rockets":
+			selected_rockets = value
+			get_tree().set_meta("selected_rockets", value)
+	_refresh_counter_labels()
+	_update_loadout_summary()
+
+func _counter_row(parent: Control, caption: String, key: String, _min_value: int, _max_value: int) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+	var label := _label(row, caption, 12, Color(0.78,0.82,0.76))
+	label.custom_minimum_size.x = 92
+	var minus := Button.new()
+	minus.text = "−"
+	minus.custom_minimum_size = Vector2(30, 30)
+	minus.add_theme_font_size_override("font_size", 16)
+	minus.pressed.connect(_adjust_stat.bind(key, -1))
+	row.add_child(minus)
+	var value_label := Label.new()
+	value_label.custom_minimum_size = Vector2(26, 0)
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value_label.add_theme_font_size_override("font_size", 15)
+	value_label.text = str(_counter_value(key))
+	row.add_child(value_label)
+	var plus := Button.new()
+	plus.text = "+"
+	plus.custom_minimum_size = Vector2(30, 30)
+	plus.add_theme_font_size_override("font_size", 16)
+	plus.pressed.connect(_adjust_stat.bind(key, 1))
+	row.add_child(plus)
+	var labels: Dictionary = get_meta("counter_labels", {})
+	labels[key] = value_label
+	set_meta("counter_labels", labels)
+
+func _refresh_counter_labels() -> void:
+	var labels: Dictionary = get_meta("counter_labels", {})
+	for key in labels.keys():
+		var label := labels[key] as Label
+		if label != null:
+			label.text = str(_counter_value(str(key)))
 
 func _update_loadout_summary() -> void:
 	var role := _role_by_id(selected_role)
-	var grenades := int(role["grenades"])
-	var smoke := int(role["smoke"])
-	var medkits := int(role["medkits"])
-	match selected_loadout:
-		"ASSAULT":
-			grenades += 1
-			medkits = maxi(1, medkits - 1)
-		"SURVIVAL":
-			grenades = maxi(0, grenades - 1)
-			medkits += 1
+	var counts := _current_counts()
+	var primary_name := _weapon_name(_current_primary())
 	var summary: Label = get_meta("loadout_summary", null)
 	if summary != null:
-		summary.text = "ОСНОВНОЕ: %s\nПИСТОЛЕТ: %s\nГРАНАТЫ: %d  •  ДЫМ: %d  •  БИНТЫ: %d\n%s" % [
-			str(role["primary"]), str(role["sidearm"]), grenades, smoke, medkits, str(role["ability"])
+		var extra := ""
+		if selected_role == "ANTI_TANK":
+			extra = "  •  РАКЕТЫ: %d" % _counter_value("rockets")
+		elif selected_role == "RADIO_OPERATOR":
+			extra = "  •  ДРОН: 1"
+		summary.text = "ОСНОВНОЕ: %s\nПИСТОЛЕТ: %s\nГРАНАТЫ: %d  •  ДЫМ: %d  •  БИНТЫ: %d%s\n%s" % [
+			primary_name, str(role["sidearm"]), int(counts["grenades"]), int(counts["smoke"]), int(counts["medkits"]), extra, str(role["ability"])
 		]
 
 func _select_spawn(index: int) -> void:
@@ -632,6 +799,12 @@ func _deploy() -> void:
 	get_tree().set_meta("selected_role", selected_role)
 	get_tree().set_meta("selected_loadout", selected_loadout)
 	get_tree().set_meta("selected_team", selected_team)
+	get_tree().set_meta("selected_primary", selected_primary)
+	get_tree().set_meta("selected_grenades", selected_grenades)
+	get_tree().set_meta("selected_smoke", selected_smoke)
+	get_tree().set_meta("selected_medkits", selected_medkits)
+	get_tree().set_meta("selected_rockets", selected_rockets)
+	get_tree().set_meta("deploy_intro", true)
 	var index: int = int(get_meta("selected_spawn", 0))
 	if index < 0:
 		index = 0

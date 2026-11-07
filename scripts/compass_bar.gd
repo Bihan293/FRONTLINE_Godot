@@ -26,6 +26,8 @@ func add_gunfire_ping(world_pos: Vector3) -> void:
 		"time": 2.2
 	})
 
+var _redraw_accum := 0.0
+
 func _process(delta: float) -> void:
 	# Очистка старых меток выстрелов
 	var i := _gunfire_pings.size() - 1
@@ -34,6 +36,10 @@ func _process(delta: float) -> void:
 		if _gunfire_pings[i].time <= 0.0:
 			_gunfire_pings.remove_at(i)
 		i -= 1
+	_redraw_accum += delta
+	if _redraw_accum < 0.05:
+		return
+	_redraw_accum = 0.0
 	queue_redraw()
 
 func _horizontal_fov() -> float:

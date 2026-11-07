@@ -43,7 +43,13 @@ func _get_enemy_visible_range() -> float:
 			return SNIPER_VISIBLE_RANGE
 	return ENEMY_VISIBLE_RANGE
 
-func _process(_delta: float) -> void:
+var _redraw_accum := 0.0
+
+func _process(delta: float) -> void:
+	_redraw_accum += delta
+	if _redraw_accum < 0.08:
+		return
+	_redraw_accum = 0.0
 	if player != null and is_instance_valid(player):
 		queue_redraw()
 

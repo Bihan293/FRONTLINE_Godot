@@ -21,11 +21,74 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_out_dir = OUT_AFTER if "after" in OS.get_cmdline_user_args() else OUT_BEFORE
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_out_dir))
-	await _capture_battlefield_models()
-	await _capture_village_models()
-	await _capture_polygon_models()
+	if "ragdoll" in OS.get_cmdline_user_args():
+		await _capture_ragdoll_only()
+	elif "intro" in OS.get_cmdline_user_args():
+		await _capture_intro_only()
+	elif "pickups" in OS.get_cmdline_user_args():
+		await _capture_pickups_only()
+	else:
+		await _capture_battlefield_models()
+		await _capture_village_models()
+		await _capture_polygon_models()
 	print("MODEL_AUDIT_OK: ", _captures)
 	get_tree().quit()
+
+func _capture_pickups_only() -> void:
+	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")
+	_freeze_bots()
+	_set_hud_visible(battlefield, false)
+	var weapon_pickup = PICKUP_SCRIPT.new()
+	weapon_pickup.configure_weapon(0, 30, 150)
+	weapon_pickup.position = Vector3(-1.0, 0.35, 0.0)
+	battlefield.add_child(weapon_pickup)
+	var ammo_pickup = PICKUP_SCRIPT.new()
+	ammo_pickup.configure_ammo(48, 65.0)
+	ammo_pickup.position = Vector3(1.0, 0.35, 0.0)
+	battlefield.add_child(ammo_pickup)
+	var camera := _add_free_camera(battlefield, Vector3(0.0, 1.4, 4.0), Vector3(0.0, 0.45, 0.0))
+	await _wait_frames(5)
+	await _capture("pickups")
+	camera.queue_free()
+	battlefield.queue_free()
+
+func _capture_intro_only() -> void:
+	get_tree().set_meta("spawn_position", Vector3(0.0, 0.4, 50.0))
+	get_tree().set_meta("deploy_intro", true)
+	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")
+	_set_hud_visible(battlefield, false)
+	await _wait_frames(2)
+	await _capture("intro_start")
+	await get_tree().create_timer(3.2).timeout
+	await _capture("intro_end")
+	battlefield.queue_free()
+
+func _capture_ragdoll_only() -> void:
+	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")
+	var bots := _freeze_bots()
+	var target: Node3D = null
+	for bot in bots:
+		if bot is Node3D:
+			target = bot as Node3D
+			break
+	if target == null:
+		return
+	target.global_position = Vector3(0.0, 0.1, 0.0)
+	target.rotation.y = PI
+	target.set("health", 100.0)
+	var proc = target.get("_proc")
+	if proc != null:
+		proc.call("set_motion", 0.0, false)
+		proc.call("set_aiming", true)
+	_set_hud_visible(battlefield, false)
+	var camera := _add_free_camera(battlefield, Vector3(0.0, 1.8, 5.0), Vector3(0.0, 0.9, 0.0))
+	await _wait_frames(6)
+	await _capture("ragdoll_alive")
+	target.call("_die", Vector3(0.0, 1.0, 6.0), "chest", "Audit")
+	await _wait_frames(150)
+	await _capture("ragdoll_dead")
+	camera.queue_free()
+	battlefield.queue_free()
 
 func _wait_frames(count: int) -> void:
 	for _i in range(count):

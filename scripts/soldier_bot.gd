@@ -18,6 +18,7 @@ const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
+const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -290,7 +291,8 @@ func _build_label() -> void:
 
 func _build_audio() -> void:
 	_sfx_shot = AudioStreamPlayer3D.new()
-	_sfx_shot.stream = SFX_SHOT
+	var weapon_ids := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
+	_sfx_shot.stream = WEAPON_SOUND.get_shot(weapon_ids[clampi(bot_weapon_index, 0, weapon_ids.size() - 1)])
 	_sfx_shot.unit_size = 16.0
 	_sfx_shot.max_distance = 220.0
 	_sfx_shot.max_polyphony = 1
@@ -331,6 +333,12 @@ func _physics_process(delta: float) -> void:
 	if _gun_pivot != null:
 		var reload_tilt := -0.32 if is_reloading else 0.0
 		_gun_pivot.rotation.z = lerpf(_gun_pivot.rotation.z, reload_tilt, clampf(delta * 8.0, 0.0, 1.0))
+	if _label != null:
+		var cam := get_viewport().get_camera_3d()
+		var label_dist := 999.0
+		if cam != null:
+			label_dist = global_position.distance_to(cam.global_position)
+		_label.visible = label_dist < 36.0
 
 func _update_ai(delta: float) -> void:
 	# Подавление постепенно рассеивается с учетом сложности
@@ -565,7 +573,7 @@ func _route_direction(destination: Vector3, delta: float) -> Vector3:
 		_route_path = _navigation.find_path(global_position, destination)
 		_route_goal = destination
 		_route_index = 0
-		_route_repath_timer = 0.9
+		_route_repath_timer = 1.4
 		_route_has_attempted = true
 		if _route_path.is_empty():
 			return direct.normalized()
