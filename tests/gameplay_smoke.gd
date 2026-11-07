@@ -9,6 +9,7 @@ const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const SOLDIER_BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 var _failures: Array[String] = []
 
@@ -19,6 +20,7 @@ func _ready() -> void:
 	_test_minimap_alignment()
 	_test_combat_roles_and_drone()
 	_test_positional_combat_audio()
+	_test_explosion_audio_budget()
 	await _test_physics_ragdoll()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
@@ -119,6 +121,30 @@ func _test_positional_combat_audio() -> void:
 		var drone_listener = dummy_d.get_node_or_null("DroneCamera/DroneListener")
 		_check(drone_listener != null and drone_listener is AudioListener3D, "Drone missing DroneListener under DroneCamera")
 		dummy_d.queue_free()
+
+func _test_explosion_audio_budget() -> void:
+	var listener := Node3D.new()
+	listener.add_to_group("player")
+	add_child(listener)
+	await get_tree().process_frame
+
+	var limit := int(COMBAT_AUDIO.get_script_constant_map().get("MAX_ACTIVE_3D_SFX", 16))
+	for i in range(limit):
+		COMBAT_AUDIO.play_surface_impact(self, Vector3(100.0 + float(i), 0.0, 0.0), Vector3.UP, "metal")
+	_check(COMBAT_AUDIO.get_active_3d_voice_count() == limit, "combat audio did not fill to its configured voice budget")
+
+	var out_of_range = COMBAT_AUDIO.play_explosion_3d(self, Vector3(150.0, 0.0, 0.0), null, 32.0, 50.0)
+	_check(out_of_range == null, "out-of-range explosion created an inaudible audio voice")
+	var nearby = COMBAT_AUDIO.play_explosion_3d(self, Vector3(1.0, 0.0, 0.0), null, 32.0, 50.0)
+	_check(nearby != null, "near explosion was dropped instead of replacing a distant transient")
+	_check(COMBAT_AUDIO.get_active_3d_voice_count() <= limit, "explosion audio exceeded the configured voice budget")
+
+	for voice in get_tree().get_nodes_in_group("combat_audio_voice"):
+		if is_instance_valid(voice):
+			voice.stop()
+			voice.queue_free()
+	listener.queue_free()
+	await get_tree().process_frame
 
 func _test_physics_ragdoll() -> void:
 	var floor := StaticBody3D.new()
