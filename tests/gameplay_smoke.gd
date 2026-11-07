@@ -33,10 +33,10 @@ func _test_combat_roles_and_drone() -> void:
 	var minimap = MINIMAP_SCRIPT.new()
 	add_child(minimap)
 	var dummy_player := CharacterBody3D.new()
-	dummy_player.set("player_role", "SNIPER")
+	dummy_player.set_meta("player_role", "SNIPER")
 	minimap.player = dummy_player
 	_check(minimap._get_enemy_visible_range() == 70.0, "sniper radar range != 70.0")
-	dummy_player.set("player_role", "ASSAULT")
+	dummy_player.set_meta("player_role", "ASSAULT")
 	_check(minimap._get_enemy_visible_range() == 38.0, "assault radar range != 38.0")
 	minimap.queue_free()
 	dummy_player.queue_free()
@@ -61,8 +61,8 @@ func _test_combat_roles_and_drone() -> void:
 		# Move drone past tether
 		drone.global_position = Vector3(0, 2, 100.0)
 		drone._physics_process(0.016)
-		var op_anchor: Vector3 = op.global_position + Vector3(0, 1.4, 0)
-		_check(drone.global_position.distance_to(op_anchor) <= 80.5, "drone exceeded tether limit")
+		var op_anchor: Vector3 = drone.call("_operator_anchor_position")
+		_check(drone.global_position.distance_to(op_anchor) <= 80.05, "drone exceeded tether limit: %f > 80.05" % drone.global_position.distance_to(op_anchor))
 
 		drone.return_to_operator()
 		op.queue_free()

@@ -32,7 +32,13 @@ func setup(p: Node3D, bot_list: Array, sector_list: Array, iron_points: Array, r
 
 func _get_enemy_visible_range() -> float:
 	if player != null and is_instance_valid(player):
-		var role = player.get("player_role")
+		var role: Variant = null
+		if "player_role" in player:
+			role = player.get("player_role")
+		elif player.has_meta("player_role"):
+			role = player.get_meta("player_role")
+		elif player.has_meta("selected_role"):
+			role = player.get_meta("selected_role")
 		if str(role) == "SNIPER":
 			return SNIPER_VISIBLE_RANGE
 	return ENEMY_VISIBLE_RANGE

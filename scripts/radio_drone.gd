@@ -56,8 +56,8 @@ func launch(start_pos: Vector3, initial_yaw: float, op: CharacterBody3D, tether_
 	global_position = start_pos
 	rotation.y = initial_yaw
 	velocity = -transform.basis.z * 4.0 + Vector3.UP * 2.0
-	if camera != null:
-		camera.current = true
+	if operator != null and operator.has_method("set_drone_controller_feed") and _feed_viewport != null:
+		operator.call("set_drone_controller_feed", _feed_viewport.get_texture())
 
 func _ready() -> void:
 	add_to_group("radio_drones")
@@ -152,10 +152,12 @@ func _physics_process(delta: float) -> void:
 
 func _operator_anchor_position() -> Vector3:
 	if operator != null and is_instance_valid(operator):
+		if operator.has_method("get_tether_anchor_position"):
+			return operator.call("get_tether_anchor_position")
 		var anchor = operator.get("drone_controller_anchor")
 		if anchor is Node3D and is_instance_valid(anchor):
 			return (anchor as Node3D).global_position
-		return operator.global_position + operator.transform.basis * Vector3(0.30, 1.45, -0.48)
+		return operator.global_position + Vector3(0.0, 1.4, 0.0)
 	return global_position
 
 func detonate(pos: Vector3) -> void:
