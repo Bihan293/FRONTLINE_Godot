@@ -13,6 +13,7 @@ var hud: CanvasLayer
 var scoreboard: PanelContainer
 var stats_label: Label
 var ui_click: AudioStreamPlayer
+var _mat_cache: Dictionary = {}
 
 func _ready() -> void:
     team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -21,9 +22,13 @@ func _ready() -> void:
     _build_hud()
 
 func _mat(color: Color) -> StandardMaterial3D:
+    var key: String = color.to_html()
+    if _mat_cache.has(key):
+        return _mat_cache[key]
     var m := StandardMaterial3D.new()
     m.albedo_color = color
     m.roughness = 1.0
+    _mat_cache[key] = m
     return m
 
 func _build_world() -> void:
@@ -60,6 +65,11 @@ func _build_box(data: Dictionary) -> void:
         body.position = pos
         add_child(body)
         parent = body
+        var shape := CollisionShape3D.new()
+        var box := BoxShape3D.new()
+        box.size = size
+        shape.shape = box
+        body.add_child(shape)
     var mesh := BoxMesh.new()
     mesh.size = size
     var inst := MeshInstance3D.new()

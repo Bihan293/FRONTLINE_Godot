@@ -84,6 +84,8 @@ All SFX are CC0 1.0 (public domain), see [`assets/audio/LICENSE.md`](assets/audi
 
 
 ## v0.3.0 changes
+- Fixed missing `CollisionShape3D` on the polygon floor and solid boxes, so the player no longer falls through the ground.
+- Performance for phones: each soldier's 49 separate mesh parts are merged into one skinned mesh with baked vertex colours (about 780 draw calls for 16 dummies down to 16), static targets skip per-frame processing, and map materials are shared.
 - Restored the full soldier height (~2.39 m) and scaled the player up to match (2.4 m capsule, 2.05 m eye height, adjusted stances).
 - Polygon rebuilt from a single shared layout: every wall, cover, sandbag, crate and target board now has collision.
 - Menu map preview and deployment screen are drawn from that same layout, so they match the playable polygon exactly.

@@ -10,6 +10,7 @@ const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const MODEL_LIFT := 1.23
 const PRONE_Y := 0.32
 
+static var _merged_mesh_cache: Dictionary = {}
 static var _normal_mesh_cache: Dictionary = {}
 
 var team_name := "IRON LEGION"
@@ -52,6 +53,7 @@ var shots_fired := 0
 var _sfx: AudioStreamPlayer3D
 
 func _ready() -> void:
+    add_to_group("training_dummy")
     _base_position = position
     _build_visual()
     _apply_stance()
@@ -65,6 +67,16 @@ func _ready() -> void:
     var player := get_tree().get_first_node_in_group("player") as Node3D
     if player != null and not shooting:
         _face_position(player.global_position, 1.0)
+    # Статичным мишеням не нужно обновляться каждый кадр. Поворачиваемся к
+    # игроку отложенно, потому что игрок создаётся после манекенов.
+    if not _patrol_active and not shooting:
+        _settle_static.call_deferred()
+
+func _settle_static() -> void:
+    var player := get_tree().get_first_node_in_group("player") as Node3D
+    if player != null:
+        _face_position(player.global_position, 1.0)
+    set_process(false)
 
 func _build_visual() -> void:
     _pivot = Node3D.new()
@@ -80,7 +92,7 @@ func _build_visual() -> void:
         push_error("FRONTLINE: cannot load soldier model " + path)
         return
     var model = packed.instantiate()
-    _fix_normals(model)
+    _prepare_model(model, path)
     _visual.add_child(model)
     _visual.set_script(PROCEDURAL)
     _pivot.add_child(_visual)
@@ -304,6 +316,7 @@ func _die() -> void:
     _dead = true
     _fall = 0.0
     _respawn_timer = 2.6
+    set_process(true)
     for box in _hitboxes:
         box.collision_layer = 0
     if _gun_pivot != null:
@@ -419,6 +432,97 @@ func _respawn() -> void:
         _proc.set_motion(0.0, false)
     if shooting:
         _shoot_timer = randf_range(0.8, 2.0)
+    if not _patrol_active and not shooting:
+        set_process(false)
+
+func _prepare_model(root: Node, path: String) -> void:
+    # Исходный GLB состоит из ~49 отдельных MeshInstance3D (по одному на деталь
+    # экипировки). На 16 манекенах это ~780 skinned draw call — главная причина
+    # лагов на телефоне. Сливаем все поверхности в один меш, запекая цвет
+    # материала в вершинные цвета: получается 1 draw call на манекен.
+    var skeleton := root.find_child("Skeleton3D", true, false) as Skeleton3D
+    if skeleton == null:
+        _fix_normals(root)
+        return
+    var parts: Array = []
+    for child in skeleton.get_children():
+        if child is MeshInstance3D:
+            parts.append(child)
+    if parts.is_empty():
+        return
+    var skin: Skin = parts[0].skin
+    var merged: ArrayMesh = _merged_mesh_cache.get(path)
+    if merged == null:
+        merged = _merge_meshes(parts)
+        _merged_mesh_cache[path] = merged
+    for part in parts:
+        skeleton.remove_child(part)
+        part.queue_free()
+    var inst := MeshInstance3D.new()
+    inst.name = "MergedSoldier"
+    inst.mesh = merged
+    inst.skin = skin
+    inst.skeleton = NodePath("..")
+    skeleton.add_child(inst)
+
+func _merge_meshes(parts: Array) -> ArrayMesh:
+    var verts := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var colors := PackedColorArray()
+    var bones := PackedInt32Array()
+    var weights := PackedFloat32Array()
+    var has_skin_data := false
+    for part in parts:
+        var src: Mesh = part.mesh
+        if src == null:
+            continue
+        for surf in range(src.get_surface_count()):
+            # Исходный меш без NORMAL: разворачиваем индексы и генерируем
+            # плоские нормали (низкополигональный вид сохраняется).
+            var st := SurfaceTool.new()
+            st.create_from(src, surf)
+            st.deindex()
+            st.generate_normals()
+            var tmp: ArrayMesh = st.commit()
+            if tmp == null or tmp.get_surface_count() == 0:
+                continue
+            var arrays: Array = tmp.surface_get_arrays(0)
+            var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+            var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+            if v.is_empty() or n.size() != v.size():
+                continue
+            var color := Color(0.66, 0.66, 0.66)
+            var mat = src.surface_get_material(surf)
+            if mat is StandardMaterial3D:
+                color = mat.albedo_color
+            verts.append_array(v)
+            normals.append_array(n)
+            for _i in range(v.size()):
+                colors.append(color)
+            var b = arrays[Mesh.ARRAY_BONES]
+            var w = arrays[Mesh.ARRAY_WEIGHTS]
+            if b != null and w != null and b.size() == v.size() * 4 and w.size() == v.size() * 4:
+                bones.append_array(b)
+                weights.append_array(w)
+                has_skin_data = true
+    var out := ArrayMesh.new()
+    if verts.is_empty():
+        return out
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = verts
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_COLOR] = colors
+    if has_skin_data:
+        arrays[Mesh.ARRAY_BONES] = bones
+        arrays[Mesh.ARRAY_WEIGHTS] = weights
+    out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = Color.WHITE
+    mat.vertex_color_use_as_albedo = true
+    mat.roughness = 1.0
+    out.surface_set_material(0, mat)
+    return out
 
 func _fix_normals(root: Node) -> void:
     # Исходные GLB солдат не содержат NORMAL. Godot их не генерирует,
