@@ -265,9 +265,10 @@ func _apply_blast_damage(pos: Vector3) -> void:
 			if dist <= BLAST_RADIUS:
 				var factor := 1.0 - (dist / BLAST_RADIUS)
 				var dmg := int(round(MAX_DAMAGE * factor * factor))
-				var was_dead := bot.is_dead
 				bot.receive_hit(dmg, pos, "chest", shooter_name)
-				if not was_dead and bot.is_dead and shooter_name == "Player":
+				# The branch only visits living bots, so a dead bot here was
+				# alive before this hit. Avoid storing a dynamically inferred flag.
+				if bot.is_dead and shooter_name == "Player":
 					var world_node := get_parent()
 					if world_node != null and world_node.has_method("add_kill"):
 						world_node.call("add_kill")

@@ -65,10 +65,23 @@ jobs:
 
       - name: Run gameplay smoke tests
         run: |
-          godot --headless --path . res://tests/pause_smoke.tscn --quit-after 1200
-          godot --headless --path . res://tests/navigation_smoke.tscn --quit-after 1800
-          godot --headless --path . res://tests/gameplay_smoke.tscn --quit-after 1800
-          godot --headless --path . res://tests/projectile_smoke.tscn --quit-after 1800
+          run_smoke() {
+            scene="$1"
+            frames="$2"
+            log_file=$(mktemp)
+            status=0
+            godot --headless --path . "$scene" --quit-after "$frames" >"$log_file" 2>&1 || status=$?
+            cat "$log_file"
+            if [ "$status" -ne 0 ] || grep -Eq 'SCRIPT ERROR|Failed to load script' "$log_file"; then
+              rm -f "$log_file"
+              return 1
+            fi
+            rm -f "$log_file"
+          }
+          run_smoke res://tests/pause_smoke.tscn 1200
+          run_smoke res://tests/navigation_smoke.tscn 1800
+          run_smoke res://tests/gameplay_smoke.tscn 1800
+          run_smoke res://tests/projectile_smoke.tscn 1800
 
       - name: Build Android APK with Godot
         run: |
