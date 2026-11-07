@@ -82,11 +82,13 @@ func _physics_process(delta: float) -> void:
 	if not _is_launched or is_exploding:
 		return
 
-	if operator == null or not is_instance_valid(operator) or bool(operator.get("is_dead")):
+	var op_dead := bool(operator.get("is_dead")) if (operator != null and "is_dead" in operator) else false
+	if operator == null or not is_instance_valid(operator) or op_dead:
 		return_to_operator()
 		return
 	var world_state := get_parent()
-	if world_state != null and "is_game_over" in world_state and bool(world_state.get("is_game_over")):
+	var game_over := bool(world_state.get("is_game_over")) if (world_state != null and "is_game_over" in world_state) else false
+	if game_over:
 		return_to_operator()
 		return
 
@@ -117,14 +119,7 @@ func _physics_process(delta: float) -> void:
 
 	# Проверка натяжения кабеля
 	var op_pos := _operator_anchor_position()
-	var tether_vector := global_position - op_pos
-	var current_dist := tether_vector.length()
-	if current_dist >= max_tether:
-		# Ограничение кабелем: нельзя улететь дальше предельной длины
-		var outward_speed := velocity.dot(tether_vector.normalized())
-		if outward_speed > 0.0:
-			velocity -= tether_vector.normalized() * outward_speed
-		global_position = op_pos + tether_vector.normalized() * max_tether
+	clamp_to_tether()
 
 	# Наклон корпуса в сторону движения (реалистичная динамика Dummy War)
 	if _model != null:
@@ -154,6 +149,18 @@ func _physics_process(delta: float) -> void:
 	# Обновление отрисовки провода и OSD
 	_update_tether(op_pos)
 	_update_osd(global_position.distance_to(op_pos))
+
+func clamp_to_tether() -> float:
+	var op_pos := _operator_anchor_position()
+	var tether_vector := global_position - op_pos
+	var current_dist := tether_vector.length()
+	if current_dist >= max_tether:
+		var outward_speed := velocity.dot(tether_vector.normalized())
+		if outward_speed > 0.0:
+			velocity -= tether_vector.normalized() * outward_speed
+		global_position = op_pos + tether_vector.normalized() * max_tether
+		return max_tether
+	return current_dist
 
 func _operator_anchor_position() -> Vector3:
 	if operator != null and is_instance_valid(operator):

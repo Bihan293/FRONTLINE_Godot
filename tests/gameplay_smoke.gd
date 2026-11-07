@@ -60,7 +60,7 @@ func _test_combat_roles_and_drone() -> void:
 
 		# Move drone past tether
 		drone.global_position = Vector3(0, 2, 100.0)
-		drone._physics_process(0.016)
+		drone.clamp_to_tether()
 		var op_anchor: Vector3 = drone.call("_operator_anchor_position")
 		_check(drone.global_position.distance_to(op_anchor) <= 80.05, "drone exceeded tether limit: %f > 80.05" % drone.global_position.distance_to(op_anchor))
 
