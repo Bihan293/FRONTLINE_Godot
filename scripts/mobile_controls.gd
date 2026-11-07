@@ -58,7 +58,7 @@ func _layout() -> Dictionary:
 		"peek_left": Vector2(s.x - 386.0, s.y - 466.0),
 		"peek_right": Vector2(s.x - 294.0, s.y - 466.0),
 		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
-		"interact": Vector2(s.x - 220.0, s.y - 512.0),
+		"interact": Vector2(s.x - 195.0, s.y - 530.0),
 	}
 
 func set_interact_visible(is_visible: bool) -> void:
@@ -66,6 +66,12 @@ func set_interact_visible(is_visible: bool) -> void:
 		return
 	_interact_visible = is_visible
 	queue_redraw()
+
+func reset_aim() -> void:
+	if _aim_on:
+		_aim_on = false
+		aim_changed.emit(false)
+		queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:

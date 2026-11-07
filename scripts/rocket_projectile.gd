@@ -19,6 +19,7 @@ const MAX_LIFETIME := 5.0
 var velocity := Vector3.ZERO
 var shooter_name := "Player"
 var team_name := "IRON LEGION"
+var shooter_node: CollisionObject3D = null
 var has_detonated := false
 var lifetime := 0.0
 
@@ -29,11 +30,12 @@ func _ready() -> void:
 	_build_visuals()
 	_build_smoke_trail()
 
-func launch(start_pos: Vector3, dir: Vector3, shooter: String, team: String) -> void:
+func launch(start_pos: Vector3, dir: Vector3, shooter: String, team: String, exclude_node: CollisionObject3D = null) -> void:
 	global_position = start_pos
 	velocity = dir.normalized() * SPEED
 	shooter_name = shooter
 	team_name = team
+	shooter_node = exclude_node
 	look_at(global_position + dir, Vector3.UP)
 
 func _physics_process(delta: float) -> void:
@@ -50,11 +52,13 @@ func _physics_process(delta: float) -> void:
 	var from := global_position
 	var to := from + step
 
-	# Проверка столкновения лучом
+	# Проверка столкновения лучом (с исключением стрелка во избежание самоподрыва)
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.collision_mask = 1 | 2 | 4 # мир, хитбоксы, боты
 	query.collide_with_areas = true
+	if shooter_node != null and is_instance_valid(shooter_node):
+		query.exclude = [shooter_node.get_rid()]
 	var hit := space.intersect_ray(query)
 
 	if not hit.is_empty():
@@ -73,6 +77,14 @@ func detonate(pos: Vector3) -> void:
 	if world == null:
 		queue_free()
 		return
+
+	# Оставляем дымный след плавно догорать в воздухе
+	if _smoke_trail != null and is_instance_valid(_smoke_trail):
+		_smoke_trail.emitting = false
+		remove_child(_smoke_trail)
+		world.add_child(_smoke_trail)
+		_smoke_trail.global_position = global_position
+		get_tree().create_timer(1.0, false).timeout.connect(_smoke_trail.queue_free)
 
 	# 1. Вспышка и взрыв
 	_spawn_explosion_visuals(world, pos)
@@ -151,6 +163,7 @@ func _build_visuals() -> void:
 
 func _build_smoke_trail() -> void:
 	_smoke_trail = CPUParticles3D.new()
+	_smoke_trail.local_coords = false
 	var smesh := SphereMesh.new()
 	smesh.radius = 0.14
 	smesh.height = 0.28
@@ -252,7 +265,21 @@ func _apply_blast_damage(pos: Vector3) -> void:
 			if dist <= BLAST_RADIUS:
 				var factor := 1.0 - (dist / BLAST_RADIUS)
 				var dmg := int(round(MAX_DAMAGE * factor * factor))
+				var was_dead := bot.is_dead
 				bot.receive_hit(dmg, pos, "chest", shooter_name)
+				if not was_dead and bot.is_dead and shooter_name == "Player":
+					var world_node := get_parent()
+					if world_node != null and world_node.has_method("add_kill"):
+						world_node.call("add_kill")
+
+	# Манекены на Полигоне
+	for d in get_tree().get_nodes_in_group("training_dummy"):
+		if d != null and is_instance_valid(d) and d.has_method("receive_hit"):
+			var dist := pos.distance_to(d.global_position)
+			if dist <= BLAST_RADIUS:
+				var factor := 1.0 - (dist / BLAST_RADIUS)
+				var dmg := int(round(MAX_DAMAGE * factor * factor))
+				d.receive_hit(dmg, pos, "chest", shooter_name)
 
 	# Взрывные бочки
 	for b in get_tree().get_nodes_in_group("explosive_barrels"):

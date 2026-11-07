@@ -13,6 +13,7 @@ const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
+const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
@@ -505,7 +506,7 @@ func _route_direction(destination: Vector3, delta: float) -> Vector3:
 		return Vector3.ZERO
 	return direction.normalized()
 
-## Производит выстрел одной пулей очереди
+## Производит выстрел с учетом типа вооружения бота
 func _shoot_burst() -> void:
 	if ammo <= 0:
 		_start_reload()
@@ -515,16 +516,47 @@ func _shoot_burst() -> void:
 	_fire_single_shot()
 	burst_count += 1
 
-	if burst_count >= randi_range(3, 5):
-		burst_count = 0
-		fire_cooldown = randf_range(0.8, 1.8)
-	else:
-		fire_cooldown = 0.11
+	match bot_weapon_index:
+		2, 6:
+			burst_count = 0
+			fire_cooldown = randf_range(1.3, 2.1)
+		4:
+			burst_count = 0
+			fire_cooldown = randf_range(0.85, 1.4)
+		7:
+			burst_count = 0
+			fire_cooldown = randf_range(3.2, 4.8)
+		3:
+			if burst_count >= randi_range(1, 3):
+				burst_count = 0
+				fire_cooldown = randf_range(0.6, 1.2)
+			else:
+				fire_cooldown = 0.24
+		5:
+			if burst_count >= randi_range(6, 10):
+				burst_count = 0
+				fire_cooldown = randf_range(0.7, 1.4)
+			else:
+				fire_cooldown = 0.065
+		1:
+			if burst_count >= randi_range(4, 7):
+				burst_count = 0
+				fire_cooldown = randf_range(0.7, 1.5)
+			else:
+				fire_cooldown = 0.08
+		_:
+			if burst_count >= randi_range(3, 5):
+				burst_count = 0
+				fire_cooldown = randf_range(0.8, 1.8)
+			else:
+				fire_cooldown = 0.10
 
 func _fire_single_shot() -> void:
 	soldier_fired.emit(global_position)
+	var pitch_factors := [1.0, 1.16, 0.76, 1.3, 0.78, 1.25, 0.70, 0.65]
+	var w_pitch: float = pitch_factors[clampi(bot_weapon_index, 0, pitch_factors.size() - 1)]
 	if _sfx_shot != null:
-		_sfx_shot.pitch_scale = randf_range(0.92, 1.08)
+		_sfx_shot.pitch_scale = w_pitch * randf_range(0.94, 1.06)
 		_sfx_shot.play()
 
 	if _muzzle_flash != null:
@@ -534,69 +566,55 @@ func _fire_single_shot() -> void:
 	if _proc != null:
 		_proc.set_firing(true)
 
-	# Выброс гильзы вправо
-	var casing_pos := global_position + Vector3(0, 1.3, 0)
-	var eject_dir := global_transform.basis.x * 2.2 + Vector3.UP * 1.5 - global_transform.basis.z * 0.4
-	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, eject_dir)
-
-	# Трассер и баллистика
 	var from := _muzzle_node.global_position if _muzzle_node != null else global_position + Vector3(0, 1.3, 0)
 	var target_pt := current_target.global_position + Vector3(0, 1.25, 0) if current_target != null else from - global_transform.basis.z * 40.0
-	# Разброс оружия в зависимости от расстояния и подавления
 	var spread: float = 0.02 + suppression * 0.05
 	var shoot_dir := (target_pt - from).normalized()
 	shoot_dir = shoot_dir.rotated(Vector3.UP, randf_range(-spread, spread))
 	shoot_dir = shoot_dir.rotated(global_transform.basis.x, randf_range(-spread, spread))
 
-	var to := from + shoot_dir * 120.0
+	if bot_weapon_index == 7:
+		var rocket_scene = preload("res://scripts/rocket_projectile.gd")
+		var rocket = rocket_scene.new()
+		get_parent().add_child(rocket)
+		rocket.launch(from, shoot_dir, soldier_name, team_name)
+		return
+
+	# Выброс гильзы вправо
+	var casing_pos := global_position + Vector3(0, 1.3, 0)
+	var eject_dir := global_transform.basis.x * 2.2 + Vector3.UP * 1.5 - global_transform.basis.z * 0.4
+	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, eject_dir)
+
+	var bullet_range := 150.0
+	var to := from + shoot_dir * bullet_range
 	var player_node = get_tree().get_first_node_in_group("player")
 	if player_node != null and is_instance_valid(player_node) and "camera" in player_node and player_node.camera != null:
 		FRONTLINEAmbience.check_bullet_flyby(from, to, player_node.camera.global_position)
 
-	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collision_mask = RAY_COLLISION_MASK
-	query.exclude = _get_self_collision_rids()
-	query.collide_with_areas = true
-	var hit := space.intersect_ray(query)
-	var bullet_end: Vector3 = hit.position if not hit.is_empty() else to
-	var player = get_tree().get_first_node_in_group("player")
-	if player != null and is_instance_valid(player) and "camera" in player:
-		var player_camera := player.get("camera") as Camera3D
-		if player_camera != null:
-			AMBIENCE.check_bullet_flyby(from, bullet_end, player_camera.global_position)
-
-	if hit:
-		var collider = hit.collider
-		if collider.is_in_group("damageable"):
-			var region: String = str(collider.get_meta("region", "chest"))
-			var actor = collider.get_meta("owner_actor", collider.get_meta("owner_dummy", null))
-			if actor == null and collider.has_method("receive_hit"):
-				actor = collider
-			if actor != null and actor != self and actor.has_method("receive_hit"):
-				var actor_team: String = ""
-				if "team_name" in actor:
-					actor_team = str(actor.team_name)
-				elif actor.is_in_group("player"):
-					actor_team = str(get_tree().get_meta("selected_team", "IRON LEGION"))
-				# Защита от дружественного огня: сослуживцы не получают урон
-				if actor_team != "" and actor_team == team_name:
-					return
-				var dmg := 22
-				match region:
-					"head": dmg = 85
-					"chest": dmg = 38
-					"leg": dmg = 18
-				actor.receive_hit(dmg, global_position, region, soldier_name)
-				if not actor.is_in_group("explosive_barrels"):
-					HIT_EFFECTS.spawn_directional_blood(actor, hit.position, shoot_dir, dmg >= 70, get_parent())
-		elif collider.is_in_group("player") or collider.name == "Player":
-			var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
-			if player_team != team_name and collider.has_method("receive_hit"):
-				collider.receive_hit(24, global_position, "chest", soldier_name)
-				HIT_EFFECTS.spawn_directional_blood(collider, hit.position, shoot_dir, false, get_parent())
-		else:
-			HIT_EFFECTS.spawn_bullet_hole(get_parent(), hit.position, hit.normal)
+	var bullet_speeds := [715.0, 380.0, 865.0, 253.0, 400.0, 488.0, 760.0, 48.0]
+	var bullet_speed: float = bullet_speeds[clampi(bot_weapon_index, 0, bullet_speeds.size() - 1)]
+	var damage_to_target := 24
+	var damage_to_player := 22
+	match bot_weapon_index:
+		2, 6:
+			damage_to_target = 52
+			damage_to_player = 48
+		4:
+			damage_to_target = 35
+			damage_to_player = 32
+		5:
+			damage_to_target = 18
+			damage_to_player = 16
+		1:
+			damage_to_target = 20
+			damage_to_player = 20
+	var world := get_parent()
+	if world != null and world.has_method("spawn_bullet_projectile"):
+		world.call("spawn_bullet_projectile", from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
+	elif world != null:
+		var bullet = BULLET_PROJECTILE_SCRIPT.new()
+		bullet.configure(from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
+		world.add_child(bullet)
 
 func _start_reload() -> void:
 	if is_reloading:
@@ -693,7 +711,9 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	HIT_EFFECTS.spawn_directional_blood(self, global_position + Vector3(0, 0.9, 0), hit_dir, region == "head", get_parent())
 
 	# Сигнал для киллфида
-	soldier_killed.emit(self, killer_name, "AK-47")
+	var w_names := ["AK-47", "MP-40", "MOSIN-NAGANT", "M1911", "PUMP SHOTGUN", "PPSH-41", "KAR98K", "PANZERFAUST"]
+	var w_name: String = w_names[clampi(bot_weapon_index, 0, w_names.size() - 1)]
+	soldier_killed.emit(self, killer_name, w_name)
 
 	# Очистка трупа через 25 секунд
 	get_tree().create_timer(25.0, false).timeout.connect(func():

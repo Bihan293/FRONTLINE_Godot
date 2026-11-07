@@ -54,6 +54,7 @@ func _draw() -> void:
 	var scale := (radius - 7.0) / MAP_RANGE
 	_draw_spawns(center, radius, scale)
 	_draw_sectors(center, radius, scale)
+	_draw_supply_crates(center, radius, scale)
 	_draw_bots(center, radius, scale)
 	_draw_player(center)
 
@@ -103,6 +104,21 @@ func _draw_sectors(center: Vector2, radius: float, scale: float) -> void:
 		draw_arc(p, 7.0, 0.0, TAU, 24, color, 1.5, true)
 		var letter := str(sector.get("name", "?")).substr(0, 1)
 		draw_string(font, p + Vector2(-4.0, 4.0), letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, color)
+
+func _draw_supply_crates(center: Vector2, radius: float, scale: float) -> void:
+	var crates := get_tree().get_nodes_in_group("field_supply_crates")
+	for crate in crates:
+		if not is_instance_valid(crate) or not (crate is Node3D):
+			continue
+		var pos: Vector3 = (crate as Node3D).global_position
+		var p := _world_to_map(pos, center, scale)
+		if (p - center).length() > radius - 7.0:
+			continue
+		# Draw small ammo cache symbol (yellow-gold square with dark center cross)
+		draw_rect(Rect2(p - Vector2(3.5, 3.5), Vector2(7.0, 7.0)), Color(0.96, 0.82, 0.24, 0.92))
+		draw_rect(Rect2(p - Vector2(2.0, 2.0), Vector2(4.0, 4.0)), Color(0.22, 0.18, 0.06, 0.92))
+		draw_line(Vector2(p.x, p.y - 1.5), Vector2(p.x, p.y + 1.5), Color(0.96, 0.82, 0.24, 0.95), 1.0)
+		draw_line(Vector2(p.x - 1.5, p.y), Vector2(p.x + 1.5, p.y), Color(0.96, 0.82, 0.24, 0.95), 1.0)
 
 func _draw_bots(center: Vector2, radius: float, scale: float) -> void:
 	var origin := player.global_position

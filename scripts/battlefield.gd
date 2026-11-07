@@ -13,8 +13,10 @@ const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
 const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
+const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 
 const TDM_TARGET_KILLS := 50
+const MAX_ACTIVE_BULLETS := 192
 
 var player: CharacterBody3D
 var team_name := "IRON LEGION"
@@ -22,6 +24,17 @@ var game_mode := "CONQUEST"
 var score_iron := 60
 var score_red := 60
 var score_kills := 0
+var match_elapsed_time := 0.0
+var player_deaths := 0
+var player_damage := 0
+var player_captures := 0
+
+func record_player_death() -> void:
+	player_deaths += 1
+
+func record_player_damage(amount: int) -> void:
+	if amount > 0:
+		player_damage += amount
 
 func _layout():
 	var map_name: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
@@ -315,9 +328,10 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 func spawn_weapon_pickup(pos: Vector3, index: int, clip: int, reserve: int, initial_velocity: Vector3 = Vector3.ZERO) -> void:
 	var active_pickups := get_tree().get_nodes_in_group("field_weapon_pickups")
 	if active_pickups.size() >= 16:
-		var oldest = active_pickups[0]
-		if is_instance_valid(oldest):
-			oldest.queue_free()
+		for p in active_pickups:
+			if is_instance_valid(p) and not p.is_queued_for_deletion():
+				p.queue_free()
+				break
 	var pickup = FIELD_PICKUP_SCRIPT.new()
 	pickup.configure_weapon(index, clip, reserve)
 	add_child(pickup)
@@ -326,6 +340,16 @@ func spawn_weapon_pickup(pos: Vector3, index: int, clip: int, reserve: int, init
 	if velocity.is_zero_approx():
 		velocity = Vector3(randf_range(-0.8, 0.8), 1.1, randf_range(-0.8, 0.8))
 	pickup.launch(velocity)
+
+func spawn_bullet_projectile(start_pos: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node, damage_to_player := 0) -> bool:
+	if is_game_over:
+		return false
+	if get_tree().get_nodes_in_group("ballistic_bullets").size() >= MAX_ACTIVE_BULLETS:
+		return false
+	var bullet = BULLET_PROJECTILE_SCRIPT.new()
+	bullet.configure(start_pos, direction, speed, damage, range_m, owner_name, owner_team, owner, damage_to_player)
+	add_child(bullet)
+	return true
 
 func _spawn_reinforcement(team: String) -> void:
 	var spawns: Array = _layout().spawns_red() if team.contains("RED") else _layout().spawns_iron()
@@ -405,20 +429,6 @@ func _build_hud() -> void:
 	hud.add_child(minimap)
 	minimap.setup(player, _active_bots, sector_data, _layout().spawns_iron(), _layout().spawns_red())
 
-	# Кнопка паузы
-	var menu_btn := Button.new()
-	menu_btn.text = "ПАУЗА"
-	menu_btn.offset_left = 28
-	menu_btn.offset_top = 70
-	menu_btn.offset_right = 126
-	menu_btn.offset_bottom = 112
-	menu_btn.add_theme_font_size_override("font_size", 15)
-	menu_btn.pressed.connect(func():
-		if player != null and is_instance_valid(player) and player.has_method("open_pause_menu"):
-			player.call("open_pause_menu")
-	)
-	hud.add_child(menu_btn)
-
 	_refresh_score()
 
 func _refresh_score() -> void:
@@ -451,6 +461,7 @@ func _add_killfeed_entry(killer: String, victim: String, victim_team: String) ->
 func _process(delta: float) -> void:
 	if is_game_over:
 		return
+	match_elapsed_time += delta
 	_update_sector_captures()
 	_update_ticket_bleed(delta)
 
@@ -499,15 +510,15 @@ func _end_match(winner: String) -> void:
 	victory_panel = PanelContainer.new()
 	victory_panel.process_mode = Node.PROCESS_MODE_ALWAYS
 	victory_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	victory_panel.offset_left = -280
-	victory_panel.offset_right = 280
-	victory_panel.offset_top = -180
-	victory_panel.offset_bottom = 180
+	victory_panel.offset_left = -320
+	victory_panel.offset_right = 320
+	victory_panel.offset_top = -220
+	victory_panel.offset_bottom = 220
 	hud.add_child(victory_panel)
 
 	var vb := VBoxContainer.new()
 	vb.alignment = BoxContainer.ALIGNMENT_CENTER
-	vb.add_theme_constant_override("separation", 16)
+	vb.add_theme_constant_override("separation", 12)
 	victory_panel.add_child(vb)
 
 	var title := Label.new()
@@ -521,15 +532,25 @@ func _end_match(winner: String) -> void:
 	var sub := Label.new()
 	sub.text = "СЕКТОРЫ ПОД КОНТРОЛЕМ" if is_player_winner else "СИЛЫ ФРОНТА ИСЧЕРПАНЫ"
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_font_size_override("font_size", 18)
+	sub.add_theme_font_size_override("font_size", 17)
 	sub.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 	vb.add_child(sub)
 
+	var mins := int(match_elapsed_time) / 60
+	var secs := int(match_elapsed_time) % 60
+	var kd_ratio: float = float(score_kills) if player_deaths == 0 else (float(score_kills) / float(player_deaths))
+	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+
 	var stats := Label.new()
-	stats.text = "Победитель: %s\nИтоговый счёт: %d : %d   •   Ваши фраги: %d" % [winner, score_iron, score_red, score_kills]
+	stats.text = "КАРТА: %s   •   РЕЖИМ: %s   •   ВРЕМЯ: %02d:%02d\nСЧЁТ: ЖЕЛЕЗНЫЙ ЛЕГИОН %d : %d КРАСНАЯ ЗВЕЗДА\n\nБОЕВОЙ ОТЧЁТ ИГРОКА:\nФраги: %d   •   Смерти: %d   •   K/D: %.2f\nЗахват секторов: %d   •   Нанесённый урон: %d" % [
+		map_name, game_mode, mins, secs,
+		score_iron, score_red,
+		score_kills, player_deaths, kd_ratio,
+		player_captures, player_damage
+	]
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stats.add_theme_font_size_override("font_size", 16)
-	stats.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+	stats.add_theme_font_size_override("font_size", 15)
+	stats.add_theme_color_override("font_color", Color(0.88, 0.88, 0.88))
 	vb.add_child(stats)
 
 	var btn_box := HBoxContainer.new()
@@ -590,6 +611,9 @@ func _update_sector_captures() -> void:
 
 		if sec.owner != prev_owner:
 			_update_sector_visual(sec)
+			if player != null and is_instance_valid(player) and not player.is_dead:
+				if player.global_position.distance_to(sec_pos) <= radius and sec.owner == team_name:
+					player_captures += 1
 
 func _update_sector_visual(sec: Dictionary) -> void:
 	var flag = find_child("Flag_" + str(sec.name), true, false) as MeshInstance3D

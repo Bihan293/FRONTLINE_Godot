@@ -15,6 +15,7 @@ var launch_velocity := Vector3.ZERO
 var angular_velocity := Vector3.ZERO
 var settled := true
 var _hidden_for_respawn := false
+var pickup_cooldown := 0.0
 
 func configure_weapon(index: int, clip: int, reserve: int) -> void:
 	pickup_kind = "weapon"
@@ -29,6 +30,7 @@ func configure_ammo(amount: int, respawn_delay := 65.0) -> void:
 	ammo_amount = maxi(1, amount)
 	respawn_seconds = maxf(0.0, respawn_delay)
 	life_remaining = 0.0 if respawn_seconds > 0.0 else 50.0
+	add_to_group("field_supply_crates")
 	_build_ammo_visual()
 
 func _ready() -> void:
@@ -38,6 +40,8 @@ func _ready() -> void:
 	monitorable = false
 	if pickup_kind == "weapon":
 		add_to_group("field_weapon_pickups")
+	elif pickup_kind == "ammo":
+		add_to_group("field_supply_crates")
 	var pickup_shape := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = 1.65
@@ -49,6 +53,8 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if _hidden_for_respawn:
 		return
+	if pickup_cooldown > 0.0:
+		pickup_cooldown = maxf(0.0, pickup_cooldown - delta)
 	if pickup_kind == "weapon":
 		life_remaining -= delta
 		if life_remaining <= 0.0:
@@ -56,10 +62,20 @@ func _physics_process(delta: float) -> void:
 			return
 	if not settled:
 		launch_velocity.y -= 14.0 * delta
-		position += launch_velocity * delta
+		var next_pos := position + launch_velocity * delta
 		rotation += angular_velocity * delta
-		if position.y <= 0.18 and launch_velocity.y < 0.0:
-			position.y = 0.18
+
+		var space := get_world_3d().direct_space_state
+		var query := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.4, 0), global_position + Vector3(0, -0.7, 0))
+		query.collision_mask = 1
+		query.collide_with_areas = false
+		var floor_hit := space.intersect_ray(query)
+		var ground_y: float = floor_hit.position.y + 0.18 if not floor_hit.is_empty() else 0.18
+
+		if next_pos.y <= ground_y and launch_velocity.y < 0.0:
+			position.y = ground_y
+			position.x = next_pos.x
+			position.z = next_pos.z
 			launch_velocity.y = -launch_velocity.y * 0.18
 			launch_velocity.x *= 0.55
 			launch_velocity.z *= 0.55
@@ -68,6 +84,8 @@ func _physics_process(delta: float) -> void:
 				launch_velocity = Vector3.ZERO
 				angular_velocity = Vector3.ZERO
 				settled = true
+		else:
+			position = next_pos
 	else:
 		rotation.y += delta * 0.18
 
@@ -75,9 +93,10 @@ func launch(initial_velocity: Vector3) -> void:
 	launch_velocity = initial_velocity
 	angular_velocity = Vector3(randf_range(-3.0, 3.0), randf_range(-5.0, 5.0), randf_range(-3.0, 3.0))
 	settled = false
+	pickup_cooldown = 1.2
 
 func can_collect(actor: Node) -> bool:
-	if not is_instance_valid(actor):
+	if not is_instance_valid(actor) or pickup_cooldown > 0.0:
 		return false
 	if pickup_kind == "ammo":
 		return actor.has_method("can_take_field_ammo") and bool(actor.call("can_take_field_ammo", ammo_amount))
@@ -110,7 +129,7 @@ func _hide_until_respawn() -> void:
 	_hidden_for_respawn = true
 	visible = false
 	set_deferred("monitoring", false)
-	get_tree().create_timer(respawn_seconds).timeout.connect(func():
+	get_tree().create_timer(respawn_seconds, false).timeout.connect(func():
 		if not is_instance_valid(self):
 			return
 		_hidden_for_respawn = false

@@ -7,6 +7,6 @@
 | TASK-0003 | P1 | done | Antigravity | Build the Village map and add Team Deathmatch |
 | TASK-0004 | P0 | merged in main | OpenCode | Add settings for sensitivity/FOV, pause menu, and a circular minimap |
 | TASK-0005 | P1 | done | Codex / Antigravity | Expand the playable arsenal from five to eight distinct weapons |
-| TASK-0006 | P1 | planned | Antigravity / Codex / OpenCode | Bodycam realism, weapon inertia, and Android optimization |
-| TASK-0006 | P1 | planned | Antigravity / Codex / OpenCode | Shift the game toward realistic bodycam presentation and optimize for Android |
+| TASK-0006 | P1 | in progress | Antigravity / Codex / OpenCode | Bodycam realism, realistic movement and weapon handling, and Android optimization |
+| TASK-0007 | P1 | in progress | Codex / Antigravity | Replace the arcade reticle and hitscan fire with a dot and visible ballistic bullets |
 

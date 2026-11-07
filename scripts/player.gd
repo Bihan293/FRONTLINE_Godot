@@ -9,6 +9,7 @@ const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
+const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
@@ -36,13 +37,13 @@ const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
 
 const WEAPON_DEFS := [
-	{"id": "ak47", "name": "AK-47", "mag": 30, "reserve": 150, "damage": 45, "interval": 0.10, "reload": 2.2, "spread": 0.006, "pellets": 1, "range": 140.0, "pitch": 1.0},
-	{"id": "mp40", "name": "MP-40", "mag": 32, "reserve": 160, "damage": 27, "interval": 0.075, "reload": 2.0, "spread": 0.014, "pellets": 1, "range": 105.0, "pitch": 1.16},
-	{"id": "mosin", "name": "MOSIN-NAGANT", "mag": 5, "reserve": 50, "damage": 84, "interval": 1.35, "reload": 2.6, "spread": 0.0018, "pellets": 1, "range": 220.0, "pitch": 0.76},
-	{"id": "m1911", "name": "M1911", "mag": 8, "reserve": 56, "damage": 35, "interval": 0.24, "reload": 1.5, "spread": 0.009, "pellets": 1, "range": 80.0, "pitch": 1.3},
-	{"id": "shotgun", "name": "PUMP SHOTGUN", "mag": 6, "reserve": 36, "damage": 10, "interval": 0.78, "reload": 3.2, "spread": 0.075, "pellets": 7, "range": 52.0, "pitch": 0.78},
-	{"id": "ppsh41", "name": "PPSH-41", "mag": 71, "reserve": 213, "damage": 22, "interval": 0.065, "reload": 3.1, "spread": 0.016, "pellets": 1, "range": 95.0, "pitch": 1.25},
-	{"id": "kar98k", "name": "KAR98K SNIPER", "mag": 5, "reserve": 45, "damage": 95, "interval": 1.45, "reload": 2.8, "spread": 0.0008, "pellets": 1, "range": 260.0, "pitch": 0.70},
+	{"id": "ak47", "name": "AK-47", "mag": 30, "reserve": 150, "damage": 45, "interval": 0.10, "reload": 2.2, "spread": 0.006, "pellets": 1, "range": 140.0, "muzzle_velocity": 715.0, "pitch": 1.0},
+	{"id": "mp40", "name": "MP-40", "mag": 32, "reserve": 160, "damage": 27, "interval": 0.075, "reload": 2.0, "spread": 0.014, "pellets": 1, "range": 105.0, "muzzle_velocity": 380.0, "pitch": 1.16},
+	{"id": "mosin", "name": "MOSIN-NAGANT", "mag": 5, "reserve": 50, "damage": 84, "interval": 1.35, "reload": 2.6, "spread": 0.0018, "pellets": 1, "range": 220.0, "muzzle_velocity": 865.0, "pitch": 0.76},
+	{"id": "m1911", "name": "M1911", "mag": 8, "reserve": 56, "damage": 35, "interval": 0.24, "reload": 1.5, "spread": 0.009, "pellets": 1, "range": 80.0, "muzzle_velocity": 253.0, "pitch": 1.3},
+	{"id": "shotgun", "name": "PUMP SHOTGUN", "mag": 6, "reserve": 36, "damage": 10, "interval": 0.78, "reload": 3.2, "spread": 0.075, "pellets": 7, "range": 52.0, "muzzle_velocity": 400.0, "pitch": 0.78},
+	{"id": "ppsh41", "name": "PPSH-41", "mag": 71, "reserve": 213, "damage": 22, "interval": 0.065, "reload": 3.1, "spread": 0.016, "pellets": 1, "range": 95.0, "muzzle_velocity": 488.0, "pitch": 1.25},
+	{"id": "kar98k", "name": "KAR98K SNIPER", "mag": 5, "reserve": 45, "damage": 95, "interval": 1.45, "reload": 2.8, "spread": 0.0008, "pellets": 1, "range": 260.0, "muzzle_velocity": 760.0, "pitch": 0.70},
 	{"id": "panzerfaust", "name": "PANZERFAUST", "mag": 1, "reserve": 5, "damage": 220, "interval": 2.2, "reload": 3.5, "spread": 0.003, "pellets": 1, "range": 160.0, "pitch": 0.65},
 ]
 
@@ -56,6 +57,7 @@ var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_mount: Node3D
+var weapon_muzzle: Node3D
 var weapon_base := Vector3.ZERO
 var weapon_aim_position := Vector3(0.0, -0.092, -0.56)
 var muzzle_flash: MeshInstance3D
@@ -186,6 +188,7 @@ func _equip_weapon_visual() -> void:
 	for child in weapon_mount.get_children():
 		child.queue_free()
 	muzzle_flash = null
+	weapon_muzzle = null
 	var weapon_id: String = str(_weapon_data().id)
 	var model: Node3D = WEAPON_MESHES.make_weapon(weapon_id)
 	if model == null:
@@ -196,6 +199,7 @@ func _equip_weapon_visual() -> void:
 	if muzzle_anchor == null:
 		push_error("FRONTLINE: weapon has no muzzle marker " + weapon_id)
 		return
+	weapon_muzzle = muzzle_anchor
 	muzzle_flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()
 	flash_mesh.radius = 0.055
@@ -211,6 +215,62 @@ func _equip_weapon_visual() -> void:
 	muzzle_flash.visible = false
 	muzzle_flash.name = "MuzzleFlash"
 	muzzle_anchor.add_child(muzzle_flash)
+
+	# Уникальный реалистичный хват и положение для каждого класса оружия (Dummy War style)
+	var hip_pos := Vector3(0.08, -0.17, -0.52)
+	var aim_pos := Vector3(0.0, -0.092, -0.52)
+	var left_wrist_offset := Vector3(-0.02, -0.03, -0.18)
+	var right_wrist_offset := Vector3(0.01, -0.06, 0.02)
+
+	match weapon_id:
+		"ak47":
+			hip_pos = Vector3(0.08, -0.17, -0.52)
+			aim_pos = Vector3(0.0, -0.092, -0.52)
+			left_wrist_offset = Vector3(-0.02, -0.03, -0.18) # цевьё
+			right_wrist_offset = Vector3(0.01, -0.06, 0.02)
+		"mp40":
+			hip_pos = Vector3(0.075, -0.16, -0.48)
+			aim_pos = Vector3(0.0, -0.082, -0.48)
+			left_wrist_offset = Vector3(-0.02, -0.04, -0.14) # шахта магазина
+			right_wrist_offset = Vector3(0.01, -0.06, 0.04)
+		"mosin":
+			hip_pos = Vector3(0.09, -0.17, -0.54)
+			aim_pos = Vector3(0.0, -0.118, -0.50)
+			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # длинное ложе
+			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
+		"m1911":
+			hip_pos = Vector3(0.05, -0.15, -0.44) # вынесенный пистолетный хват
+			aim_pos = Vector3(0.0, -0.075, -0.40)
+			left_wrist_offset = Vector3(-0.03, -0.055, 0.02) # хват второй рукой снизу
+			right_wrist_offset = Vector3(0.01, -0.055, 0.02)
+		"shotgun":
+			hip_pos = Vector3(0.09, -0.18, -0.50)
+			aim_pos = Vector3(0.0, -0.095, -0.48)
+			left_wrist_offset = Vector3(-0.02, -0.04, -0.22) # подвижное цевьё
+			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
+		"ppsh41":
+			hip_pos = Vector3(0.08, -0.17, -0.48)
+			aim_pos = Vector3(0.0, -0.088, -0.48)
+			left_wrist_offset = Vector3(-0.02, -0.035, -0.16) # хват под барабаном
+			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
+		"kar98k":
+			hip_pos = Vector3(0.09, -0.17, -0.54)
+			aim_pos = Vector3(0.0, -0.136, -0.46) # приклад плотно к плечу для оптики
+			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # ложе
+			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
+		"panzerfaust":
+			hip_pos = Vector3(0.14, -0.09, -0.46) # удержание на правом плече
+			aim_pos = Vector3(0.02, -0.065, -0.42) # прицельная планка
+			left_wrist_offset = Vector3(-0.03, -0.02, -0.28) # поддержка трубы спереди
+			right_wrist_offset = Vector3(0.01, 0.03, -0.08) # кнопка спуска сверху
+
+	weapon_base = hip_pos
+	weapon_aim_position = aim_pos
+	left_arm_base = left_wrist_offset
+	if left_arm_pivot != null:
+		left_arm_pivot.position = left_wrist_offset
+	if wrist_right_marker != null:
+		wrist_right_marker.position = right_wrist_offset
 
 func _init_weapon_inventory() -> void:
 	for definition in WEAPON_DEFS:
@@ -232,10 +292,16 @@ func _switch_weapon(index: int) -> void:
 	_store_weapon_ammo()
 	is_reloading = false
 	reload_timer = 0.0
+	fire_cooldown = minf(fire_cooldown, 0.22)
+	_set_aiming(false)
+	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
+		mobile_controls.call("reset_aim")
 	current_weapon_index = index
 	ammo = ammo_by_weapon[index]
 	reserve_ammo = reserve_by_weapon[index]
 	weapon_kick = 0.0
+	if weapon_mount != null:
+		weapon_mount.rotation = Vector3.ZERO
 	_equip_weapon_visual()
 	_refresh_ammo()
 	_play_sfx(sfx_ui, SFX_UI, -6.0, 1.0)
@@ -547,7 +613,8 @@ func _on_move_changed(value: Vector2) -> void:
 func _on_look_delta(delta: Vector2) -> void:
 	if is_dead:
 		return
-	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming)
+	var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
+	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor
 	yaw -= delta.x * sense
 	var pitch_delta := delta.y * sense
 	if GameSettings.invert_y:
@@ -569,7 +636,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if is_dead or input_locked:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var sense := MOUSE_SENS * GameSettings.sensitivity_scale(aiming)
+		var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
+		var sense := MOUSE_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor
 		yaw -= event.relative.x * sense
 		var pitch_delta: float = event.relative.y * sense
 		if GameSettings.invert_y:
@@ -624,7 +692,10 @@ func _physics_process(delta: float) -> void:
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
 	if crosshair != null:
-		crosshair.visible = not is_dead and not aiming
+		var is_kar98k_scope := aiming and str(_weapon_data().id) == "kar98k"
+		if crosshair.has_method("set_sniper_scope"):
+			crosshair.call("set_sniper_scope", is_kar98k_scope)
+		crosshair.visible = not is_dead and (is_kar98k_scope or not aiming)
 	weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
 	var blend := 1.0 - exp(-delta * 13.0)
 	aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
@@ -682,12 +753,24 @@ func _physics_process(delta: float) -> void:
 
 	if is_reloading:
 		reload_timer -= delta
+		var reload_total: float = float(_weapon_data().get("reload", 2.2))
+		var progress := 1.0 - clampf(reload_timer / maxf(0.01, reload_total), 0.0, 1.0)
+		if weapon_mount != null:
+			weapon_mount.rotation.z = sin(progress * PI) * 0.14
+			weapon_mount.rotation.x = -sin(progress * PI) * 0.08
+		if left_arm_pivot != null:
+			var reach_offset := Vector3(0.0, -0.10 * sin(progress * PI), 0.06 * sin(progress * PI))
+			left_arm_pivot.position = left_arm_base + reach_offset
 		if reload_timer <= 0.0:
 			var need := int(_weapon_data().mag) - ammo
 			var take := mini(need, reserve_ammo)
 			ammo += take
 			reserve_ammo -= take
 			is_reloading = false
+			if weapon_mount != null:
+				weapon_mount.rotation = Vector3.ZERO
+			if left_arm_pivot != null:
+				left_arm_pivot.position = left_arm_base
 			_store_weapon_ammo()
 			_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 			_refresh_ammo()
@@ -722,9 +805,23 @@ func _physics_process(delta: float) -> void:
 	elif stance == 2:
 		current_speed *= 0.25
 
+	# Вес оружия и замедление при ранении (TASK-0006)
+	var weapon_weight_factor := 1.0
+	match str(_weapon_data().id):
+		"m1911": weapon_weight_factor = 1.02
+		"mp40", "ppsh41": weapon_weight_factor = 0.97
+		"ak47", "shotgun": weapon_weight_factor = 0.94
+		"mosin", "kar98k": weapon_weight_factor = 0.90
+		"panzerfaust": weapon_weight_factor = 0.80
+
+	if health < 35.0:
+		current_speed = minf(current_speed * 0.88, SPEED * 0.92)
+
 	var direction := (transform.basis * Vector3(input_vec.x, 0.0, input_vec.y)).normalized()
-	velocity.x = direction.x * current_speed
-	velocity.z = direction.z * current_speed
+	var target_vel := direction * (current_speed * weapon_weight_factor)
+	var accel := 28.0 if direction.length_squared() > 0.01 else 20.0
+	velocity.x = move_toward(velocity.x, target_vel.x, accel * delta * current_speed)
+	velocity.z = move_toward(velocity.z, target_vel.z, accel * delta * current_speed)
 	if not is_on_floor():
 		velocity.y -= 18.0 * delta
 	move_and_slide()
@@ -762,10 +859,11 @@ func _physics_process(delta: float) -> void:
 
 func _apply_look() -> void:
 	rotation.y = yaw
+	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
 	camera.rotation = Vector3(
 		clampf(pitch + recoil.y, -1.45, 1.45),
 		recoil.x,
-		-lean_amount * deg_to_rad(9.0)
+		-lean_amount * deg_to_rad(9.0) + strafe_roll
 	)
 
 func _down_action() -> void:
@@ -806,12 +904,20 @@ func _shoot() -> void:
 			muzzle_flash.visible = true
 			muzzle_flash_time = 0.08
 		_apply_look()
-		var rocket = ROCKET_PROJECTILE_SCRIPT.new()
-		var spawn_pos := camera.global_position - camera.global_transform.basis.z * 0.65 + camera.global_transform.basis.x * 0.16 - camera.global_transform.basis.y * 0.09
 		var shoot_dir := -camera.global_transform.basis.z
+		var desired_spawn := camera.global_position + shoot_dir * 0.45 + camera.global_transform.basis.x * 0.14 - camera.global_transform.basis.y * 0.08
+		var wall_query := PhysicsRayQueryParameters3D.create(camera.global_position, desired_spawn)
+		wall_query.collision_mask = WORLD_LAYER_MASK
+		wall_query.exclude = [get_rid()]
+		var wall_hit := get_world_3d().direct_space_state.intersect_ray(wall_query)
+		var spawn_pos := desired_spawn
+		if not wall_hit.is_empty():
+			spawn_pos = wall_hit.position - shoot_dir * 0.10
+
+		var rocket = ROCKET_PROJECTILE_SCRIPT.new()
 		get_parent().add_child(rocket)
 		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
-		rocket.launch(spawn_pos, shoot_dir, "Player", player_team)
+		rocket.launch(spawn_pos, shoot_dir, "Player", player_team, self)
 		return
 
 	var casing_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.35
@@ -829,75 +935,62 @@ func _shoot() -> void:
 	var spread := float(weapon.spread) * (0.42 if aiming else 1.0)
 	if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
 		spread += 0.012
-	var hit_actors: Array[Node] = []
-	var hit_damage: Array[int] = []
-	var hit_details: Array[Dictionary] = []
+	var bullet_origin := weapon_muzzle.global_position if is_instance_valid(weapon_muzzle) else camera.global_position
+	# The camera ray selects the point the player is aiming at; it never applies
+	# damage. The actual round travels from the muzzle to that point and collides
+	# along its own path, preserving the visible muzzle-to-sight parallax.
+	var camera_direction := -camera.global_transform.basis.z
+	var aim_end := camera.global_position + camera_direction * float(weapon["range"])
+	var aim_query := PhysicsRayQueryParameters3D.create(camera.global_position, aim_end)
+	aim_query.collision_mask = RAY_COLLISION_MASK
+	aim_query.exclude = [get_rid()]
+	aim_query.collide_with_areas = true
+	var aim_hit := get_world_3d().direct_space_state.intersect_ray(aim_query)
+	var aim_point: Vector3 = aim_hit.get("position", aim_end)
+	var base_direction := (aim_point - bullet_origin).normalized()
+	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	var pellet_count := int(weapon.pellets)
 	for pellet_index in range(pellet_count):
-		var dir := -camera.global_transform.basis.z
+		var dir := base_direction
 		dir = dir.rotated(camera.global_transform.basis.y, randf_range(-spread, spread))
 		dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
-		var from := camera.global_position
-		var to := from + dir * float(weapon["range"])
-		var query := PhysicsRayQueryParameters3D.create(from, to)
-		query.collision_mask = RAY_COLLISION_MASK
-		query.exclude = [self]
-		query.collide_with_areas = true
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
-		if hit.is_empty():
-			continue
-		var body = hit.collider
-		if not body.is_in_group("damageable"):
-			HIT_EFFECTS.spawn_bullet_hole(get_parent(), hit.position, hit.normal)
-			continue
-		var region := str(body.get_meta("region", "chest"))
-		var actor = body.get_meta("owner_actor", body.get_meta("owner_dummy", null))
-		if actor == null and body.has_method("receive_hit"):
-			actor = body
-		if actor == null or not (actor is Node) or not actor.has_method("receive_hit"):
-			continue
-		var target_team: String = ""
-		if "team_name" in actor:
-			target_team = str(actor.team_name)
-		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
-		if target_team != "" and target_team == player_team:
-			continue
-		var damage := int(weapon.damage)
-		match region:
-			"head": damage = int(round(float(damage) * 2.2))
-			"leg": damage = int(round(float(damage) * 0.45))
-		var actor_node := actor as Node
-		var actor_index := hit_actors.find(actor_node)
-		if actor_index < 0:
-			actor_index = hit_actors.size()
-			hit_actors.append(actor_node)
-			hit_damage.append(0)
-			hit_details.append({"region": region, "position": hit.position, "direction": dir})
-		hit_damage[actor_index] += damage
+		_spawn_ballistic_bullet(
+			bullet_origin,
+			dir,
+			float(weapon.get("muzzle_velocity", 650.0)),
+			int(weapon.damage),
+			float(weapon["range"]),
+			"Player",
+			player_team,
+			self
+		)
 
-	var confirmed_hit := false
-	for i in range(hit_actors.size()):
-		var actor := hit_actors[i]
-		var detail: Dictionary = hit_details[i]
-		var region: String = str(detail.region)
-		var was_alive: bool = not ("health" in actor) or float(actor.health) > 0.0
-		var damage_applied: int = actor.receive_hit(hit_damage[i], camera.global_position, region, "Player")
-		if damage_applied <= 0:
-			continue
-		confirmed_hit = true
-		_pop_damage(damage_applied)
-		if not actor.is_in_group("explosive_barrels"):
-			_play_sfx(sfx_hit, SFX_HIT_FLESH, -4.0, randf_range(0.9, 1.1))
-			HIT_EFFECTS.spawn_directional_blood(actor, detail.position, detail.direction, region == "head", get_parent())
-		if crosshair != null:
-			crosshair.flash_hit()
-		if was_alive and ("health" in actor) and float(actor.health) <= 0.0:
-			_play_sfx(sfx_kill, SFX_KILL, -2.0, 1.0)
-			var world = get_parent()
-			if world.has_method("add_kill"):
-				world.add_kill()
-	if confirmed_hit and pellet_count > 1:
-		_play_sfx(sfx_hit, SFX_HIT_FLESH, -6.0, randf_range(0.9, 1.1))
+func _spawn_ballistic_bullet(origin: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node) -> bool:
+	var world := get_parent()
+	if world == null:
+		return false
+	if world.has_method("spawn_bullet_projectile"):
+		return bool(world.call("spawn_bullet_projectile", origin, direction, speed, damage, range_m, owner_name, owner_team, owner))
+	var bullet = BULLET_PROJECTILE_SCRIPT.new()
+	bullet.configure(origin, direction, speed, damage, range_m, owner_name, owner_team, owner)
+	world.add_child(bullet)
+	return true
+
+func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _region: String) -> void:
+	if not is_instance_valid(actor) or damage_applied <= 0:
+		return
+	_pop_damage(damage_applied)
+	var world := get_parent()
+	if world != null and world.has_method("record_player_damage"):
+		world.call("record_player_damage", damage_applied)
+	if not actor.is_in_group("explosive_barrels"):
+		_play_sfx(sfx_hit, SFX_HIT_FLESH, -4.0, randf_range(0.9, 1.1))
+	if crosshair != null:
+		crosshair.flash_hit()
+	if was_alive and actor.is_in_group("damageable_actor") and "health" in actor and float(actor.get("health")) <= 0.0:
+		_play_sfx(sfx_kill, SFX_KILL, -2.0, 1.0)
+		if world != null and world.has_method("add_kill"):
+			world.call("add_kill")
 
 func _reload() -> void:
 	var weapon := _weapon_data()
@@ -1054,6 +1147,9 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	is_reloading = false
 	reload_timer = 0.0
 	weapon_kick = 0.0
+	_set_aiming(false)
+	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
+		mobile_controls.call("reset_aim")
 	_store_weapon_ammo()
 	_equip_weapon_visual()
 	_refresh_ammo()
@@ -1105,6 +1201,9 @@ func _die(killer_name: String) -> void:
 	health = 0.0
 	velocity = Vector3.ZERO
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var world := get_parent()
+	if world != null and world.has_method("record_player_death"):
+		world.call("record_player_death")
 	if pickup_label != null:
 		pickup_label.visible = false
 	if mobile_controls != null:
@@ -1132,6 +1231,11 @@ func respawn() -> void:
 	smoke_grenades = 2
 	medkits = 2
 	is_healing = false
+	aiming = false
+	aim_blend = 0.0
+	camera.fov = GameSettings.fov
+	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
+		mobile_controls.call("reset_aim")
 	stance = 0
 	lean_amount = 0.0
 	mobile_lean_left = false
