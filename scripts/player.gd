@@ -559,13 +559,13 @@ func _build_hud() -> void:
 	equip_label.anchor_right = 1.0
 	equip_label.anchor_top = 1.0
 	equip_label.anchor_bottom = 1.0
-	equip_label.offset_left = -360.0
+	equip_label.offset_left = -640.0
 	equip_label.offset_right = -24.0
 	equip_label.offset_top = -112.0
 	equip_label.offset_bottom = -82.0
 	equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	equip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	equip_label.add_theme_font_size_override("font_size", 16)
+	equip_label.add_theme_font_size_override("font_size", 15)
 	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
 	hud.add_child(equip_label)
 
