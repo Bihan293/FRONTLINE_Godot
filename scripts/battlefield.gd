@@ -400,6 +400,8 @@ func _end_match(winner: String) -> void:
 		return
 	is_game_over = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if player != null and is_instance_valid(player) and player.has_method("set_input_locked"):
+		player.call("set_input_locked", true)
 
 	var is_player_winner: bool = (team_name == winner)
 

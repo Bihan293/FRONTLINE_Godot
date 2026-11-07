@@ -510,6 +510,8 @@ func _fire_single_shot() -> void:
 		if collider.is_in_group("damageable"):
 			var region: String = str(collider.get_meta("region", "chest"))
 			var actor = collider.get_meta("owner_actor", collider.get_meta("owner_dummy", null))
+			if actor == null and collider.has_method("receive_hit"):
+				actor = collider
 			if actor != null and actor != self and actor.has_method("receive_hit"):
 				var dmg := 22
 				match region:

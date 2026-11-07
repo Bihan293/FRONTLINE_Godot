@@ -32,6 +32,14 @@ const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
 
+const WEAPON_DEFS := [
+	{"id": "ak47", "name": "AK-47", "mag": 30, "reserve": 150, "damage": 45, "interval": 0.10, "reload": 2.2, "spread": 0.006, "pellets": 1, "range": 140.0, "pitch": 1.0},
+	{"id": "mp40", "name": "MP-40", "mag": 32, "reserve": 160, "damage": 27, "interval": 0.075, "reload": 2.0, "spread": 0.014, "pellets": 1, "range": 105.0, "pitch": 1.16},
+	{"id": "mosin", "name": "MOSIN-NAGANT", "mag": 5, "reserve": 50, "damage": 84, "interval": 1.35, "reload": 2.6, "spread": 0.0018, "pellets": 1, "range": 220.0, "pitch": 0.76},
+	{"id": "m1911", "name": "M1911", "mag": 8, "reserve": 56, "damage": 35, "interval": 0.24, "reload": 1.5, "spread": 0.009, "pellets": 1, "range": 80.0, "pitch": 1.3},
+	{"id": "shotgun", "name": "PUMP SHOTGUN", "mag": 6, "reserve": 36, "damage": 10, "interval": 0.78, "reload": 3.2, "spread": 0.075, "pellets": 7, "range": 52.0, "pitch": 0.78},
+]
+
 const WORLD_LAYER_MASK := 1 << 0
 const HITBOX_LAYER_MASK := 1 << 1
 const SOLDIER_LAYER_MASK := 1 << 2
@@ -41,6 +49,7 @@ var camera: Camera3D
 var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var weapon_root: Node3D
+var weapon_mount: Node3D
 var weapon_base := Vector3.ZERO
 var weapon_aim_position := Vector3(0.0, -0.092, -0.56)
 var muzzle_flash: MeshInstance3D
@@ -51,6 +60,12 @@ var breathing_time := 0.0
 var aim_blend := 0.0
 var aiming := false
 var look_sway := Vector2.ZERO
+var lean_amount := 0.0
+var mobile_lean_left := false
+var mobile_lean_right := false
+var current_weapon_index := 0
+var ammo_by_weapon: Array[int] = []
+var reserve_by_weapon: Array[int] = []
 
 var left_arm_pivot: Node3D
 var left_arm_base := Vector3.ZERO
@@ -81,6 +96,7 @@ var heal_timer := 0.0
 # Здоровье и статус игрока
 var health := MAX_HEALTH
 var is_dead := false
+var input_locked := false
 var blood_vignette_time := 0.0
 var respawn_position := Vector3.ZERO
 
@@ -114,6 +130,7 @@ func _ready() -> void:
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
+	_init_weapon_inventory()
 	_build_player()
 	_build_weapon()
 	_build_body()
@@ -146,26 +163,28 @@ func _build_weapon() -> void:
 	weapon_root.scale = Vector3.ONE * 0.62
 	weapon_base = weapon_root.position
 	camera.add_child(weapon_root)
+	weapon_mount = Node3D.new()
+	weapon_mount.name = "WeaponMount"
+	weapon_root.add_child(weapon_mount)
+	_equip_weapon_visual()
+	_build_view_hands()
 
-	var ak_root := Node3D.new()
-	ak_root.name = "AK47"
-	ak_root.rotation.y = PI
-	weapon_root.add_child(ak_root)
-	var muzzle_anchor: Node3D = ak_root
-	var ak_mesh := WEAPON_MESHES.ak_mesh()
-	if ak_mesh != null:
-		var ak_inst := MeshInstance3D.new()
-		ak_inst.name = "AK47Mesh"
-		ak_inst.mesh = ak_mesh
-		ak_root.add_child(ak_inst)
-		var muzzle_node := Node3D.new()
-		muzzle_node.name = "Muzzle"
-		muzzle_node.position = WEAPON_MESHES.MUZZLE_LOCAL
-		ak_root.add_child(muzzle_node)
-		muzzle_anchor = muzzle_node
-	else:
-		push_error("FRONTLINE: cannot build AK-47 mesh")
-
+func _equip_weapon_visual() -> void:
+	if weapon_mount == null:
+		return
+	for child in weapon_mount.get_children():
+		child.queue_free()
+	muzzle_flash = null
+	var weapon_id: String = str(_weapon_data().id)
+	var model: Node3D = WEAPON_MESHES.make_weapon(weapon_id)
+	if model == null:
+		push_error("FRONTLINE: cannot build weapon model " + weapon_id)
+		return
+	weapon_mount.add_child(model)
+	var muzzle_anchor := model.get_node_or_null("Muzzle") as Node3D
+	if muzzle_anchor == null:
+		push_error("FRONTLINE: weapon has no muzzle marker " + weapon_id)
+		return
 	muzzle_flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()
 	flash_mesh.radius = 0.055
@@ -178,10 +197,45 @@ func _build_weapon() -> void:
 	flash_mat.emission_energy_multiplier = 5.0
 	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	muzzle_flash.material_override = flash_mat
-	muzzle_flash.position = Vector3.ZERO
 	muzzle_flash.visible = false
+	muzzle_flash.name = "MuzzleFlash"
 	muzzle_anchor.add_child(muzzle_flash)
-	_build_view_hands()
+
+func _init_weapon_inventory() -> void:
+	for definition in WEAPON_DEFS:
+		ammo_by_weapon.append(int(definition.mag))
+		reserve_by_weapon.append(int(definition.reserve))
+	ammo = ammo_by_weapon[0]
+	reserve_ammo = reserve_by_weapon[0]
+
+func _weapon_data() -> Dictionary:
+	return WEAPON_DEFS[current_weapon_index]
+
+func _store_weapon_ammo() -> void:
+	ammo_by_weapon[current_weapon_index] = ammo
+	reserve_by_weapon[current_weapon_index] = reserve_ammo
+
+func _switch_weapon(index: int) -> void:
+	if is_dead or index < 0 or index >= WEAPON_DEFS.size() or index == current_weapon_index:
+		return
+	_store_weapon_ammo()
+	is_reloading = false
+	reload_timer = 0.0
+	current_weapon_index = index
+	ammo = ammo_by_weapon[index]
+	reserve_ammo = reserve_by_weapon[index]
+	weapon_kick = 0.0
+	_equip_weapon_visual()
+	_refresh_ammo()
+	_play_sfx(sfx_ui, SFX_UI, -6.0, 1.0)
+
+func _cycle_weapon(direction: int) -> void:
+	var next_index := current_weapon_index + direction
+	if next_index < 0:
+		next_index = WEAPON_DEFS.size() - 1
+	elif next_index >= WEAPON_DEFS.size():
+		next_index = 0
+	_switch_weapon(next_index)
 
 func _build_body() -> void:
 	var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -210,9 +264,17 @@ func _build_view_hands() -> void:
 	left_arm_pivot.add_child(wrist_left_marker)
 
 func _set_aiming(enabled: bool) -> void:
-	if aiming == enabled or is_dead:
+	if aiming == enabled or is_dead or input_locked:
 		return
 	aiming = enabled
+
+func set_input_locked(locked: bool) -> void:
+	input_locked = locked
+	if locked:
+		velocity = Vector3.ZERO
+		mobile_fire = false
+		if mobile_controls != null:
+			mobile_controls.visible = false
 
 func _build_audio() -> void:
 	sfx_shot = _make_sfx()
@@ -254,6 +316,9 @@ func _build_mobile_controls() -> void:
 	mobile_controls.grenade_pressed.connect(_throw_grenade)
 	mobile_controls.smoke_pressed.connect(_throw_smoke)
 	mobile_controls.heal_pressed.connect(_use_heal)
+	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
+	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
+	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
@@ -297,7 +362,7 @@ func _build_hud() -> void:
 	ammo_label.anchor_right = 1.0
 	ammo_label.anchor_top = 1.0
 	ammo_label.anchor_bottom = 1.0
-	ammo_label.offset_left = -310.0
+	ammo_label.offset_left = -390.0
 	ammo_label.offset_right = -24.0
 	ammo_label.offset_top = -238.0
 	ammo_label.offset_bottom = -200.0
@@ -412,8 +477,14 @@ func _on_look_delta(delta: Vector2) -> void:
 func _on_fire_changed(pressed: bool) -> void:
 	mobile_fire = pressed
 
+func _on_mobile_peek_left(pressed: bool) -> void:
+	mobile_lean_left = pressed
+
+func _on_mobile_peek_right(pressed: bool) -> void:
+	mobile_lean_right = pressed
+
 func _unhandled_input(event: InputEvent) -> void:
-	if is_dead:
+	if is_dead or input_locked:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * MOUSE_SENS
@@ -421,9 +492,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
 		look_sway = look_sway.limit_length(0.035)
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
-		_shoot()
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		else:
+			_shoot()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		_set_aiming(not aiming)
+	elif event is InputEventMouseButton and event.pressed and not OS.has_feature("mobile"):
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_cycle_weapon(-1)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_cycle_weapon(1)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			_reload()
@@ -439,12 +518,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			_use_heal()
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		elif event.keycode >= KEY_1 and event.keycode <= KEY_5:
+			_switch_weapon(event.keycode - KEY_1)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		if not is_on_floor():
 			velocity.y -= 18.0 * delta
 			move_and_slide()
+		return
+	if input_locked:
+		velocity = Vector3.ZERO
+		move_and_slide()
 		return
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
@@ -505,11 +590,12 @@ func _physics_process(delta: float) -> void:
 	if is_reloading:
 		reload_timer -= delta
 		if reload_timer <= 0.0:
-			var need := MAG_SIZE - ammo
+			var need := int(_weapon_data().mag) - ammo
 			var take := mini(need, reserve_ammo)
 			ammo += take
 			reserve_ammo -= take
 			is_reloading = false
+			_store_weapon_ammo()
 			_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 			_refresh_ammo()
 
@@ -548,8 +634,6 @@ func _physics_process(delta: float) -> void:
 	velocity.z = direction.z * current_speed
 	if not is_on_floor():
 		velocity.y -= 18.0 * delta
-	elif Input.is_key_pressed(KEY_SPACE) and stance == 0:
-		velocity.y = JUMP_VELOCITY
 	move_and_slide()
 
 	recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
@@ -559,8 +643,23 @@ func _physics_process(delta: float) -> void:
 	var target_y := 1.80 if stance == 0 else (1.34 if stance == 1 else 0.54)
 	var cam_bob_y := sin(bob_time * 2.0) * 0.004 * bob_amount
 	var cam_bob_x := sin(bob_time) * 0.005 * bob_amount
+	var lean_input := float(Input.is_key_pressed(KEY_E) or mobile_lean_right) - float(Input.is_key_pressed(KEY_Q) or mobile_lean_left)
+	var lean_side := lean_input * 0.42
+	if absf(lean_side) > 0.01:
+		var lean_from := global_position + Vector3.UP * target_y
+		var lean_to := lean_from + transform.basis.x * lean_side
+		var lean_query := PhysicsRayQueryParameters3D.create(lean_from, lean_to)
+		lean_query.collision_mask = WORLD_LAYER_MASK
+		lean_query.exclude = [self]
+		lean_query.collide_with_areas = false
+		var lean_hit := get_world_3d().direct_space_state.intersect_ray(lean_query)
+		if lean_hit:
+			var available := maxf(0.0, lean_from.distance_to(lean_hit.position) - 0.12)
+			lean_side = signf(lean_side) * minf(absf(lean_side), available)
+	var lean_target := lean_side / 0.42
+	lean_amount = lerpf(lean_amount, lean_target, clampf(delta * 12.0, 0.0, 1.0))
 	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y, delta * 10.0)
-	camera.position.x = lerpf(camera.position.x, cam_bob_x, delta * 8.0)
+	camera.position.x = lerpf(camera.position.x, cam_bob_x + lean_amount * 0.42, delta * 10.0)
 	if player_body != null:
 		player_body.set_motion(planar_speed, planar_speed > SPEED + 0.5)
 		player_body.set_stance(stance)
@@ -573,7 +672,7 @@ func _apply_look() -> void:
 	camera.rotation = Vector3(
 		clampf(pitch + recoil.y, -1.45, 1.45),
 		recoil.x,
-		0.0
+		-lean_amount * deg_to_rad(9.0)
 	)
 
 func _down_action() -> void:
@@ -586,16 +685,18 @@ func _up_action() -> void:
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
-	if is_reloading or fire_cooldown > 0.0 or is_dead:
+	if is_reloading or fire_cooldown > 0.0 or is_dead or input_locked:
 		return
+	var weapon := _weapon_data()
 	if ammo <= 0:
 		_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
 		fire_cooldown = 0.25
 		return
 	ammo -= 1
-	fire_cooldown = FIRE_INTERVAL
+	fire_cooldown = float(weapon.interval)
+	_store_weapon_ammo()
 	_refresh_ammo()
-	_play_sfx(sfx_shot, SFX_SHOT, -2.0, randf_range(0.94, 1.06))
+	_play_sfx(sfx_shot, SFX_SHOT, -2.0, float(weapon.pitch) * randf_range(0.94, 1.06))
 
 	var casing_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.35
 	var casing_vel := camera.global_transform.basis.x * 2.6 + camera.global_transform.basis.y * 1.4 - camera.global_transform.basis.z * 0.4
@@ -604,54 +705,77 @@ func _shoot() -> void:
 	recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
 	recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
 	weapon_kick = 0.07
-	muzzle_flash.visible = true
-	muzzle_flash_time = 0.045
+	if muzzle_flash != null:
+		muzzle_flash.visible = true
+		muzzle_flash_time = 0.045
 	_apply_look()
 
-	var spread := 0.0
+	var spread := float(weapon.spread) * (0.42 if aiming else 1.0)
 	if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
-		spread = 0.012
-	var dir := -camera.global_transform.basis.z
-	dir = dir.rotated(camera.global_transform.basis.y, randf_range(-spread, spread))
-	dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
-	var from := camera.global_position
-	var to := from + dir * 140.0
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collision_mask = RAY_COLLISION_MASK
-	query.exclude = [self]
-	query.collide_with_areas = true
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit:
+		spread += 0.012
+	var damage_totals: Dictionary = {}
+	var hit_details: Dictionary = {}
+	var pellet_count := int(weapon.pellets)
+	for pellet_index in range(pellet_count):
+		var dir := -camera.global_transform.basis.z
+		dir = dir.rotated(camera.global_transform.basis.y, randf_range(-spread, spread))
+		dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
+		var from := camera.global_position
+		var to := from + dir * float(weapon["range"])
+		var query := PhysicsRayQueryParameters3D.create(from, to)
+		query.collision_mask = RAY_COLLISION_MASK
+		query.exclude = [self]
+		query.collide_with_areas = true
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			continue
 		var body = hit.collider
-		if body.is_in_group("damageable"):
-			var region := str(body.get_meta("region", "chest"))
-			var actor = body.get_meta("owner_actor", body.get_meta("owner_dummy", null))
-			if actor != null and actor.has_method("receive_hit"):
-				var was_alive: bool = actor.health > 0.0
-				var base_dmg := 35
-				match region:
-					"head": base_dmg = 100
-					"chest": base_dmg = 45
-					"leg": base_dmg = 20
-				var damage: int = actor.receive_hit(base_dmg, camera.global_position, region, "Player")
-				_pop_damage(damage)
-				_play_sfx(sfx_hit, SFX_HIT_FLESH, -4.0, randf_range(0.9, 1.1))
-				HIT_EFFECTS.spawn_directional_blood(actor, hit.position, dir, region == "head", get_parent())
-				if crosshair != null:
-					crosshair.flash_hit()
-				if was_alive and actor.health <= 0.0:
-					_play_sfx(sfx_kill, SFX_KILL, -2.0, 1.0)
-					var world = get_parent()
-					if world.has_method("add_kill"):
-						world.add_kill()
-		else:
+		if not body.is_in_group("damageable"):
 			HIT_EFFECTS.spawn_bullet_hole(get_parent(), hit.position, hit.normal)
+			continue
+		var region := str(body.get_meta("region", "chest"))
+		var actor = body.get_meta("owner_actor", body.get_meta("owner_dummy", null))
+		if actor == null and body.has_method("receive_hit"):
+			actor = body
+		if actor == null or not actor.has_method("receive_hit"):
+			continue
+		var damage := int(weapon.damage)
+		match region:
+			"head": damage = int(round(float(damage) * 2.2))
+			"leg": damage = int(round(float(damage) * 0.45))
+		damage_totals[actor] = int(damage_totals.get(actor, 0)) + damage
+		if not hit_details.has(actor):
+			hit_details[actor] = {"region": region, "position": hit.position, "direction": dir}
+
+	var confirmed_hit := false
+	for actor in damage_totals.keys():
+		var detail: Dictionary = hit_details[actor]
+		var region := str(detail.region)
+		var was_alive := not ("health" in actor) or float(actor.health) > 0.0
+		var damage_applied: int = actor.receive_hit(int(damage_totals[actor]), camera.global_position, region, "Player")
+		if damage_applied <= 0:
+			continue
+		confirmed_hit = true
+		_pop_damage(damage_applied)
+		if not actor.is_in_group("explosive_barrels"):
+			_play_sfx(sfx_hit, SFX_HIT_FLESH, -4.0, randf_range(0.9, 1.1))
+			HIT_EFFECTS.spawn_directional_blood(actor, detail.position, detail.direction, region == "head", get_parent())
+		if crosshair != null:
+			crosshair.flash_hit()
+		if was_alive and ("health" in actor) and float(actor.health) <= 0.0:
+			_play_sfx(sfx_kill, SFX_KILL, -2.0, 1.0)
+			var world = get_parent()
+			if world.has_method("add_kill"):
+				world.add_kill()
+	if confirmed_hit and pellet_count > 1:
+		_play_sfx(sfx_hit, SFX_HIT_FLESH, -6.0, randf_range(0.9, 1.1))
 
 func _reload() -> void:
-	if is_reloading or ammo >= MAG_SIZE or reserve_ammo <= 0 or is_dead:
+	var weapon := _weapon_data()
+	if is_reloading or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
 		return
 	is_reloading = true
-	reload_timer = RELOAD_TIME
+	reload_timer = float(weapon.reload)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
 func _throw_grenade() -> void:
@@ -693,7 +817,10 @@ func _use_heal() -> void:
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 
 func _refresh_ammo() -> void:
-	ammo_label.text = "AK-47   %d / %d" % [ammo, reserve_ammo]
+	if ammo_label == null:
+		return
+	var weapon := _weapon_data()
+	ammo_label.text = "%d  %s   %d / %d" % [current_weapon_index + 1, str(weapon.name), ammo, reserve_ammo]
 
 func _refresh_health() -> void:
 	if health_label != null:
@@ -748,13 +875,21 @@ func _die(killer_name: String) -> void:
 func respawn() -> void:
 	is_dead = false
 	health = MAX_HEALTH
-	ammo = MAG_SIZE
-	reserve_ammo = RESERVE_START
+	for i in range(WEAPON_DEFS.size()):
+		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
+		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)
+	ammo = ammo_by_weapon[current_weapon_index]
+	reserve_ammo = reserve_by_weapon[current_weapon_index]
+	is_reloading = false
+	reload_timer = 0.0
 	grenades = 3
 	smoke_grenades = 2
 	medkits = 2
 	is_healing = false
 	stance = 0
+	lean_amount = 0.0
+	mobile_lean_left = false
+	mobile_lean_right = false
 	position = respawn_position
 	camera.position = Vector3(0, 1.80, -0.10)
 	camera.rotation = Vector3.ZERO

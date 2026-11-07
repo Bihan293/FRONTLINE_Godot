@@ -17,6 +17,9 @@ signal stance_up_pressed
 signal grenade_pressed
 signal smoke_pressed
 signal heal_pressed
+signal peek_left_changed(pressed: bool)
+signal peek_right_changed(pressed: bool)
+signal cycle_weapon_pressed
 
 const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
@@ -50,6 +53,9 @@ func _layout() -> Dictionary:
 		"grenade": Vector2(s.x - 288.0, s.y - 355.0),
 		"smoke": Vector2(s.x - 378.0, s.y - 355.0),
 		"heal": Vector2(s.x - 198.0, s.y - 355.0),
+		"peek_left": Vector2(s.x - 386.0, s.y - 466.0),
+		"peek_right": Vector2(s.x - 294.0, s.y - 466.0),
+		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
 	}
 
 func _input(event: InputEvent) -> void:
@@ -65,7 +71,7 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal"]:
+	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon"]:
 		var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
 		if pos.distance_to(l[id]) <= radius * 1.15:
 			_button_touches[index] = id
@@ -88,6 +94,10 @@ func _touch_up(index: int) -> void:
 		_active.erase(id)
 		if id == "fire":
 			fire_changed.emit(false)
+		elif id == "peek_left":
+			peek_left_changed.emit(false)
+		elif id == "peek_right":
+			peek_right_changed.emit(false)
 		queue_redraw()
 		return
 	if index == _joy_touch:
@@ -128,6 +138,12 @@ func _press(id: String) -> void:
 			smoke_pressed.emit()
 		"heal":
 			heal_pressed.emit()
+		"peek_left":
+			peek_left_changed.emit(true)
+		"peek_right":
+			peek_right_changed.emit(true)
+		"weapon":
+			cycle_weapon_pressed.emit()
 
 func _set_joy(value: Vector2) -> void:
 	var v := value
@@ -159,6 +175,9 @@ func _draw() -> void:
 	_draw_button(l.grenade, SMALL_RADIUS, "ГРАНАТА", "grenade", Color(0.55, 0.35, 0.12, 0.48), font, 11)
 	_draw_button(l.smoke, SMALL_RADIUS, "ДЫМ", "smoke", Color(0.35, 0.38, 0.42, 0.48), font, 12)
 	_draw_button(l.heal, SMALL_RADIUS, "БИНТ", "heal", Color(0.18, 0.45, 0.45, 0.48), font, 12)
+	_draw_button(l.peek_left, SMALL_RADIUS, "ВЛЕВО", "peek_left", Color(0.24, 0.34, 0.45, 0.50), font, 10)
+	_draw_button(l.peek_right, SMALL_RADIUS, "ВПРАВО", "peek_right", Color(0.24, 0.34, 0.45, 0.50), font, 9)
+	_draw_button(l.weapon, SMALL_RADIUS, "ОРУЖИЕ", "weapon", Color(0.50, 0.36, 0.14, 0.52), font, 10)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
 	var active: bool = _aim_on if id == "aim" else bool(_active.get(id, false))
