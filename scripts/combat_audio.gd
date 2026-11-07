@@ -193,6 +193,7 @@ static func trigger_bullet_flyby_3d(world: Node, from: Vector3, to: Vector3, ear
 		sfx.max_distance = 24.0
 		sfx.pitch_scale = randf_range(0.92, 1.18)
 		sfx.position = closest_pt
+		sfx.add_to_group("combat_audio_voice")
 		world.add_child(sfx)
 		sfx.play()
 		_active_3d_players.append(sfx)
@@ -234,6 +235,7 @@ static func play_surface_impact(world: Node, pos: Vector3, normal: Vector3, surf
 
 	sfx.bus = BUS_SFX
 	sfx.position = pos + normal * 0.05
+	sfx.add_to_group("combat_audio_voice")
 	world.add_child(sfx)
 	sfx.play()
 	_active_3d_players.append(sfx)
@@ -247,6 +249,15 @@ static func play_surface_impact(world: Node, pos: Vector3, normal: Vector3, surf
 static func play_explosion_3d(world: Node, pos: Vector3, stream: AudioStream = null, unit_size := 32.0, max_distance := 320.0, volume_db := 0.0) -> AudioStreamPlayer3D:
 	if world == null:
 		return null
+	var tree := world.get_tree() if world.is_inside_tree() else null
+	var listener := tree.get_first_node_in_group("player") if tree != null else null
+	var has_listener := listener != null and is_instance_valid(listener)
+	var listener_pos := get_listener_position(tree) if tree != null else Vector3.ZERO
+	if has_listener and listener_pos.distance_to(pos) > max_distance:
+		return null
+	if not _claim_active_3d_voice(pos, listener_pos, has_listener):
+		return null
+
 	var sfx := AudioStreamPlayer3D.new()
 	sfx.stream = stream if stream != null else SFX_EXPLOSION
 	sfx.unit_size = unit_size
@@ -254,20 +265,57 @@ static func play_explosion_3d(world: Node, pos: Vector3, stream: AudioStream = n
 	sfx.volume_db = volume_db
 	sfx.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
 	sfx.position = pos
+	sfx.add_to_group("combat_audio_voice")
 
-	var tree := world.get_tree() if world.is_inside_tree() else null
 	if tree != null:
-		var listener_pos := get_listener_position(tree)
 		var world_3d = world.get_viewport().find_world_3d() if world.is_inside_tree() else null
 		sfx.bus = route_combat_bus(world_3d, pos, listener_pos)
 
 	world.add_child(sfx)
 	sfx.play()
+	_active_3d_players.append(sfx)
 	sfx.finished.connect(func():
+		_active_3d_players.erase(sfx)
 		if is_instance_valid(sfx):
 			sfx.queue_free()
 	)
 	return sfx
+
+## Keep chain explosions from creating unbounded inaudible voices. When full,
+## replace the farthest active transient so nearby blasts remain audible.
+static func _claim_active_3d_voice(pos: Vector3, listener_pos: Vector3, has_listener: bool) -> bool:
+	_clean_active_players()
+	if _active_3d_players.size() < MAX_ACTIVE_3D_SFX:
+		return true
+	if not has_listener:
+		return false
+
+	var farthest_index := -1
+	var farthest_distance_sq := -1.0
+	for i in range(_active_3d_players.size()):
+		var voice := _active_3d_players[i]
+		if voice == null or not is_instance_valid(voice):
+			continue
+		var distance_sq := voice.global_position.distance_squared_to(listener_pos)
+		if distance_sq > farthest_distance_sq:
+			farthest_distance_sq = distance_sq
+			farthest_index = i
+
+	if farthest_index < 0 or pos.distance_squared_to(listener_pos) >= farthest_distance_sq:
+		return false
+	var displaced := _active_3d_players[farthest_index]
+	_active_3d_players.remove_at(farthest_index)
+	if displaced != null and is_instance_valid(displaced):
+		displaced.stop()
+		displaced.queue_free()
+	return true
+
+static func get_active_3d_voice_count() -> int:
+	_clean_active_players()
+	return _active_3d_players.size()
+
+static func get_active_3d_voice_limit() -> int:
+	return MAX_ACTIVE_3D_SFX
 
 static func _clean_active_players() -> void:
 	var i := _active_3d_players.size() - 1
