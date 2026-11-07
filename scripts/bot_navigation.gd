@@ -15,19 +15,33 @@ const AGENT_HEIGHT := 1.8
 
 var _astar := AStar2D.new()
 var _ready_to_use := false
+var _built_map := ""
 
-func _get_layout():
+func _current_map_name() -> String:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree != null and tree.has_meta("selected_map"):
-		var map_name: String = str(tree.get_meta("selected_map"))
-		if map_name == "VILLAGE":
-			return VILLAGE_LAYOUT
+		return str(tree.get_meta("selected_map"))
+	return "BATTLEFIELD"
+
+func _get_layout():
+	if _current_map_name() == "VILLAGE":
+		return VILLAGE_LAYOUT
 	return BATTLEFIELD_LAYOUT
 
 func _ready() -> void:
+	ensure_for_current_map()
+
+## Перестраивает граф, если сменилась карта. Autoload создаётся до выбора карты,
+## поэтому без этой проверки Village продолжал бы ходить по графу Battlefield.
+func ensure_for_current_map() -> void:
+	var map_name := _current_map_name()
+	if map_name == _built_map and _ready_to_use:
+		return
+	_built_map = map_name
 	_build_graph()
 
 func find_path(from_world: Vector3, to_world: Vector3) -> PackedVector3Array:
+	ensure_for_current_map()
 	var path := PackedVector3Array()
 	if not _ready_to_use:
 		return path
@@ -45,6 +59,8 @@ func find_path(from_world: Vector3, to_world: Vector3) -> PackedVector3Array:
 	return path
 
 func _build_graph() -> void:
+	_astar = AStar2D.new()
+	_ready_to_use = false
 	var blocked := PackedByteArray()
 	blocked.resize(GRID_WIDTH * GRID_HEIGHT)
 

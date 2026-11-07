@@ -60,6 +60,14 @@ jobs:
         run: |
           godot --headless --editor --quit || true
 
+      - name: Import project resources
+        run: godot --headless --path . --import
+
+      - name: Run gameplay smoke tests
+        run: |
+          godot --headless --path . res://tests/pause_smoke.tscn --quit-after 1200
+          godot --headless --path . res://tests/navigation_smoke.tscn --quit-after 1800
+
       - name: Build Android APK with Godot
         run: |
           mkdir -p build
