@@ -234,11 +234,11 @@ func _deploy() -> void:
 func _show_settings() -> void:
     var root := _make_shell("НАСТРОЙКИ")
     _label(root, "ГРАФИКА", 20, Color(0.85, 0.88, 0.84))
-    var quality_button: Button
-    quality_button = _button(root, "КАЧЕСТВО: " + GameSettings.quality_name(), func():
+    var quality_button := _button(root, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, Vector2(0, 56))
+    quality_button.pressed.connect(func():
         GameSettings.cycle_quality()
         quality_button.text = "КАЧЕСТВО: " + GameSettings.quality_name()
-    , Vector2(0, 56))
+    )
     _label(root, "НИЗКОЕ — максимум FPS, без теней и сглаживания. СРЕДНЕЕ — баланс. ВЫСОКОЕ — тени, MSAA 4x и полное разрешение.", 15, Color(0.66, 0.71, 0.68))
     var gap := Control.new()
     gap.custom_minimum_size.y = 12
