@@ -18,3 +18,4 @@ All verified issues filed in the joint QA audit log:
 | BUG-0012 | minor | fixed | Compass FOV does not match player camera | Codex QA | v0.1.22 |
 | BUG-0013 | major | fixed | Rifle shots do not ignite explosive barrels | Codex QA | v0.1.22 |
 | BUG-0014 | minor | fixed | Friendly fire protection for players and faction bots | Codex QA | v0.1.22 |
+| BUG-0015 | major | ready for retest | Diggable terrain collision uses an invalid backface property | Codex CI review | 7d43157 |

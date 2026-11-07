@@ -183,7 +183,7 @@ func _rebuild_chunk(chunk: Vector2i) -> void:
 	var terrain_mesh := surface.commit()
 	mesh_instance.mesh = terrain_mesh
 	var concave := ConcavePolygonShape3D.new()
-	concave.backface_collision_enabled = true
+	concave.set_backface_collision_enabled(true)
 	concave.set_faces(terrain_mesh.get_faces())
 	collision_shape.shape = concave
 
