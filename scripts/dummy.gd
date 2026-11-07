@@ -2,17 +2,18 @@ extends Node3D
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
-const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
-const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
-const AK_SCENE := "res://assets/models/ak47/ak47_lowpoly.glb"
+const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_IRON_LEGION_Soldier_RIG_v1.glb"
+const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_RED_FRONT_Soldier_RIG_v1.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 
 # Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
-const MODEL_LIFT := 0.0
-const PRONE_Y := 0.15
+const MODEL_LIFT := 1.0
+const MODEL_SCALE := 0.812
+const PRONE_Y := 0.14
 
 static var _merged_mesh_cache: Dictionary = {}
 static var _normal_mesh_cache: Dictionary = {}
+static var _detail_texture: Texture2D
 
 var team_name := "IRON LEGION"
 var team_color := Color(0.28, 0.30, 0.32)
@@ -85,6 +86,7 @@ func _build_visual() -> void:
 
     _visual = Node3D.new()
     _visual.position.y = MODEL_LIFT
+    _visual.scale = Vector3.ONE * MODEL_SCALE
     _visual.rotation.y = PI  # модель смотрит в +Z, в Godot перед — это -Z
 
     var path := RED_SCENE if team_name.to_upper().contains("RED") else IRON_SCENE
@@ -102,6 +104,7 @@ func _build_visual() -> void:
     if has_rig:
         _proc = _visual
         # Руки поднимаются к оружию только у стреляющих манекенов.
+        _proc.set_t_pose_arms(true)
         _proc.set_aiming(shooting)
         _proc.set_motion(0.0, false)
         _proc.set_look(0.0, 0.0)
@@ -128,6 +131,7 @@ func _apply_stance() -> void:
     if _proc != null:
         _proc.set_crouching(crouch)
         _proc.set_sitting(sit)
+        _proc.set_prone(stance == "prone")
 
 func _build_hitboxes() -> void:
     var boxes: Array = []
@@ -154,13 +158,13 @@ func _build_hitboxes() -> void:
             ]
         "prone":
             boxes = [
-                [Vector3(0, 0.16, -1.84), Vector3(0.44, 0.30, 0.44), "head"],
-                [Vector3(0, 0.15, -1.34), Vector3(0.62, 0.30, 0.60), "chest"],
-                [Vector3(0, 0.15, -0.91), Vector3(0.52, 0.26, 0.48), "stomach"],
-                [Vector3(-0.34, 0.15, -1.22), Vector3(0.22, 0.24, 0.72), "arm"],
-                [Vector3(0.34, 0.15, -1.22), Vector3(0.22, 0.24, 0.72), "arm"],
-                [Vector3(-0.12, 0.15, -0.39), Vector3(0.28, 0.24, 0.92), "leg"],
-                [Vector3(0.12, 0.15, -0.39), Vector3(0.28, 0.24, 0.92), "leg"],
+                [Vector3(0, 0.18, -0.78), Vector3(0.44, 0.30, 0.46), "head"],
+                [Vector3(0, 0.17, -0.38), Vector3(0.62, 0.30, 0.62), "chest"],
+                [Vector3(0, 0.16, 0.02), Vector3(0.52, 0.26, 0.50), "stomach"],
+                [Vector3(-0.30, 0.16, -0.35), Vector3(0.22, 0.24, 0.82), "arm"],
+                [Vector3(0.30, 0.16, -0.35), Vector3(0.22, 0.24, 0.82), "arm"],
+                [Vector3(-0.12, 0.16, 0.42), Vector3(0.28, 0.24, 0.98), "leg"],
+                [Vector3(0.12, 0.16, 0.42), Vector3(0.28, 0.24, 0.98), "leg"],
             ]
         _:
             boxes = [
@@ -206,7 +210,7 @@ func _build_label() -> void:
         "sit":
             _label.position = Vector3(0, 1.50, 0)
         "prone":
-            _label.position = Vector3(0, 0.62, -1.45)
+            _label.position = Vector3(0, 0.62, -0.55)
         _:
             _label.position = Vector3(0, 2.22, 0)
     add_child(_label)
@@ -214,26 +218,27 @@ func _build_label() -> void:
 func _build_gun() -> void:
     _gun_pivot = Node3D.new()
     _gun_pivot.name = "GunPivot"
-    var right_hand := _visual.find_child("Attach_RightHand", true, false) as BoneAttachment3D
-    if right_hand != null:
-        right_hand.add_child(_gun_pivot)
-        _gun_pivot.position = Vector3(0.0, 0.14, 0.0)
-    else:
-        _pivot.add_child(_gun_pivot)
+    var gun_pos := Vector3(0.10, 1.34, -0.31)
+    match stance:
+        "crouch":
+            gun_pos = Vector3(0.10, 1.13, -0.31)
+        "sit":
+            gun_pos = Vector3(0.10, 0.77, -0.31)
+        "prone":
+            gun_pos = Vector3(0.08, 0.28, -0.92)
+    _gun_pivot.position = gun_pos
+    _pivot.add_child(_gun_pivot)
 
-    var muzzle_anchor: Node3D = _gun_pivot
-    var packed = load(AK_SCENE)
-    if packed != null:
-        var ak = packed.instantiate()
-        # The soldier visual is turned 180 degrees to face Godot's -Z forward.
-        # Keep the AK in its source +Z orientation so it points with the hands.
-        _gun_pivot.add_child(ak)
-        var muzzle_node = ak.find_child("Muzzle", true, false)
-        if muzzle_node is Node3D:
-            muzzle_anchor = muzzle_node
-    else:
-        push_error("FRONTLINE: cannot load mannequin AK-47 model " + AK_SCENE)
-    _gun_muzzle = muzzle_anchor
+    var gun_root := Node3D.new()
+    _gun_pivot.add_child(gun_root)
+    _gun_box(gun_root, Vector3(0, 0, -0.22), Vector3(0.10, 0.13, 0.62), Color(0.12, 0.11, 0.09))
+    _gun_box(gun_root, Vector3(0, -0.13, -0.16), Vector3(0.08, 0.22, 0.16), Color(0.14, 0.12, 0.10))
+    _gun_box(gun_root, Vector3(0, 0.02, -0.60), Vector3(0.05, 0.05, 0.40), Color(0.20, 0.20, 0.20))
+    _gun_box(gun_root, Vector3(0, 0.06, -0.40), Vector3(0.06, 0.06, 0.22), Color(0.32, 0.25, 0.15))
+
+    _gun_muzzle = Node3D.new()
+    _gun_muzzle.position = Vector3(0, 0.02, -0.82)
+    gun_root.add_child(_gun_muzzle)
 
     _muzzle_flash = MeshInstance3D.new()
     var flash_mesh := SphereMesh.new()
@@ -251,7 +256,7 @@ func _build_gun() -> void:
     tracer_mesh.size = Vector3(0.03, 0.03, dist)
     _tracer.mesh = tracer_mesh
     _tracer.material_override = _emissive(Color(1.0, 0.86, 0.35))
-    _tracer.position = Vector3(0, 0, dist * 0.5)
+    _tracer.position = Vector3(0, 0, -dist * 0.5)
     _tracer.visible = false
     _gun_muzzle.add_child(_tracer)
 
@@ -264,6 +269,19 @@ func _build_gun() -> void:
     _impact_flash.visible = false
     add_child(_impact_flash)
     _impact_flash.global_position = shoot_target
+
+func _gun_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
+    var inst := MeshInstance3D.new()
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    inst.mesh = mesh
+    inst.position = pos
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = color
+    mat.roughness = 0.7
+    mat.metallic = 0.25
+    inst.material_override = mat
+    parent.add_child(inst)
 
 func _emissive(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
@@ -366,7 +384,7 @@ func _aim_at_target(delta: float) -> void:
     var to := shoot_target - _gun_pivot.global_position
     var horizontal := Vector2(to.x, to.z).length()
     var pitch := atan2(to.y, horizontal)
-    _gun_pivot.rotation.x = -pitch
+    _gun_pivot.rotation.x = pitch
     if _proc != null:
         _proc.set_look(0.0, pitch)
 
@@ -512,9 +530,37 @@ func _merge_meshes(parts: Array) -> ArrayMesh:
     var mat := StandardMaterial3D.new()
     mat.albedo_color = Color.WHITE
     mat.vertex_color_use_as_albedo = true
-    mat.roughness = 1.0
+    mat.vertex_color_is_srgb = true
+    mat.roughness = 0.95
+    # Лёгкая тканевая/металлическая фактура, чтобы плоские vertex-цвета не
+    # выглядели «пластиковыми». Трипланарное проецирование не требует UV.
+    if _detail_texture == null:
+        _detail_texture = _make_detail_texture()
+    mat.albedo_texture = _detail_texture
+    mat.uv1_triplanar = true
+    mat.uv1_scale = Vector3(1.7, 1.7, 1.7)
+    mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
     out.surface_set_material(0, mat)
     return out
+
+static func _make_detail_texture() -> Texture2D:
+    var noise := FastNoiseLite.new()
+    noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+    noise.frequency = 0.06
+    noise.fractal_octaves = 4
+    noise.fractal_gain = 0.55
+    var tex := NoiseTexture2D.new()
+    tex.width = 256
+    tex.height = 256
+    tex.seamless = true
+    tex.generate_mipmaps = true
+    tex.noise = noise
+    var ramp := Gradient.new()
+    ramp.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+    ramp.colors = PackedColorArray([
+        Color(0.84, 0.84, 0.84), Color(0.94, 0.94, 0.94), Color(1, 1, 1)])
+    tex.color_ramp = ramp
+    return tex
 
 func _fix_normals(root: Node) -> void:
     # Исходные GLB солдат не содержат NORMAL. Godot их не генерирует,

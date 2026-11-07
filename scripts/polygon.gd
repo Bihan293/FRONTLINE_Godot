@@ -14,6 +14,7 @@ var scoreboard: PanelContainer
 var stats_label: Label
 var ui_click: AudioStreamPlayer
 var _mat_cache: Dictionary = {}
+var _detail_texture: Texture2D
 
 func _ready() -> void:
     team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -21,31 +22,100 @@ func _ready() -> void:
     _spawn_player()
     _build_hud()
 
-func _mat(color: Color) -> StandardMaterial3D:
-    var key: String = color.to_html()
+func _make_detail_texture() -> Texture2D:
+    var noise := FastNoiseLite.new()
+    noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+    noise.frequency = 0.06
+    noise.fractal_octaves = 4
+    noise.fractal_gain = 0.55
+    var tex := NoiseTexture2D.new()
+    tex.width = 256
+    tex.height = 256
+    tex.seamless = true
+    tex.generate_mipmaps = true
+    tex.noise = noise
+    var ramp := Gradient.new()
+    ramp.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+    ramp.colors = PackedColorArray([
+        Color(0.82, 0.82, 0.82), Color(0.93, 0.93, 0.93), Color(1, 1, 1)])
+    tex.color_ramp = ramp
+    return tex
+
+func _mat(color: Color, textured := false) -> StandardMaterial3D:
+    var key: String = color.to_html() + ("_t" if textured else "")
     if _mat_cache.has(key):
         return _mat_cache[key]
     var m := StandardMaterial3D.new()
     m.albedo_color = color
-    m.roughness = 1.0
+    m.roughness = 0.96
+    if textured:
+        if _detail_texture == null:
+            _detail_texture = _make_detail_texture()
+        m.albedo_texture = _detail_texture
+        m.uv1_triplanar = true
+        m.uv1_scale = Vector3(0.55, 0.55, 0.55)
+        m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
     _mat_cache[key] = m
     return m
 
 func _build_world() -> void:
     var env := WorldEnvironment.new()
     var environment := Environment.new()
-    environment.background_mode = Environment.BG_COLOR
-    environment.background_color = Color(0.48, 0.58, 0.62)
-    environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    environment.ambient_light_color = Color(0.75, 0.78, 0.8)
-    environment.ambient_light_energy = 0.8
+
+    # Небо с градиентом вместо плоской заливки: даёт мягкий ambient и глубину.
+    var sky_mat := ProceduralSkyMaterial.new()
+    sky_mat.sky_top_color = Color(0.20, 0.36, 0.60)
+    sky_mat.sky_horizon_color = Color(0.68, 0.76, 0.82)
+    sky_mat.sky_curve = 0.15
+    sky_mat.ground_bottom_color = Color(0.10, 0.12, 0.10)
+    sky_mat.ground_horizon_color = Color(0.55, 0.60, 0.55)
+    sky_mat.sun_angle_max = 1.5
+    sky_mat.sun_curve = 0.04
+    var sky := Sky.new()
+    sky.sky_material = sky_mat
+    environment.background_mode = Environment.BG_SKY
+    environment.sky = sky
+    environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+    environment.ambient_light_sky_contribution = 1.0
+    environment.ambient_light_energy = 0.82
+
+    # Кинематографичный тонмаппинг и лёгкая цветокоррекция.
+    environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+    environment.tonemap_exposure = 0.90
+    environment.tonemap_white = 6.0
+    environment.adjustment_enabled = true
+    environment.adjustment_brightness = 1.0
+    environment.adjustment_contrast = 1.08
+    environment.adjustment_saturation = 1.16
+
+    # Дальняя дымка смягчает полигон и скрывает границу карты.
+    environment.fog_enabled = true
+    environment.fog_light_color = Color(0.62, 0.70, 0.76)
+    environment.fog_light_energy = 0.9
+    environment.fog_density = 0.0045
+    environment.fog_sky_affect = 0.25
+    environment.fog_aerial_perspective = 0.35
+
     env.environment = environment
     add_child(env)
 
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-52, -28, 0)
-    sun.light_energy = 1.15
+    sun.light_color = Color(1.0, 0.94, 0.84)
+    sun.light_energy = 0.98
+    sun.shadow_enabled = true
+    sun.directional_shadow_max_distance = 90.0
+    sun.shadow_bias = 0.035
+    sun.shadow_normal_bias = 1.2
     add_child(sun)
+
+    # Холодный заполняющий свет, чтобы теневые стороны не были чёрными.
+    var fill := DirectionalLight3D.new()
+    fill.rotation_degrees = Vector3(-25, 148, 0)
+    fill.light_color = Color(0.62, 0.72, 0.88)
+    fill.light_energy = 0.22
+    fill.shadow_enabled = false
+    add_child(fill)
 
     for box in LAYOUT.boxes():
         _build_box(box)
@@ -55,10 +125,23 @@ func _build_world() -> void:
 
     _spawn_dummies()
 
+    # Простые деревянные сиденья под сидящими манекенами, чтобы они не
+    # выглядели парящими в воздухе.
+    for seat in [Vector3(24, 0.18, -14.0), Vector3(-4, 0.18, -4.0)]:
+        _build_box({
+            "pos": seat,
+            "size": Vector3(0.95, 0.36, 0.78),
+            "color": Color(0.34, 0.27, 0.18),
+            "solid": true,
+            "kind": "crate",
+        })
+
 func _build_box(data: Dictionary) -> void:
     var size: Vector3 = data.size
     var pos: Vector3 = data.pos
     var solid: bool = data.solid
+    var kind: String = str(data.get("kind", ""))
+    var textured: bool = kind not in ["lane", "pad", "spawn_pad", "target"]
     var parent: Node3D = self
     if solid:
         var body := StaticBody3D.new()
@@ -74,7 +157,7 @@ func _build_box(data: Dictionary) -> void:
     mesh.size = size
     var inst := MeshInstance3D.new()
     inst.mesh = mesh
-    inst.material_override = _mat(data.color)
+    inst.material_override = _mat(data.color, textured)
     if not solid:
         inst.position = pos
     parent.add_child(inst)

@@ -2,10 +2,6 @@ extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const CROSSHAIR = preload("res://scripts/crosshair.gd")
-const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
-const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
-const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
-const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -36,10 +32,7 @@ var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_base := Vector3.ZERO
-var view_arms_root: Node3D
-var view_arms_animator
-var view_arms_base := Vector3(0.15, -0.88, -0.42)
-var view_arms_aim_base := Vector3(-0.09, -0.85, -0.44)
+var weapon_aim_position := Vector3(0.0, -0.095, -0.68)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
@@ -48,7 +41,11 @@ var breathing_time := 0.0
 var aim_blend := 0.0
 var aiming := false
 var look_sway := Vector2.ZERO
-var view_fire_time := 0.0
+
+# Перспективный viewmodel: правая рука на рукоятке, левая — на цевье.
+var left_arm_pivot: Node3D
+var left_arm_base := Vector3.ZERO
+var detail_texture: Texture2D
 
 var pitch := 0.0
 var yaw := 0.0
@@ -87,7 +84,6 @@ func _ready() -> void:
     floor_snap_length = 0.25
     floor_max_angle = deg_to_rad(48.0)
     _build_player()
-    _build_view_arms()
     _build_weapon()
     _build_audio()
     _build_mobile_controls()
@@ -112,20 +108,11 @@ func _build_player() -> void:
 
 func _build_weapon() -> void:
     weapon_root = Node3D.new()
-    weapon_root.position = Vector3(0.30, -0.26, -0.42)
-    weapon_root.scale = Vector3.ONE * 1.12
-    var right_hand: BoneAttachment3D
-    if view_arms_root != null:
-        right_hand = view_arms_root.find_child("Attach_RightHand", true, false) as BoneAttachment3D
-    if right_hand != null:
-        # Attach the rifle to the animated right wrist so it follows both
-        # procedural hand motion and the first-person camera as one assembly.
-        right_hand.add_child(weapon_root)
-        weapon_root.position = Vector3(0.0, 0.14, 0.0)
-        weapon_root.scale = Vector3(1.12 / 0.45, 1.12 / 0.8, 1.12 / 0.8)
-    else:
-        camera.add_child(weapon_root)
+    weapon_root.name = "ViewModel"
+    weapon_root.position = Vector3(0.15, -0.19, -0.64)
+    weapon_root.scale = Vector3.ONE * 0.68
     weapon_base = weapon_root.position
+    camera.add_child(weapon_root)
 
     var packed = load("res://assets/models/ak47/ak47_lowpoly.glb")
     var muzzle_anchor: Node3D = weapon_root
@@ -133,6 +120,7 @@ func _build_weapon() -> void:
         var ak = packed.instantiate()
         ak.rotation.y = PI  # ствол модели смотрит в +Z, в Godot вперёд — -Z
         weapon_root.add_child(ak)
+        _tune_ak_materials(ak)
         var muzzle_node = ak.find_child("Muzzle", true, false)
         if muzzle_node is Node3D:
             muzzle_anchor = muzzle_node
@@ -162,28 +150,145 @@ func _build_weapon() -> void:
     muzzle_flash.position = Vector3.ZERO
     muzzle_flash.visible = false
     muzzle_anchor.add_child(muzzle_flash)
+    _build_view_hands()
 
-func _build_view_arms() -> void:
+func _tune_ak_materials(root: Node) -> void:
+    for mi in root.find_children("*", "MeshInstance3D", true, false):
+        if mi.mesh == null:
+            continue
+        for s in range(mi.mesh.get_surface_count()):
+            var mat = mi.mesh.surface_get_material(s)
+            if mat is StandardMaterial3D:
+                var m: StandardMaterial3D = mat.duplicate()
+                var c: Color = m.albedo_color
+                if c.get_luminance() > 0.45:
+                    # Дерево: приклад и цевьё.
+                    m.albedo_color = Color(0.40, 0.235, 0.105)
+                    m.metallic = 0.05
+                    m.roughness = 0.58
+                elif c.get_luminance() < 0.34:
+                    # Воронёная сталь.
+                    m.albedo_color = Color(0.135, 0.145, 0.155)
+                    m.metallic = 0.55
+                    m.roughness = 0.42
+                else:
+                    m.metallic = 0.35
+                    m.roughness = 0.50
+                m.cull_mode = BaseMaterial3D.CULL_DISABLED
+                mi.mesh.surface_set_material(s, m)
+
+func _make_detail_texture() -> Texture2D:
+    var noise := FastNoiseLite.new()
+    noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+    noise.frequency = 0.055
+    noise.fractal_octaves = 4
+    noise.fractal_gain = 0.55
+    var tex := NoiseTexture2D.new()
+    tex.width = 256
+    tex.height = 256
+    tex.seamless = true
+    tex.generate_mipmaps = true
+    tex.noise = noise
+    var ramp := Gradient.new()
+    ramp.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+    ramp.colors = PackedColorArray([
+        Color(0.78, 0.78, 0.78), Color(0.92, 0.92, 0.92), Color(1, 1, 1)])
+    tex.color_ramp = ramp
+    return tex
+
+func _vm_material(color: Color, roughness := 0.95, metallic := 0.0, textured := true) -> StandardMaterial3D:
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = color
+    mat.roughness = roughness
+    mat.metallic = metallic
+    if textured:
+        if detail_texture == null:
+            detail_texture = _make_detail_texture()
+        mat.albedo_texture = detail_texture
+        mat.uv1_scale = Vector3(4.0, 4.0, 4.0)
+        mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+    return mat
+
+func _vm_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+    var inst := MeshInstance3D.new()
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    inst.mesh = mesh
+    inst.material_override = mat
+    inst.position = pos
+    inst.rotation = rot
+    inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    parent.add_child(inst)
+    return inst
+
+func _vm_limb(parent: Node3D, a: Vector3, b: Vector3, r_a: float, r_b: float, mat: Material) -> MeshInstance3D:
+    var inst := MeshInstance3D.new()
+    var mesh := CylinderMesh.new()
+    mesh.top_radius = r_b
+    mesh.bottom_radius = r_a
+    mesh.height = a.distance_to(b)
+    mesh.radial_segments = 10
+    mesh.rings = 1
+    inst.mesh = mesh
+    inst.material_override = mat
+    inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    inst.position = (a + b) * 0.5
+    var dir := (b - a).normalized()
+    if dir.length_squared() > 0.001:
+        inst.basis = Basis(Quaternion(Vector3.UP, dir))
+    parent.add_child(inst)
+    return inst
+
+func _build_view_hands() -> void:
     var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
-    var path := RED_SCENE if team.to_upper().contains("RED") else IRON_SCENE
-    var packed = load(path)
-    if packed == null:
-        push_error("FRONTLINE: cannot load first-person arms " + path)
-        return
-    var model = packed.instantiate()
-    BLOCK_RIG_BUILDER.rig_model(model, true)
-    view_arms_root = Node3D.new()
-    view_arms_root.name = "FirstPersonArms"
-    view_arms_root.position = view_arms_base
-    view_arms_root.scale = Vector3(0.45, 0.8, 0.8)
-    view_arms_root.add_child(model)
-    view_arms_root.set_script(PROCEDURAL)
-    camera.add_child(view_arms_root)
-    view_arms_animator = view_arms_root
-    view_arms_animator.set_aiming(true)
-    view_arms_animator.set_aim_forward_sign(1.0)
-    view_arms_animator.set_left_support_shift(0.0)
-    view_arms_animator.set_motion(0.0, false)
+    var sleeve_color := Color(0.22, 0.24, 0.20)
+    if team.to_upper().contains("RED"):
+        sleeve_color = Color(0.24, 0.27, 0.17)
+
+    var glove := _vm_material(Color(0.155, 0.105, 0.068), 0.88)
+    var glove_pad := _vm_material(Color(0.235, 0.175, 0.115), 0.85)
+    var sleeve := _vm_material(sleeve_color, 1.0)
+    var cuff := _vm_material(Color(0.12, 0.12, 0.10), 0.95)
+
+    # --- Правая рука на рукоятке -----------------------------------------
+    _vm_box(weapon_root, Vector3(0.025, -0.105, 0.012), Vector3(0.070, 0.095, 0.075), glove, Vector3(0.16, 0.0, -0.10))
+    # Пальцы, обхватывающие рукоятку спереди.
+    for i in range(4):
+        _vm_box(weapon_root,
+            Vector3(-0.010, -0.078 - 0.021 * i, -0.032),
+            Vector3(0.068, 0.018, 0.034), glove)
+    # Большой палец с внутренней стороны.
+    _vm_box(weapon_root, Vector3(-0.035, -0.075, 0.030), Vector3(0.024, 0.055, 0.026), glove, Vector3(0.25, 0.0, 0.15))
+    # Костяшки/накладка на тыльной стороне кисти.
+    _vm_box(weapon_root, Vector3(0.064, -0.115, 0.012), Vector3(0.014, 0.068, 0.058), glove_pad)
+    var r_wrist := Vector3(0.035, -0.125, 0.035)
+    var r_elbow := Vector3(0.165, -0.390, 0.105)
+    _vm_limb(weapon_root, r_wrist, r_wrist.lerp(r_elbow, 0.14), 0.047, 0.050, cuff)
+    _vm_limb(weapon_root, r_wrist.lerp(r_elbow, 0.12), r_elbow, 0.046, 0.062, sleeve)
+    _vm_limb(weapon_root, r_elbow, r_elbow.lerp(r_wrist, 0.22), 0.062, 0.064, sleeve)
+
+    # --- Левая рука на цевье ---------------------------------------------
+    left_arm_pivot = Node3D.new()
+    left_arm_pivot.name = "LeftArm"
+    left_arm_pivot.position = Vector3(0.0, 0.0, -0.24)
+    left_arm_base = left_arm_pivot.position
+    weapon_root.add_child(left_arm_pivot)
+
+    _vm_box(left_arm_pivot, Vector3(-0.045, -0.055, 0.0), Vector3(0.075, 0.055, 0.125), glove, Vector3(-0.10, 0.0, 0.0))
+    # Пальцы поверх цевья с дальней стороны.
+    for i in range(4):
+        _vm_box(left_arm_pivot,
+            Vector3(-0.072, -0.010, -0.050 + 0.030 * i),
+            Vector3(0.024, 0.072, 0.022), glove)
+    # Большой палец снизу-сбоку.
+    _vm_box(left_arm_pivot, Vector3(0.002, -0.052, 0.018), Vector3(0.022, 0.045, 0.042), glove, Vector3(0.0, 0.0, -0.35))
+    # Накладка на тыльной стороне ладони.
+    _vm_box(left_arm_pivot, Vector3(-0.086, -0.076, -0.006), Vector3(0.018, 0.032, 0.092), glove_pad)
+    var l_wrist := Vector3(-0.055, -0.085, -0.004)
+    var l_elbow := Vector3(-0.170, -0.390, 0.095)
+    _vm_limb(left_arm_pivot, l_wrist, l_wrist.lerp(l_elbow, 0.14), 0.045, 0.048, cuff)
+    _vm_limb(left_arm_pivot, l_wrist.lerp(l_elbow, 0.12), l_elbow, 0.044, 0.060, sleeve)
+    _vm_limb(left_arm_pivot, l_elbow, l_elbow.lerp(l_wrist, 0.22), 0.060, 0.062, sleeve)
 
 func _set_aiming(enabled: bool) -> void:
     if aiming == enabled:
@@ -311,30 +416,24 @@ func _physics_process(delta: float) -> void:
         bob_time += delta * (6.0 + planar_speed * 0.7)
     breathing_time += delta * 1.35
     var bob_amount := clampf(planar_speed / SPEED, 0.0, 1.2)
-    var bob := Vector3(sin(bob_time) * 0.006, absf(cos(bob_time)) * 0.005, 0.0) * bob_amount
+    var bob := Vector3(sin(bob_time) * 0.010, absf(cos(bob_time)) * 0.008, 0.0) * bob_amount
+    var base_position := weapon_base.lerp(weapon_aim_position, aim_blend)
     var reload_phase := 0.0
     if is_reloading:
         reload_phase = sin((1.0 - reload_timer / RELOAD_TIME) * PI)
     var sway := Vector3(look_sway.x, -look_sway.y, 0.0)
     var breathing := sin(breathing_time) * 0.0025 * (1.0 - aim_blend * 0.5)
-    var weapon_target := weapon_base + Vector3(0.0, breathing * 0.5 + weapon_kick * 0.04 - reload_phase * 0.04, weapon_kick * 0.05)
+    var weapon_target := base_position + bob + Vector3(0.0, breathing + weapon_kick * 0.20 - reload_phase * 0.10, weapon_kick * 0.75)
     weapon_root.position = weapon_root.position.lerp(weapon_target, blend)
-    var weapon_rotation_target := Vector3(weapon_kick * 0.9 - reload_phase * 0.24, sway.x * 0.45, sway.y * 0.5 + reload_phase * 0.18)
+    var hip_yaw := 0.030 * (1.0 - aim_blend)
+    var weapon_rotation_target := Vector3(weapon_kick * 0.9 - reload_phase * 0.24, sway.x * 0.45 + hip_yaw, sway.y * 0.5 + reload_phase * 0.18)
     weapon_root.rotation = weapon_root.rotation.lerp(weapon_rotation_target, blend)
     camera.fov = lerpf(camera.fov, 75.0 - 23.0 * aim_blend, blend)
     look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 5.5, 0.0, 1.0))
-    if view_arms_root != null:
-        var arms_base := view_arms_base.lerp(view_arms_aim_base, aim_blend)
-        var arms_target := arms_base + Vector3(bob.x * 2.0, bob.y * 2.0 + breathing + weapon_kick * 0.20 - reload_phase * 0.08, weapon_kick * 0.70)
-        view_arms_root.position = view_arms_root.position.lerp(arms_target, blend)
-        view_arms_root.rotation = view_arms_root.rotation.lerp(Vector3(0.0, sway.x * 0.4, sway.y * 0.5 + reload_phase * 0.12), blend)
-    if view_fire_time > 0.0:
-        view_fire_time -= delta
-        if view_fire_time <= 0.0 and view_arms_animator != null:
-            view_arms_animator.set_firing(false)
-    if view_arms_animator != null:
-        view_arms_animator.set_motion(planar_speed, planar_speed > SPEED + 0.5)
-        view_arms_animator.set_look(0.0, pitch)
+    if left_arm_pivot != null:
+        var left_target := left_arm_base + Vector3(0.0, -0.14 * reload_phase, 0.14 * reload_phase)
+        left_arm_pivot.position = left_arm_pivot.position.lerp(left_target, blend)
+        left_arm_pivot.rotation = left_arm_pivot.rotation.lerp(Vector3(-0.35 * reload_phase, 0.0, 0.22 * reload_phase), blend)
 
     # Шаги: частота зависит от скорости, звук — случайный из трёх вариантов.
     if planar_speed > 0.6 and is_on_floor():
@@ -445,9 +544,6 @@ func _shoot() -> void:
     recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
     recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
     weapon_kick = 0.07
-    if view_arms_animator != null:
-        view_arms_animator.set_firing(true)
-        view_fire_time = 0.10
     muzzle_flash.visible = true
     muzzle_flash_time = 0.045
     _apply_look()
