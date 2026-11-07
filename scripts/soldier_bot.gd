@@ -13,6 +13,7 @@ const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
+const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -72,6 +73,7 @@ var _route_index := 0
 var _route_repath_timer := 0.0
 var _route_goal := Vector3.ZERO
 var _route_has_attempted := false
+var _shout_timer := 0.0
 
 func _ready() -> void:
 	add_to_group("bots")
@@ -295,10 +297,12 @@ func _find_target() -> void:
 
 	current_target = best_target
 
-## Проверка прямой видимости (нет ли стен/земли между ботом и целью)
+## Проверка прямой видимости (нет ли стен/земли или дымовой завесы между ботом и целью)
 func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
-	var space := get_world_3d().direct_space_state
 	var from := global_position + Vector3(0, 1.5, 0)
+	if SMOKE_SCRIPT.is_line_blocked_by_smoke(from, target_pos_3d):
+		return false
+	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, target_pos_3d)
 	query.exclude = _get_self_collision_rids()
 	query.collide_with_areas = true
@@ -370,6 +374,7 @@ func _combat_behavior(delta: float) -> void:
 func _throw_bot_grenade(target_pt: Vector3) -> void:
 	grenades -= 1
 	grenade_cooldown = randf_range(25.0, 45.0)
+	_shout("ГРАНАТА!" if team_name.contains("RED") else "GRANATE!", Color(1.0, 0.55, 0.1))
 	var g := GRENADE_SCRIPT.new()
 	var from := global_position + Vector3(0, 1.4, 0)
 	var to_vec := target_pt - from
@@ -482,6 +487,10 @@ func _fire_single_shot() -> void:
 	shoot_dir = shoot_dir.rotated(global_transform.basis.x, randf_range(-spread, spread))
 
 	var to := from + shoot_dir * 120.0
+	var player_node = get_tree().get_first_node_in_group("player")
+	if player_node != null and is_instance_valid(player_node) and "camera" in player_node and player_node.camera != null:
+		FRONTLINEAmbience.check_bullet_flyby(from, to, player_node.camera.global_position)
+
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.collision_mask = RAY_COLLISION_MASK
@@ -515,6 +524,7 @@ func _start_reload() -> void:
 	is_reloading = true
 	reload_timer = 2.4
 	stance = 1
+	_shout("ПЕРЕЗАРЯДКА!" if team_name.contains("RED") else "LADE NACH!", Color(0.3, 0.8, 1.0))
 	if _sfx_reload != null:
 		_sfx_reload.play()
 
@@ -525,6 +535,18 @@ func _handle_effects(delta: float) -> void:
 			_muzzle_flash.visible = false
 			if _proc != null:
 				_proc.set_firing(false)
+	if _shout_timer > 0.0:
+		_shout_timer -= delta
+		if _shout_timer <= 0.0 and not is_dead and _label != null:
+			_label.text = soldier_name
+			_label.modulate = Color(0.85, 0.35, 0.35) if team_name.contains("RED") else Color(0.65, 0.75, 0.85)
+
+func _shout(phrase: String, color: Color) -> void:
+	if _label == null or is_dead:
+		return
+	_label.text = "[ " + phrase + " ]"
+	_label.modulate = color
+	_shout_timer = 1.8
 
 ## Получение урона
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Unknown") -> int:
@@ -532,6 +554,8 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		return 0
 	health -= damage
 	suppression = minf(1.0, suppression + 0.45)
+	if health > 0.0 and randf() < 0.45:
+		_shout("РАНЕН!" if team_name.contains("RED") else "GETROFFEN!", Color(0.95, 0.25, 0.25))
 
 	# Поворачиваемся в сторону стрелявшего при неожиданной атаке
 	if current_target == null:

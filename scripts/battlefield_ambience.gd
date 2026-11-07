@@ -7,6 +7,9 @@ class_name FRONTLINEAmbience
 ## - Далёкие раскаты артиллерии фронта
 ## - Стук сердца при критическом здоровье
 
+const SFX_WHIZ = preload("res://assets/audio/bullet_whiz.wav")
+const SFX_ARTILLERY = preload("res://assets/audio/explosion.wav")
+
 static var instance: FRONTLINEAmbience
 
 var _whiz_players: Array[AudioStreamPlayer] = []
@@ -22,12 +25,15 @@ func _ready() -> void:
 func _build_audio_players() -> void:
 	for i in range(3):
 		var p := AudioStreamPlayer.new()
-		p.volume_db = -6.0
+		p.stream = SFX_WHIZ
+		p.volume_db = -4.0
 		add_child(p)
 		_whiz_players.append(p)
 
 	_artillery_player = AudioStreamPlayer.new()
-	_artillery_player.volume_db = -8.0
+	_artillery_player.stream = SFX_ARTILLERY
+	_artillery_player.volume_db = -10.0
+	_artillery_player.pitch_scale = 0.55
 	add_child(_artillery_player)
 
 ## Проверяет, пролетела ли пуля рядом с головой игрока, и воспроизводит свист
@@ -63,6 +69,9 @@ func _process(delta: float) -> void:
 		_trigger_distant_artillery()
 
 func _trigger_distant_artillery() -> void:
+	if _artillery_player != null:
+		_artillery_player.pitch_scale = randf_range(0.45, 0.68)
+		_artillery_player.play()
 	var player = get_tree().get_first_node_in_group("player")
 	if player != null and is_instance_valid(player) and "recoil" in player:
 		# Лёгкая вибрация от далёкого разрыва снаряда

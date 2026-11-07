@@ -8,6 +8,7 @@ class_name FRONTLINEGrenade
 signal exploded(pos: Vector3)
 
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const SFX_EXPLOSION = preload("res://assets/audio/explosion.wav")
 const FUSE_TIME := 3.0
 const BLAST_RADIUS := 9.0
 const MAX_DAMAGE := 140
@@ -183,6 +184,17 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 	# Подпалина на земле
 	HIT_EFFECTS.spawn_bullet_hole(world, pos, Vector3.UP)
 
+	# Звук взрыва
+	var sfx := AudioStreamPlayer3D.new()
+	sfx.stream = SFX_EXPLOSION
+	sfx.unit_size = 18.0
+	sfx.max_distance = 110.0
+	sfx.pitch_scale = randf_range(0.92, 1.08)
+	sfx.position = pos
+	world.add_child(sfx)
+	sfx.play()
+	sfx.finished.connect(sfx.queue_free)
+
 func _apply_blast_damage(pos: Vector3) -> void:
 	var space := get_world_3d().direct_space_state
 
@@ -198,6 +210,16 @@ func _apply_blast_damage(pos: Vector3) -> void:
 				var factor := 1.0 - (dist / BLAST_RADIUS)
 				var dmg := int(round(MAX_DAMAGE * factor * factor))
 				bot.receive_hit(dmg, pos, "chest", thrower_name)
+
+	# Поражение взрывных бочек (цепная реакция)
+	var barrels = get_tree().get_nodes_in_group("explosive_barrels")
+	for b in barrels:
+		if b != null and is_instance_valid(b) and b.has_method("receive_hit"):
+			var dist := pos.distance_to(b.global_position)
+			if dist <= BLAST_RADIUS:
+				var factor := 1.0 - (dist / BLAST_RADIUS)
+				var dmg := int(round(MAX_DAMAGE * factor))
+				b.receive_hit(dmg, pos, "barrel", thrower_name)
 
 	# Поражение манекенов на полигоне
 	var dummies = get_tree().get_nodes_in_group("training_dummy")

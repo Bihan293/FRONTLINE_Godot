@@ -6,6 +6,7 @@ const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
+const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -72,6 +73,7 @@ var reload_timer := 0.0
 
 # Снаряжение игрока
 var grenades := 3
+var smoke_grenades := 2
 var medkits := 2
 var is_healing := false
 var heal_timer := 0.0
@@ -250,6 +252,7 @@ func _build_mobile_controls() -> void:
 	mobile_controls.stance_down_pressed.connect(_down_action)
 	mobile_controls.stance_up_pressed.connect(_up_action)
 	mobile_controls.grenade_pressed.connect(_throw_grenade)
+	mobile_controls.smoke_pressed.connect(_throw_smoke)
 	mobile_controls.heal_pressed.connect(_use_heal)
 
 func _build_hud() -> void:
@@ -430,6 +433,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_up_action()
 		elif event.keycode == KEY_G:
 			_throw_grenade()
+		elif event.keycode == KEY_X or event.keycode == KEY_T:
+			_throw_smoke()
 		elif event.keycode == KEY_H:
 			_use_heal()
 		elif event.keycode == KEY_ESCAPE:
@@ -665,6 +670,21 @@ func _throw_grenade() -> void:
 	get_parent().add_child(g)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
 
+func _throw_smoke() -> void:
+	if smoke_grenades <= 0 or is_dead:
+		return
+	smoke_grenades -= 1
+	_refresh_equipment()
+	var s := SMOKE_SCRIPT.new()
+	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.5
+	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+	s.position = spawn_pos
+	s.linear_velocity = throw_dir.normalized() * 19.5 + velocity * 0.4
+	s.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
+	s.thrower_name = "Player"
+	get_parent().add_child(s)
+	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
+
 func _use_heal() -> void:
 	if medkits <= 0 or is_dead or is_healing or health >= MAX_HEALTH:
 		return
@@ -683,7 +703,7 @@ func _refresh_health() -> void:
 
 func _refresh_equipment() -> void:
 	if equip_label != null:
-		equip_label.text = "ГРАНАТЫ: %d   •   БИНТЫ: %d" % [grenades, medkits]
+		equip_label.text = "ГРАНАТЫ: %d   •   ДЫМ: %d   •   БИНТЫ: %d" % [grenades, smoke_grenades, medkits]
 
 func _pop_damage(amount: int) -> void:
 	if damage_label == null:
@@ -731,6 +751,7 @@ func respawn() -> void:
 	ammo = MAG_SIZE
 	reserve_ammo = RESERVE_START
 	grenades = 3
+	smoke_grenades = 2
 	medkits = 2
 	is_healing = false
 	stance = 0

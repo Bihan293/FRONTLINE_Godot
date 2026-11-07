@@ -9,6 +9,7 @@ const LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
+const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
 
 var player: CharacterBody3D
 var team_name := "IRON LEGION"
@@ -24,6 +25,9 @@ var sector_indicators: Dictionary = {}
 var sector_data: Array = []
 var compass: FRONTLINECompassBar
 var ambience: FRONTLINEAmbience
+var victory_panel: PanelContainer
+var is_game_over := false
+var _ticket_bleed_timer := 4.0
 
 var _mat_cache: Dictionary = {}
 var _detail_texture: Texture2D
@@ -135,6 +139,15 @@ func _build_world() -> void:
 	# Построение блоков карты
 	for box in LAYOUT.boxes():
 		_build_box(box)
+
+	# Спавн взрывных тактических бочек с горючим
+	for barrel_pos in LAYOUT.barrels():
+		_spawn_barrel(barrel_pos)
+
+func _spawn_barrel(pos: Vector3) -> void:
+	var b := BARREL_SCRIPT.new()
+	b.position = pos
+	add_child(b)
 
 func _build_box(data: Dictionary) -> void:
 	var size: Vector3 = data.size
@@ -351,7 +364,102 @@ func _add_killfeed_entry(killer: String, victim: String, victim_team: String) ->
 	)
 
 func _process(delta: float) -> void:
+	if is_game_over:
+		return
 	_update_sector_captures()
+	_update_ticket_bleed(delta)
+
+func _update_ticket_bleed(delta: float) -> void:
+	_ticket_bleed_timer -= delta
+	if _ticket_bleed_timer > 0.0:
+		return
+	_ticket_bleed_timer = 4.0
+
+	var iron_sec := 0
+	var red_sec := 0
+	for sec in sector_data:
+		if sec.owner == "IRON LEGION":
+			iron_sec += 1
+		elif sec.owner == "RED FRONT":
+			red_sec += 1
+
+	if iron_sec > red_sec:
+		score_red = maxi(0, score_red - (iron_sec - red_sec))
+	elif red_sec > iron_sec:
+		score_iron = maxi(0, score_iron - (red_sec - iron_sec))
+
+	_refresh_score()
+
+	if score_red <= 0:
+		_end_match("IRON LEGION")
+	elif score_iron <= 0:
+		_end_match("RED FRONT")
+
+func _end_match(winner: String) -> void:
+	if is_game_over:
+		return
+	is_game_over = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+	var is_player_winner: bool = (team_name == winner)
+
+	victory_panel = PanelContainer.new()
+	victory_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	victory_panel.offset_left = -280
+	victory_panel.offset_right = 280
+	victory_panel.offset_top = -180
+	victory_panel.offset_bottom = 180
+	hud.add_child(victory_panel)
+
+	var vb := VBoxContainer.new()
+	vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	vb.add_theme_constant_override("separation", 16)
+	victory_panel.add_child(vb)
+
+	var title := Label.new()
+	title.text = "★ ПОБЕДА! ★" if is_player_winner else "ПОРАЖЕНИЕ"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 34)
+	var title_col := Color(0.95, 0.82, 0.25) if is_player_winner else Color(0.92, 0.28, 0.22)
+	title.add_theme_color_override("font_color", title_col)
+	vb.add_child(title)
+
+	var sub := Label.new()
+	sub.text = "СЕКТОРЫ ПОД КОНТРОЛЕМ" if is_player_winner else "СИЛЫ ФРОНТА ИСЧЕРПАНЫ"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 18)
+	sub.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	vb.add_child(sub)
+
+	var stats := Label.new()
+	stats.text = "Победитель: %s\nИтоговый счёт: %d : %d   •   Ваши фраги: %d" % [winner, score_iron, score_red, score_kills]
+	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stats.add_theme_font_size_override("font_size", 16)
+	stats.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+	vb.add_child(stats)
+
+	var btn_box := HBoxContainer.new()
+	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_box.add_theme_constant_override("separation", 24)
+	vb.add_child(btn_box)
+
+	var restart_btn := Button.new()
+	restart_btn.text = "ПЕРЕИГРАТЬ"
+	restart_btn.custom_minimum_size = Vector2(140, 48)
+	restart_btn.add_theme_font_size_override("font_size", 16)
+	restart_btn.pressed.connect(func():
+		get_tree().reload_current_scene()
+	)
+	btn_box.add_child(restart_btn)
+
+	var menu_btn := Button.new()
+	menu_btn.text = "ГЛАВНОЕ МЕНЮ"
+	menu_btn.custom_minimum_size = Vector2(160, 48)
+	menu_btn.add_theme_font_size_override("font_size", 16)
+	menu_btn.pressed.connect(func():
+		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+	)
+	btn_box.add_child(menu_btn)
 
 func _update_sector_captures() -> void:
 	for sec in sector_data:

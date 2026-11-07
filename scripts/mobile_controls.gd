@@ -15,6 +15,7 @@ signal reload_pressed
 signal stance_down_pressed
 signal stance_up_pressed
 signal grenade_pressed
+signal smoke_pressed
 signal heal_pressed
 
 const JOY_RADIUS := 92.0
@@ -47,7 +48,8 @@ func _layout() -> Dictionary:
 		"crouch": Vector2(s.x - 288.0, s.y - 120.0),
 		"jump": Vector2(s.x - 288.0, s.y - 238.0),
 		"grenade": Vector2(s.x - 288.0, s.y - 355.0),
-		"heal": Vector2(s.x - 200.0, s.y - 355.0),
+		"smoke": Vector2(s.x - 378.0, s.y - 355.0),
+		"heal": Vector2(s.x - 198.0, s.y - 355.0),
 	}
 
 func _input(event: InputEvent) -> void:
@@ -63,7 +65,7 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "heal"]:
+	for id in ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal"]:
 		var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
 		if pos.distance_to(l[id]) <= radius * 1.15:
 			_button_touches[index] = id
@@ -122,6 +124,8 @@ func _press(id: String) -> void:
 			stance_up_pressed.emit()
 		"grenade":
 			grenade_pressed.emit()
+		"smoke":
+			smoke_pressed.emit()
 		"heal":
 			heal_pressed.emit()
 
@@ -153,6 +157,7 @@ func _draw() -> void:
 	_draw_button(l.crouch, SMALL_RADIUS, "ПРИСЕСТЬ", "crouch", Color(0.20, 0.34, 0.20, 0.48), font, 11)
 	_draw_button(l.jump, SMALL_RADIUS, "ПРЫЖОК", "jump", Color(0.34, 0.30, 0.12, 0.48), font, 12)
 	_draw_button(l.grenade, SMALL_RADIUS, "ГРАНАТА", "grenade", Color(0.55, 0.35, 0.12, 0.48), font, 11)
+	_draw_button(l.smoke, SMALL_RADIUS, "ДЫМ", "smoke", Color(0.35, 0.38, 0.42, 0.48), font, 12)
 	_draw_button(l.heal, SMALL_RADIUS, "БИНТ", "heal", Color(0.18, 0.45, 0.45, 0.48), font, 12)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
