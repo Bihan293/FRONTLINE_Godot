@@ -10,20 +10,20 @@ const SPAWN_Y := 0.25
 
 static func spawns_iron() -> Array[Vector3]:
 	return [
-		Vector3(-25.0, SPAWN_Y, 74.0),
-		Vector3(-10.0, SPAWN_Y, 76.0),
-		Vector3(10.0, SPAWN_Y, 76.0),
-		Vector3(25.0, SPAWN_Y, 74.0),
-		Vector3(0.0, SPAWN_Y, 82.0),
+		Vector3(-25.0, SPAWN_Y, 76.0),
+		Vector3(-6.0, SPAWN_Y, 76.0),
+		Vector3(6.0, SPAWN_Y, 76.0),
+		Vector3(25.0, SPAWN_Y, 76.0),
+		Vector3(0.0, SPAWN_Y, 76.0),
 	]
 
 static func spawns_red() -> Array[Vector3]:
 	return [
-		Vector3(-25.0, SPAWN_Y, -74.0),
-		Vector3(-10.0, SPAWN_Y, -76.0),
-		Vector3(10.0, SPAWN_Y, -76.0),
-		Vector3(25.0, SPAWN_Y, -74.0),
-		Vector3(0.0, SPAWN_Y, -82.0),
+		Vector3(-25.0, SPAWN_Y, -76.0),
+		Vector3(-6.0, SPAWN_Y, -76.0),
+		Vector3(6.0, SPAWN_Y, -76.0),
+		Vector3(25.0, SPAWN_Y, -76.0),
+		Vector3(0.0, SPAWN_Y, -76.0),
 	]
 
 static func sectors() -> Array[Dictionary]:

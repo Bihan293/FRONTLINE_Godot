@@ -66,6 +66,12 @@ var _label: Label3D
 var _sfx_shot: AudioStreamPlayer3D
 var _sfx_reload: AudioStreamPlayer3D
 var _hitboxes: Array[Area3D] = []
+var _navigation: FRONTLINEBotNavigation
+var _route_path := PackedVector3Array()
+var _route_index := 0
+var _route_repath_timer := 0.0
+var _route_goal := Vector3.ZERO
+var _route_has_attempted := false
 
 func _ready() -> void:
 	add_to_group("bots")
@@ -74,6 +80,7 @@ func _ready() -> void:
 	collision_mask = WORLD_LAYER_MASK | SOLDIER_LAYER_MASK
 	floor_snap_length = 0.3
 	floor_max_angle = deg_to_rad(45.0)
+	_navigation = get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation
 
 	_build_body_collision()
 	_build_visuals()
@@ -330,7 +337,7 @@ func _combat_behavior(delta: float) -> void:
 	# Дистанционное маневрирование
 	if dist > 32.0:
 		# Сближение
-		var move_dir := to.normalized()
+		var move_dir := _route_direction(tpos, delta)
 		velocity.x = move_dir.x * SPEED_WALK
 		velocity.z = move_dir.z * SPEED_WALK
 		stance = 0
@@ -378,19 +385,58 @@ func _throw_bot_grenade(target_pt: Vector3) -> void:
 ## Наступление и патрулирование в сторону вражеской базы
 func _advance_behavior(delta: float) -> void:
 	stance = 0
-	# Направление к вражеской базе (Красные идут в +Z, Легион в -Z)
+	# Направление к вражескому рубежу (Красные идут в +Z, Легион в -Z).
 	var forward_z: float = 1.0 if team_name.contains("RED") else -1.0
-	var forward_dir := Vector3(sin(float(get_instance_id() % 5) * 0.4) * 0.25, 0.0, forward_z).normalized()
+	var lane_x := float(int(get_instance_id() % 5) - 2) * 12.0
+	# Проходим за центр карты, иначе обе команды могут остановиться вне дальности друг друга.
+	var objective := Vector3(lane_x, 0.0, forward_z * 20.0)
+	var forward_dir := _route_direction(objective, delta)
 
 	velocity.x = forward_dir.x * SPEED_SPRINT
 	velocity.z = forward_dir.z * SPEED_SPRINT
 
-	var target_yaw := atan2(-forward_dir.x, -forward_dir.z)
-	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 4.0, 0.0, 1.0))
+	if forward_dir.length_squared() > 0.001:
+		var target_yaw := atan2(-forward_dir.x, -forward_dir.z)
+		rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 4.0, 0.0, 1.0))
 	if _gun_pivot != null:
 		_gun_pivot.rotation.x = 0.0
 	if _proc != null:
 		_proc.set_look(0.0, 0.0)
+
+func _route_direction(destination: Vector3, delta: float) -> Vector3:
+	var direct := destination - global_position
+	direct.y = 0.0
+	if direct.length_squared() <= 0.04:
+		return Vector3.ZERO
+	if _navigation == null:
+		return direct.normalized()
+
+	_route_repath_timer = maxf(0.0, _route_repath_timer - delta)
+	var destination_moved := _route_goal.distance_squared_to(destination) > 16.0
+	if not _route_has_attempted or _route_repath_timer <= 0.0 or destination_moved:
+		_route_path = _navigation.find_path(global_position, destination)
+		_route_goal = destination
+		_route_index = 0
+		_route_repath_timer = 0.9
+		_route_has_attempted = true
+		if _route_path.is_empty():
+			return Vector3.ZERO
+	if _route_path.is_empty():
+		return Vector3.ZERO
+
+	while _route_index < _route_path.size() - 1:
+		var waypoint := _route_path[_route_index]
+		waypoint.y = global_position.y
+		if global_position.distance_to(waypoint) > 1.15:
+			break
+		_route_index += 1
+
+	var next_point := _route_path[_route_index]
+	var direction := next_point - global_position
+	direction.y = 0.0
+	if direction.length_squared() <= 0.04:
+		return Vector3.ZERO
+	return direction.normalized()
 
 ## Производит выстрел одной пулей очереди
 func _shoot_burst() -> void:
