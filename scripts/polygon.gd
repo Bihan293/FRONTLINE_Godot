@@ -78,16 +78,16 @@ func _build_world() -> void:
     environment.sky = sky
     environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
     environment.ambient_light_sky_contribution = 1.0
-    environment.ambient_light_energy = 0.82
+    environment.ambient_light_energy = 0.76
 
     # Кинематографичный тонмаппинг и лёгкая цветокоррекция.
     environment.tonemap_mode = Environment.TONE_MAPPER_ACES
-    environment.tonemap_exposure = 0.90
+    environment.tonemap_exposure = 0.86
     environment.tonemap_white = 6.0
     environment.adjustment_enabled = true
     environment.adjustment_brightness = 1.0
     environment.adjustment_contrast = 1.08
-    environment.adjustment_saturation = 1.16
+    environment.adjustment_saturation = 1.18
 
     # Дальняя дымка смягчает полигон и скрывает границу карты.
     environment.fog_enabled = GameSettings.fog_enabled()
@@ -105,7 +105,7 @@ func _build_world() -> void:
     sun.name = "Sun"
     sun.rotation_degrees = Vector3(-52, -28, 0)
     sun.light_color = Color(1.0, 0.94, 0.84)
-    sun.light_energy = 0.98
+    sun.light_energy = 0.90
     sun.shadow_enabled = GameSettings.shadows_enabled()
     sun.directional_shadow_max_distance = GameSettings.shadow_distance()
     sun.shadow_bias = 0.035

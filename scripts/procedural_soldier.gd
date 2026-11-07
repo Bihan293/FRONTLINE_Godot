@@ -27,7 +27,6 @@ var _look_pitch: float = 0.0
 var _t_pose_arms := false
 var _prone := false
 var _hide_head := false
-var _hide_arms := false
 var _pose: Dictionary = {}
 
 func _ready() -> void:
@@ -68,10 +67,6 @@ func _apply_hidden_bones() -> void:
     var tiny := Vector3.ONE * 0.001
     if _hide_head:
         for bone_name in ["Head", "Neck"]:
-            if _bone_ids.has(bone_name):
-                _skeleton.set_bone_pose_scale(_bone_ids[bone_name], tiny)
-    if _hide_arms:
-        for bone_name in ["LeftUpperArm", "RightUpperArm"]:
             if _bone_ids.has(bone_name):
                 _skeleton.set_bone_pose_scale(_bone_ids[bone_name], tiny)
 
@@ -121,16 +116,6 @@ func set_prone(enabled: bool) -> void:
 func set_hide_head(enabled: bool) -> void:
     _hide_head = enabled
     _apply_hidden_bones()
-
-func set_hide_arms(enabled: bool) -> void:
-    _hide_arms = enabled
-    _apply_hidden_bones()
-
-func set_chest_scale(value: float) -> void:
-    if _skeleton == null or not _bone_ids.has("Chest"):
-        return
-    var scale_value := maxf(clampf(value, 0.0, 1.0), 0.001)
-    _skeleton.set_bone_pose_scale(_bone_ids["Chest"], Vector3.ONE * scale_value)
 
 func _process(delta: float) -> void:
     if _skeleton == null:

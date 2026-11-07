@@ -92,7 +92,7 @@ static func rig_model(model_root: Node, arms_only: bool = false) -> Skeleton3D:
 
 ## Собирает все части скелета (включая шлем и бронежилет) в один skinned-меш.
 ## Это даёт 1 draw call на солдата вместо ~20 и сильно снижает нагрузку на мобилках.
-static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = []) -> MeshInstance3D:
+static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [], only_bones: Array = [], cleanup: bool = true) -> MeshInstance3D:
 	var bone_count := skeleton.get_bone_count()
 	var rest_global: Array[Transform3D] = []
 	rest_global.resize(bone_count)
@@ -115,6 +115,8 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [])
 		var attachment := child as BoneAttachment3D
 		var bone_idx := skeleton.find_bone(attachment.bone_name)
 		if bone_idx < 0 or attachment.bone_name in excluded_bones:
+			continue
+		if not only_bones.is_empty() and not attachment.bone_name in only_bones:
 			continue
 		for node in attachment.get_children():
 			if not (node is MeshInstance3D):
@@ -152,10 +154,13 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [])
 					verts.append(part_xf * v[vi])
 					var nv: Vector3 = n[vi]
 					normals.append((part_xf.basis * nv).normalized())
-					if c != null and c.size() == v.size():
-						colors.append(c[vi])
-					else:
-						colors.append(base_color)
+					var col: Color = c[vi] if c != null and c.size() == v.size() else base_color
+					var fabric := attachment.bone_name in [
+						"Hips", "Chest",
+						"LeftUpperLeg", "LeftLowerLeg", "RightUpperLeg", "RightLowerLeg",
+						"LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm",
+					]
+					colors.append(_fabric_variation(col, v[vi], fabric))
 					bone_ids.append(bone_idx)
 					bone_ids.append(0)
 					bone_ids.append(0)
@@ -192,11 +197,33 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [])
 	inst.skeleton = NodePath("..")
 	skeleton.add_child(inst)
 
-	for child in skeleton.get_children():
-		if child is BoneAttachment3D:
-			skeleton.remove_child(child)
-			child.queue_free()
+	if cleanup:
+		for child in skeleton.get_children():
+			if child is BoneAttachment3D:
+				skeleton.remove_child(child)
+				child.queue_free()
 	return inst
+
+static var _fabric_noise: FastNoiseLite
+
+static func _fabric_variation(color: Color, pos: Vector3, fabric: bool = false) -> Color:
+	if _fabric_noise == null:
+		_fabric_noise = FastNoiseLite.new()
+		_fabric_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_fabric_noise.frequency = 0.9
+		_fabric_noise.fractal_octaves = 3
+	var fine := _fabric_noise.get_noise_3dv(pos * 7.0)
+	var broad := _fabric_noise.get_noise_3dv(pos * 0.9)
+	var factor := clampf(1.0 + fine * 0.07 + broad * 0.15, 0.72, 1.08)
+	var out := Color(color.r * factor, color.g * factor, color.b * factor, color.a)
+	if fabric:
+		# Форма/броня: убираем «металлический» холодный оттенок и делаем
+		# ткань темнее, ближе к полевой оливе/хаки.
+		out = Color(out.r * 0.76, out.g * 0.80, out.b * 0.72, out.a)
+		var camo := Color(out.r * 0.78, out.g * 0.82, out.b * 0.70, out.a)
+		var mix := clampf(broad * 0.75 + 0.5, 0.0, 1.0) * 0.40
+		out = out.lerp(camo, mix)
+	return out
 
 static func _get_merged_material() -> StandardMaterial3D:
 	if _merged_material != null:
@@ -205,7 +232,9 @@ static func _get_merged_material() -> StandardMaterial3D:
 	mat.albedo_color = Color.WHITE
 	mat.vertex_color_use_as_albedo = true
 	mat.vertex_color_is_srgb = true
-	mat.roughness = 0.95
+	mat.roughness = 1.0
+	mat.metallic = 0.0
+	mat.metallic_specular = 0.18
 	if _detail_texture == null:
 		_detail_texture = _make_detail_texture()
 	mat.albedo_texture = _detail_texture
@@ -266,6 +295,20 @@ static func _ensure_normals(parts: Array[MeshInstance3D]) -> void:
 				color_material = source_material.duplicate() as StandardMaterial3D
 			color_material.albedo_color = Color.WHITE
 			color_material.vertex_color_use_as_albedo = true
+			color_material.vertex_color_is_srgb = true
+			var hand := part.name.find("Hand") >= 0
+			if hand:
+				# Кисти рук — тёмные тактические перчатки, а не телесный цвет.
+				var glove_arrays := fixed.surface_get_arrays(0)
+				var cols: PackedColorArray = glove_arrays[Mesh.ARRAY_COLOR]
+				if cols != null:
+					for ci in range(cols.size()):
+						cols[ci] = Color(0.105, 0.078, 0.060, 1.0)
+					glove_arrays[Mesh.ARRAY_COLOR] = cols
+					var glove := ArrayMesh.new()
+					glove.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, glove_arrays)
+					glove.surface_set_material(0, color_material)
+					fixed = glove
 			fixed.surface_set_material(0, color_material)
 		else:
 			fixed.surface_set_material(0, source_material)

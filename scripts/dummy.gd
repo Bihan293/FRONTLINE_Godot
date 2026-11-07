@@ -5,6 +5,7 @@ const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
+const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 
 # Новые статичные GLB имеют origin у ступней и высоту около 1.94 м.
 const MODEL_LIFT := 0.0
@@ -236,16 +237,21 @@ func _build_gun() -> void:
 
     var gun_root := Node3D.new()
     _gun_pivot.add_child(gun_root)
-    var gun_mesh := _get_gun_mesh()
-    if gun_mesh != null:
-        var gun_inst := MeshInstance3D.new()
-        gun_inst.name = "Rifle"
-        gun_inst.mesh = gun_mesh
-        gun_root.add_child(gun_inst)
+    var ak_root := Node3D.new()
+    ak_root.name = "AK47"
+    ak_root.rotation.y = PI
+    ak_root.scale = Vector3.ONE * 0.9
+    gun_root.add_child(ak_root)
+    var ak_mesh := WEAPON_MESHES.ak_mesh()
+    if ak_mesh != null:
+        var ak_inst := MeshInstance3D.new()
+        ak_inst.name = "AK47Mesh"
+        ak_inst.mesh = ak_mesh
+        ak_root.add_child(ak_inst)
 
     _gun_muzzle = Node3D.new()
-    _gun_muzzle.position = Vector3(0, 0.02, -0.82)
-    gun_root.add_child(_gun_muzzle)
+    _gun_muzzle.position = WEAPON_MESHES.MUZZLE_LOCAL
+    ak_root.add_child(_gun_muzzle)
 
     _muzzle_flash = MeshInstance3D.new()
     var flash_mesh := SphereMesh.new()
@@ -263,7 +269,7 @@ func _build_gun() -> void:
     tracer_mesh.size = Vector3(0.03, 0.03, dist)
     _tracer.mesh = tracer_mesh
     _tracer.material_override = _emissive(Color(1.0, 0.86, 0.35))
-    _tracer.position = Vector3(0, 0, -dist * 0.5)
+    _tracer.position = Vector3(0, 0, dist * 0.5)
     _tracer.visible = false
     _gun_muzzle.add_child(_tracer)
 
@@ -276,72 +282,6 @@ func _build_gun() -> void:
     _impact_flash.visible = false
     add_child(_impact_flash)
     _impact_flash.global_position = shoot_target
-
-static var _gun_mesh_cache: ArrayMesh
-static var _gun_material_cache: StandardMaterial3D
-
-func _get_gun_mesh() -> ArrayMesh:
-    if _gun_mesh_cache != null:
-        return _gun_mesh_cache
-    var boxes := [
-        [Vector3(0, 0, -0.22), Vector3(0.10, 0.13, 0.62), Color(0.12, 0.11, 0.09)],
-        [Vector3(0, -0.13, -0.16), Vector3(0.08, 0.22, 0.16), Color(0.14, 0.12, 0.10)],
-        [Vector3(0, 0.02, -0.60), Vector3(0.05, 0.05, 0.40), Color(0.20, 0.20, 0.20)],
-        [Vector3(0, 0.06, -0.40), Vector3(0.06, 0.06, 0.22), Color(0.32, 0.25, 0.15)],
-    ]
-    var verts := PackedVector3Array()
-    var normals := PackedVector3Array()
-    var colors := PackedColorArray()
-    var indices := PackedInt32Array()
-    for box in boxes:
-        var bm := BoxMesh.new()
-        bm.size = box[1]
-        var arr := bm.surface_get_arrays(0)
-        var bv: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-        var bn: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-        var bi = arr[Mesh.ARRAY_INDEX]
-        var offset := verts.size()
-        for i in range(bv.size()):
-            verts.append(bv[i] + box[0])
-            normals.append(bn[i])
-            colors.append(box[2])
-        if bi == null or bi.is_empty():
-            for i in range(bv.size()):
-                indices.append(offset + i)
-        else:
-            for idx in bi:
-                indices.append(offset + idx)
-    var mesh := ArrayMesh.new()
-    var arrays := []
-    arrays.resize(Mesh.ARRAY_MAX)
-    arrays[Mesh.ARRAY_VERTEX] = verts
-    arrays[Mesh.ARRAY_NORMAL] = normals
-    arrays[Mesh.ARRAY_COLOR] = colors
-    arrays[Mesh.ARRAY_INDEX] = indices
-    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-    if _gun_material_cache == null:
-        _gun_material_cache = StandardMaterial3D.new()
-        _gun_material_cache.albedo_color = Color.WHITE
-        _gun_material_cache.vertex_color_use_as_albedo = true
-        _gun_material_cache.vertex_color_is_srgb = true
-        _gun_material_cache.roughness = 0.72
-        _gun_material_cache.metallic = 0.20
-    mesh.surface_set_material(0, _gun_material_cache)
-    _gun_mesh_cache = mesh
-    return mesh
-
-func _gun_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
-    var inst := MeshInstance3D.new()
-    var mesh := BoxMesh.new()
-    mesh.size = size
-    inst.mesh = mesh
-    inst.position = pos
-    var mat := StandardMaterial3D.new()
-    mat.albedo_color = color
-    mat.roughness = 0.7
-    mat.metallic = 0.25
-    inst.material_override = mat
-    parent.add_child(inst)
 
 func _emissive(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
@@ -637,13 +577,15 @@ func _add_equipment(root: Node3D, model_path: String) -> void:
     if helmet != null:
         var h: Node3D = helmet.instantiate()
         # Базовые координаты шлема — низ на уровне origin, у головы блочной модели.
-        h.position = Vector3(0.0, 1.74, 0.0)
+        h.position = Vector3(0.0, 1.78, 0.0)
         root.add_child(h)
     var vest := load(vest_path)
     if vest != null:
         var v: Node3D = vest.instantiate()
-        # Центр бронежилета совпадает с грудной костью.
-        v.position = Vector3(0.0, 1.32, 0.0)
+        # Центр бронежилета совпадает с грудной костью. Чуть увеличиваем,
+        # чтобы пластины лежали поверх формы, а не утопали в торсе.
+        v.position = Vector3(0.0, 1.345, 0.0)
+        v.scale = Vector3(1.12, 1.03, 1.18)
         root.add_child(v)
 
 func _fix_normals(root: Node) -> void:
