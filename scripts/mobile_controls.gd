@@ -23,6 +23,8 @@ signal cycle_weapon_pressed
 signal interact_pressed
 signal drone_pressed
 signal drone_vertical_changed(direction: float, pressed: bool)
+signal sidearm_pressed
+signal shovel_pressed
 
 const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
@@ -64,6 +66,8 @@ func _layout() -> Dictionary:
 		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
 		"interact": Vector2(s.x - 195.0, s.y - 530.0),
 		"drone": Vector2(s.x - 478.0, s.y - 355.0),
+		"sidearm": Vector2(maxf(210.0, s.x - 478.0), s.y - 245.0),
+		"shovel": Vector2(maxf(210.0, s.x - 478.0), s.y - 155.0),
 	}
 
 func set_interact_visible(is_visible: bool) -> void:
@@ -103,7 +107,7 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	var ids := ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact", "drone"]
+	var ids := ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact", "drone", "sidearm", "shovel"]
 	if _drone_mode:
 		ids = ["fire", "crouch", "jump", "drone"]
 	for id in ids:
@@ -197,6 +201,10 @@ func _press(id: String) -> void:
 			interact_pressed.emit()
 		"drone":
 			drone_pressed.emit()
+		"sidearm":
+			sidearm_pressed.emit()
+		"shovel":
+			shovel_pressed.emit()
 
 func _set_joy(value: Vector2) -> void:
 	var v := value
@@ -214,46 +222,126 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 
 	# Джойстик
-	draw_circle(l.joy, JOY_RADIUS, Color(0.04, 0.06, 0.07, 0.38))
-	draw_arc(l.joy, JOY_RADIUS, 0.0, TAU, 64, Color(1, 1, 1, 0.28), 3.0, true)
+	draw_circle(l.joy, JOY_RADIUS, Color(0.012, 0.016, 0.019, 0.70))
+	draw_arc(l.joy, JOY_RADIUS, 0.0, TAU, 64, Color(0.88, 0.92, 0.93, 0.50), 2.0, true)
 	var knob: Vector2 = l.joy + _joy_value * JOY_RADIUS
-	draw_circle(knob, JOY_RADIUS * 0.40, Color(0.85, 0.92, 1.0, 0.50))
-	draw_arc(knob, JOY_RADIUS * 0.40, 0.0, TAU, 48, Color(1, 1, 1, 0.45), 2.0, true)
+	draw_circle(knob, JOY_RADIUS * 0.40, Color(0.035, 0.045, 0.05, 0.92))
+	draw_arc(knob, JOY_RADIUS * 0.40, 0.0, TAU, 48, Color(0.96, 0.97, 0.97, 0.76), 1.8, true)
 	if _drone_mode:
-		_draw_button(l.fire, FIRE_RADIUS, "ПОДРЫВ", "fire", Color(0.80, 0.18, 0.12, 0.58), font, 16)
-		_draw_button(l.jump, SMALL_RADIUS, "ВЫШЕ", "jump", Color(0.12, 0.32, 0.55, 0.58), font, 11)
-		_draw_button(l.crouch, SMALL_RADIUS, "НИЖЕ", "crouch", Color(0.12, 0.32, 0.55, 0.58), font, 12)
-		_draw_button(l.drone, SMALL_RADIUS, "ВОЗВРАТ", "drone", Color(0.42, 0.22, 0.55, 0.68), font, 10)
+		_draw_button(l.fire, FIRE_RADIUS, "", "detonate", Color.BLACK, font, 16)
+		_draw_button(l.jump, SMALL_RADIUS, "", "drone_up", Color.BLACK, font, 11)
+		_draw_button(l.crouch, SMALL_RADIUS, "", "drone_down", Color.BLACK, font, 12)
+		_draw_button(l.drone, SMALL_RADIUS, "", "return", Color.BLACK, font, 10)
 		return
 
-	_draw_button(l.fire, FIRE_RADIUS, "ОГОНЬ", "fire", Color(0.80, 0.18, 0.12, 0.50), font, 18)
-	_draw_button(l.reload, SMALL_RADIUS, "ПЕРЕЗАР.", "reload", Color(0.12, 0.32, 0.55, 0.48), font, 12)
-	_draw_button(l.aim, SMALL_RADIUS, "ПРИЦЕЛ", "aim", Color(0.22, 0.38, 0.28, 0.48), font, 12)
-	_draw_button(l.crouch, SMALL_RADIUS, "ПРИСЕСТЬ", "crouch", Color(0.20, 0.34, 0.20, 0.48), font, 11)
-	_draw_button(l.jump, SMALL_RADIUS, "ПРЫЖОК", "jump", Color(0.34, 0.30, 0.12, 0.48), font, 12)
-	_draw_button(l.grenade, SMALL_RADIUS, "ГРАНАТА", "grenade", Color(0.55, 0.35, 0.12, 0.48), font, 11)
-	_draw_button(l.smoke, SMALL_RADIUS, "ДЫМ", "smoke", Color(0.35, 0.38, 0.42, 0.48), font, 12)
-	_draw_button(l.heal, SMALL_RADIUS, "БИНТ", "heal", Color(0.18, 0.45, 0.45, 0.48), font, 12)
-	_draw_button(l.peek_left, SMALL_RADIUS, "ВЛЕВО", "peek_left", Color(0.24, 0.34, 0.45, 0.50), font, 10)
-	_draw_button(l.peek_right, SMALL_RADIUS, "ВПРАВО", "peek_right", Color(0.24, 0.34, 0.45, 0.50), font, 9)
-	_draw_button(l.weapon, SMALL_RADIUS, "ОРУЖИЕ", "weapon", Color(0.50, 0.36, 0.14, 0.52), font, 10)
+	_draw_button(l.fire, FIRE_RADIUS, "", "fire", Color.BLACK, font, 18)
+	_draw_button(l.reload, SMALL_RADIUS, "", "reload", Color.BLACK, font, 12)
+	_draw_button(l.aim, SMALL_RADIUS, "", "aim", Color.BLACK, font, 12)
+	_draw_button(l.crouch, SMALL_RADIUS, "", "crouch", Color.BLACK, font, 11)
+	_draw_button(l.jump, SMALL_RADIUS, "", "jump", Color.BLACK, font, 12)
+	_draw_button(l.grenade, SMALL_RADIUS, "", "grenade", Color.BLACK, font, 11)
+	_draw_button(l.smoke, SMALL_RADIUS, "", "smoke", Color.BLACK, font, 12)
+	_draw_button(l.heal, SMALL_RADIUS, "", "heal", Color.BLACK, font, 12)
+	_draw_button(l.peek_left, SMALL_RADIUS, "", "peek_left", Color.BLACK, font, 10)
+	_draw_button(l.peek_right, SMALL_RADIUS, "", "peek_right", Color.BLACK, font, 9)
+	_draw_button(l.weapon, SMALL_RADIUS, "", "weapon", Color.BLACK, font, 10)
 	if _interact_visible:
-		_draw_button(l.interact, SMALL_RADIUS, "ВЗЯТЬ", "interact", Color(0.20, 0.48, 0.30, 0.62), font, 11)
+		_draw_button(l.interact, SMALL_RADIUS, "", "interact", Color.BLACK, font, 11)
 	if _drone_visible:
-		_draw_button(l.drone, SMALL_RADIUS, "ДРОН", "drone", Color(0.42, 0.22, 0.55, 0.62), font, 11)
+		_draw_button(l.drone, SMALL_RADIUS, "", "drone", Color.BLACK, font, 11)
+	_draw_button(l.sidearm, SMALL_RADIUS, "", "sidearm", Color.BLACK, font, 11)
+	_draw_button(l.shovel, SMALL_RADIUS, "", "shovel", Color.BLACK, font, 11)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
-	var active: bool = _aim_on if id == "aim" else bool(_active.get(id, false))
-	var fill := color.lightened(0.25) if active else color
-	draw_circle(center, radius, fill)
-	draw_arc(center, radius, 0.0, TAU, 64, Color(1, 1, 1, 0.40 if active else 0.28), 2.5, true)
-	var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-	draw_string(
-		font,
-		center + Vector2(-text_size.x * 0.5, font_size * 0.35),
-		label,
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		font_size,
-		Color(1, 1, 1, 0.95)
-	)
+	var state_id := id
+	match id:
+		"detonate": state_id = "fire"
+		"drone_up": state_id = "jump"
+		"drone_down": state_id = "crouch"
+		"return": state_id = "drone"
+	var active: bool = _aim_on if state_id == "aim" else bool(_active.get(state_id, false))
+	draw_circle(center, radius, Color(0.012, 0.016, 0.019, 0.82))
+	draw_arc(center, radius - 1.0, 0.0, TAU, 56, Color(0.88, 0.92, 0.93, 0.92 if active else 0.56), 2.5 if active else 1.6, true)
+	_draw_icon(center, radius * 0.48, id)
+
+func _draw_icon(center: Vector2, size: float, id: String) -> void:
+	var white := Color(0.94, 0.96, 0.96, 0.98)
+	var thin := maxf(1.8, size * 0.10)
+	match id:
+		"fire", "detonate":
+			draw_circle(center, size * 0.18, white)
+			for angle in [0.0, PI * 0.5, PI, PI * 1.5]:
+				var direction := Vector2.RIGHT.rotated(angle)
+				draw_line(center + direction * size * 0.42, center + direction * size * 0.78, white, thin, true)
+		"aim":
+			draw_arc(center, size * 0.32, 0.0, TAU, 32, white, thin, true)
+			draw_line(center + Vector2(-size * 0.8, 0), center + Vector2(-size * 0.38, 0), white, thin, true)
+			draw_line(center + Vector2(size * 0.38, 0), center + Vector2(size * 0.8, 0), white, thin, true)
+			draw_line(center + Vector2(0, -size * 0.8), center + Vector2(0, -size * 0.38), white, thin, true)
+			draw_line(center + Vector2(0, size * 0.38), center + Vector2(0, size * 0.8), white, thin, true)
+		"reload":
+			draw_rect(Rect2(center + Vector2(-size * 0.35, -size * 0.58), Vector2(size * 0.7, size * 1.08)), white, false, thin)
+			draw_line(center + Vector2(-size * 0.2, -size * 0.28), center + Vector2(size * 0.2, -size * 0.28), white, thin, true)
+			draw_line(center + Vector2(-size * 0.2, size * 0.02), center + Vector2(size * 0.2, size * 0.02), white, thin, true)
+		"jump", "drone_up":
+			_draw_arrow(center, Vector2.UP, size, white, thin)
+		"drone_down":
+			_draw_arrow(center, Vector2.DOWN, size, white, thin)
+		"crouch":
+			draw_circle(center + Vector2(-size * 0.18, -size * 0.42), size * 0.17, white)
+			draw_line(center + Vector2(-size * 0.08, -size * 0.22), center + Vector2(size * 0.32, size * 0.06), white, thin, true)
+			draw_line(center + Vector2(size * 0.16, -size * 0.02), center + Vector2(-size * 0.12, size * 0.42), white, thin, true)
+			draw_line(center + Vector2(size * 0.22, size * 0.02), center + Vector2(size * 0.54, size * 0.40), white, thin, true)
+		"grenade":
+			draw_circle(center, size * 0.38, white, false, thin)
+			draw_rect(Rect2(center + Vector2(-size * 0.1, -size * 0.62), Vector2(size * 0.22, size * 0.18)), white, true)
+			draw_line(center + Vector2(size * 0.1, -size * 0.56), center + Vector2(size * 0.42, -size * 0.72), white, thin, true)
+		"smoke":
+			draw_circle(center + Vector2(-size * 0.27, 0), size * 0.22, white, false, thin)
+			draw_circle(center, size * 0.32, white, false, thin)
+			draw_circle(center + Vector2(size * 0.28, size * 0.05), size * 0.2, white, false, thin)
+			draw_line(center + Vector2(-size * 0.34, size * 0.26), center + Vector2(size * 0.38, size * 0.26), white, thin, true)
+		"heal":
+			draw_rect(Rect2(center + Vector2(-size * 0.16, -size * 0.62), Vector2(size * 0.32, size * 1.24)), white, true)
+			draw_rect(Rect2(center + Vector2(-size * 0.62, -size * 0.16), Vector2(size * 1.24, size * 0.32)), white, true)
+		"peek_left":
+			_draw_arrow(center, Vector2.LEFT, size, white, thin)
+		"peek_right":
+			_draw_arrow(center, Vector2.RIGHT, size, white, thin)
+		"weapon":
+			draw_line(center + Vector2(-size * 0.62, size * 0.02), center + Vector2(size * 0.52, size * 0.02), white, thin * 1.4, true)
+			draw_line(center + Vector2(-size * 0.42, -size * 0.20), center + Vector2(size * 0.48, -size * 0.20), white, thin, true)
+			draw_line(center + Vector2(size * 0.12, size * 0.04), center + Vector2(-size * 0.02, size * 0.5), white, thin, true)
+			draw_line(center + Vector2(-size * 0.62, -size * 0.05), center + Vector2(-size * 0.62, size * 0.16), white, thin, true)
+		"sidearm":
+			var slide := PackedVector2Array([
+				center + Vector2(-size * 0.56, -size * 0.28),
+				center + Vector2(size * 0.48, -size * 0.28),
+				center + Vector2(size * 0.62, -size * 0.08),
+				center + Vector2(-size * 0.48, -size * 0.08),
+			])
+			draw_colored_polygon(slide, white)
+			draw_line(center + Vector2(-size * 0.30, -size * 0.05), center + Vector2(-size * 0.18, size * 0.56), white, thin * 1.8, true)
+			draw_line(center + Vector2(-size * 0.18, size * 0.56), center + Vector2(size * 0.12, size * 0.56), white, thin * 1.8, true)
+			draw_line(center + Vector2(size * 0.12, size * 0.56), center + Vector2(size * 0.22, -size * 0.05), white, thin * 1.8, true)
+			draw_line(center + Vector2(-size * 0.08, -size * 0.38), center + Vector2(size * 0.18, -size * 0.38), white, thin, true)
+		"interact":
+			draw_rect(Rect2(center + Vector2(-size * 0.45, size * 0.02), Vector2(size * 0.9, size * 0.45)), white, false, thin)
+			_draw_arrow(center + Vector2(0, -size * 0.12), Vector2.DOWN, size * 0.48, white, thin)
+		"drone", "return":
+			for offset in [Vector2(-0.42, -0.42), Vector2(0.42, -0.42), Vector2(-0.42, 0.42), Vector2(0.42, 0.42)]:
+				draw_line(center, center + offset * size, white, thin, true)
+				draw_circle(center + offset * size, size * 0.20, white, false, thin)
+			draw_rect(Rect2(center - Vector2(size * 0.18, size * 0.18), Vector2(size * 0.36, size * 0.36)), white, true)
+		"shovel":
+			draw_line(center + Vector2(-size * 0.1, size * 0.52), center + Vector2(size * 0.2, -size * 0.24), white, thin * 1.4, true)
+			draw_line(center + Vector2(size * 0.2, -size * 0.24), center + Vector2(size * 0.42, -size * 0.62), white, thin * 1.4, true)
+			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -size * 0.72), center + Vector2(size * 0.46, -size * 0.58), center + Vector2(size * 0.30, -size * 0.30)]), white)
+
+func _draw_arrow(center: Vector2, direction: Vector2, size: float, color: Color, width: float) -> void:
+	var tip := center + direction * size * 0.62
+	var tail := center - direction * size * 0.50
+	draw_line(tail, tip, color, width * 1.4, true)
+	var side := Vector2(-direction.y, direction.x) * size * 0.34
+	draw_line(tip, tip - direction * size * 0.33 + side, color, width * 1.4, true)
+	draw_line(tip, tip - direction * size * 0.33 - side, color, width * 1.4, true)

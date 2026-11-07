@@ -12,6 +12,7 @@ const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -36,6 +37,7 @@ const RESERVE_START := 150
 const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
+const SIDEARM_INDEX := 3 # M1911 is carried as a backup sidearm by every role.
 
 const WEAPON_DEFS := [
 	{"id": "ak47", "name": "AK-47", "mag": 30, "reserve": 150, "damage": 45, "interval": 0.10, "reload": 2.2, "spread": 0.006, "pellets": 1, "range": 140.0, "muzzle_velocity": 715.0, "pitch": 1.0},
@@ -54,12 +56,16 @@ const SOLDIER_LAYER_MASK := 1 << 2
 const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
 var camera: Camera3D
+var audio_listener: AudioListener3D
+var indoor_factor := 0.0
+var _acoustic_timer := 0.0
 var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var weapon_root: Node3D
 var weapon_mount: Node3D
 var weapon_muzzle: Node3D
 var drone_controller_anchor: Marker3D
+var drone_controller_view: Node3D
 var weapon_base := Vector3.ZERO
 var weapon_aim_position := Vector3(0.0, -0.075, -0.48)
 var muzzle_flash: MeshInstance3D
@@ -74,6 +80,10 @@ var lean_amount := 0.0
 var mobile_lean_left := false
 var mobile_lean_right := false
 var current_weapon_index := 0
+var last_primary_weapon_index := 0
+var is_shovel_equipped := false
+var carried_soil := 0
+var shovel_action_cooldown := 0.0
 var ammo_by_weapon: Array[int] = []
 var reserve_by_weapon: Array[int] = []
 var nearby_field_pickups: Array[Node3D] = []
@@ -176,6 +186,10 @@ func _build_player() -> void:
 	camera.fov = GameSettings.fov
 	camera.current = true
 	add_child(camera)
+	audio_listener = AudioListener3D.new()
+	audio_listener.name = "PlayerAudioListener"
+	camera.add_child(audio_listener)
+	audio_listener.make_current()
 
 func _build_weapon() -> void:
 	drone_controller_anchor = Marker3D.new()
@@ -201,12 +215,21 @@ func _equip_weapon_visual() -> void:
 		child.queue_free()
 	muzzle_flash = null
 	weapon_muzzle = null
-	var weapon_id: String = str(_weapon_data().id)
+	var weapon_id: String = "entrenching_shovel" if is_shovel_equipped else str(_weapon_data().id)
 	var model: Node3D = WEAPON_MESHES.make_weapon(weapon_id)
 	if model == null:
 		push_error("FRONTLINE: cannot build weapon model " + weapon_id)
 		return
 	weapon_mount.add_child(model)
+	if is_shovel_equipped:
+		weapon_base = Vector3(0.10, -0.13, -0.46)
+		weapon_aim_position = Vector3(0.02, -0.08, -0.45)
+		left_arm_base = Vector3(-0.02, -0.04, -0.24)
+		if left_arm_pivot != null:
+			left_arm_pivot.position = left_arm_base
+		if wrist_right_marker != null:
+			wrist_right_marker.position = Vector3(0.01, -0.05, 0.03)
+		return
 	var muzzle_anchor := model.get_node_or_null("Muzzle") as Node3D
 	if muzzle_anchor == null:
 		push_error("FRONTLINE: weapon has no muzzle marker " + weapon_id)
@@ -319,6 +342,7 @@ func _init_weapon_inventory() -> void:
 			medkits = 2
 
 	current_weapon_index = role_primary_weapon_index
+	last_primary_weapon_index = role_primary_weapon_index
 	ammo = ammo_by_weapon[current_weapon_index]
 	reserve_ammo = reserve_by_weapon[current_weapon_index]
 
@@ -330,7 +354,14 @@ func _store_weapon_ammo() -> void:
 	reserve_by_weapon[current_weapon_index] = reserve_ammo
 
 func _switch_weapon(index: int) -> void:
-	if is_dead or index < 0 or index >= WEAPON_DEFS.size() or index == current_weapon_index:
+	if is_dead or index < 0 or index >= WEAPON_DEFS.size():
+		return
+	var was_shovel_equipped := is_shovel_equipped
+	is_shovel_equipped = false
+	if index == current_weapon_index:
+		if was_shovel_equipped:
+			_equip_weapon_visual()
+			_refresh_ammo()
 		return
 	_store_weapon_ammo()
 	is_reloading = false
@@ -339,6 +370,8 @@ func _switch_weapon(index: int) -> void:
 	_set_aiming(false)
 	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
 		mobile_controls.call("reset_aim")
+	if index != SIDEARM_INDEX:
+		last_primary_weapon_index = index
 	current_weapon_index = index
 	ammo = ammo_by_weapon[index]
 	reserve_ammo = reserve_by_weapon[index]
@@ -357,6 +390,35 @@ func _cycle_weapon(direction: int) -> void:
 		next_index = 0
 	_switch_weapon(next_index)
 
+func _toggle_sidearm() -> void:
+	if is_dead or input_locked:
+		return
+	if is_shovel_equipped:
+		is_shovel_equipped = false
+		_equip_weapon_visual()
+	if current_weapon_index == SIDEARM_INDEX:
+		_switch_weapon(last_primary_weapon_index)
+	else:
+		last_primary_weapon_index = current_weapon_index
+		_switch_weapon(SIDEARM_INDEX)
+
+func _toggle_shovel() -> void:
+	if is_dead or input_locked or active_drone != null:
+		return
+	is_shovel_equipped = not is_shovel_equipped
+	is_reloading = false
+	_set_aiming(false)
+	if mobile_controls != null:
+		mobile_controls.reset_aim()
+	_equip_weapon_visual()
+	_refresh_ammo()
+
+func _on_shovel_button() -> void:
+	if is_shovel_equipped and carried_soil > 0:
+		_use_shovel_action(true)
+	else:
+		_toggle_shovel()
+
 func _build_body() -> void:
 	var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	var body = PLAYER_BODY.new()
@@ -365,6 +427,26 @@ func _build_body() -> void:
 	add_child(body)
 	body.setup(team.to_upper().contains("RED"), wrist_left_marker, wrist_right_marker)
 	player_body = body
+	if player_role == "RADIO_OPERATOR":
+		drone_controller_view = WEAPON_MESHES.make_weapon("drone_controller")
+		if drone_controller_view != null:
+			drone_controller_view.name = "RadioController"
+			drone_controller_view.position = Vector3(0.20, 1.36, -0.11)
+			drone_controller_view.visible = false
+			player_body.add_child(drone_controller_view)
+
+func set_drone_controller_feed(feed: Texture2D) -> void:
+	if drone_controller_view == null or not is_instance_valid(drone_controller_view):
+		return
+	var screen := drone_controller_view.get_node_or_null("Screen") as MeshInstance3D
+	if screen == null:
+		return
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = feed
+	material.albedo_color = Color.WHITE
+	material.roughness = 0.35
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	screen.material_override = material
 
 func _build_view_hands() -> void:
 	wrist_right_marker = Node3D.new()
@@ -443,20 +525,42 @@ func set_input_locked(locked: bool) -> void:
 			death_screen.visible = false
 
 func _build_audio() -> void:
-	sfx_shot = _make_sfx()
-	sfx_empty = _make_sfx()
-	sfx_reload_out = _make_sfx()
-	sfx_reload_in = _make_sfx()
-	sfx_ui = _make_sfx()
-	sfx_footstep = _make_sfx()
-	sfx_hit = _make_sfx()
-	sfx_kill = _make_sfx()
+	sfx_shot = _make_sfx(COMBAT_AUDIO.BUS_COMBAT_DIRECT)
+	sfx_empty = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_reload_out = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_reload_in = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_ui = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_footstep = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_hit = _make_sfx(COMBAT_AUDIO.BUS_SFX)
+	sfx_kill = _make_sfx(COMBAT_AUDIO.BUS_SFX)
 
-func _make_sfx() -> AudioStreamPlayer:
+func _make_sfx(bus_name: StringName = &"SFX") -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
 	p.max_polyphony = 4
+	p.bus = bus_name
 	add_child(p)
 	return p
+
+func _update_acoustics(delta: float) -> void:
+	_acoustic_timer -= delta
+	if _acoustic_timer <= 0.0:
+		_acoustic_timer = 0.25 # 4 раза в секунду — оптимально для 60 FPS на мобилках
+		if camera != null and is_inside_tree():
+			var world_3d := get_world_3d()
+			var under_roof := COMBAT_AUDIO.is_indoors(world_3d, camera.global_position, 8.5)
+			var target_factor := 1.0 if under_roof else 0.0
+			indoor_factor = lerpf(indoor_factor, target_factor, 0.45)
+
+func _play_player_shot_sfx(wid: String, default_pitch: float) -> void:
+	var prof: Dictionary = COMBAT_AUDIO.WEAPON_PROFILES.get(wid, {})
+	var pitch: float = float(prof.get("pitch", default_pitch)) * randf_range(0.96, 1.04)
+	var vol: float = float(prof.get("vol", -2.0))
+	if indoor_factor > 0.35:
+		vol += indoor_factor * 1.5
+		sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
+	else:
+		sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
+	_play_sfx(sfx_shot, SFX_SHOT, vol, pitch)
 
 func _play_sfx(player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
 	if player == null or stream == null:
@@ -491,6 +595,10 @@ func _build_mobile_controls() -> void:
 	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
 	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
 	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
+	if mobile_controls.has_signal("sidearm_pressed"):
+		mobile_controls.sidearm_pressed.connect(_toggle_sidearm)
+	if mobile_controls.has_signal("shovel_pressed"):
+		mobile_controls.shovel_pressed.connect(_on_shovel_button)
 	mobile_controls.interact_pressed.connect(_interact_with_pickup)
 	if mobile_controls.has_signal("drone_pressed"):
 		mobile_controls.drone_pressed.connect(_launch_drone)
@@ -736,7 +844,9 @@ func _launch_drone() -> void:
 	drone.returned.connect(_on_drone_returned)
 	drone.detonated.connect(_on_drone_detonated)
 	active_drone = drone
-	drone.camera.current = true
+	camera.current = false
+	if drone_controller_view != null:
+		drone_controller_view.visible = true
 	if mobile_controls != null:
 		mobile_controls.set_drone_mode(true)
 	if not OS.has_feature("mobile"):
@@ -752,6 +862,8 @@ func _on_drone_detonated(_position: Vector3) -> void:
 func _end_drone_control() -> void:
 	active_drone = null
 	drone_vertical_input = 0.0
+	if drone_controller_view != null and is_instance_valid(drone_controller_view):
+		drone_controller_view.visible = false
 	if camera != null and is_instance_valid(camera):
 		camera.current = true
 	if mobile_controls != null:
@@ -807,14 +919,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_shoot()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		_set_aiming(not aiming)
+		if is_shovel_equipped:
+			_use_shovel_action(true)
+		else:
+			_set_aiming(not aiming)
 	elif event is InputEventMouseButton and event.pressed and not OS.has_feature("mobile"):
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_cycle_weapon(-1)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_cycle_weapon(1)
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_R:
+		if event.keycode == KEY_9:
+			_toggle_sidearm()
+		elif event.keycode == KEY_0 or event.keycode == KEY_B:
+			_toggle_shovel()
+		elif event.keycode == KEY_R:
 			_reload()
 		elif event.keycode == KEY_C:
 			_down_action()
@@ -854,9 +973,11 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	_refresh_pickup_prompt()
+	_update_acoustics(delta)
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
+	shovel_action_cooldown = maxf(0.0, shovel_action_cooldown - delta)
 	if crosshair != null:
 		var is_kar98k_scope := aiming and str(_weapon_data().id) == "kar98k"
 		if crosshair.has_method("set_sniper_scope"):
@@ -974,6 +1095,8 @@ func _physics_process(delta: float) -> void:
 	var current_speed := SPEED
 	if (Input.is_key_pressed(KEY_SHIFT) or sprint_hold > 0.7) and stance == 0:
 		current_speed = SPRINT_SPEED
+	if player_role == "ASSAULT" and current_speed == SPRINT_SPEED:
+		current_speed *= 1.08
 	if stance == 1:
 		current_speed *= 0.55
 	elif stance == 2:
@@ -1054,6 +1177,9 @@ func _up_action() -> void:
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
+	if is_shovel_equipped:
+		_use_shovel_action(false)
+		return
 	if is_healing:
 		_cancel_healing()
 	if is_reloading or fire_cooldown > 0.0 or is_dead or input_locked:
@@ -1141,6 +1267,47 @@ func _shoot() -> void:
 			self
 		)
 
+func _shovel_target(ground: Node3D) -> Vector3:
+	var forward := -camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.001:
+		return Vector3.INF
+	forward = forward.normalized()
+	var guess := global_position + forward * 1.45
+	guess = ground.call("clamp_to_map", guess)
+	var floor_y := float(ground.call("surface_height_at", guess))
+	var ray_from := camera.global_position
+	var ray_to := Vector3(guess.x, floor_y - 0.25, guess.z)
+	var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to)
+	query.collision_mask = WORLD_LAYER_MASK
+	query.exclude = [get_rid()]
+	query.collide_with_areas = false
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or hit.get("collider") != ground:
+		return Vector3.INF
+	return hit.position
+
+func _use_shovel_action(place_soil: bool) -> void:
+	if not is_shovel_equipped or is_dead or input_locked or shovel_action_cooldown > 0.0:
+		return
+	var ground := get_tree().get_first_node_in_group("diggable_ground") as Node3D
+	if ground == null:
+		return
+	var target := _shovel_target(ground)
+	if target == Vector3.INF:
+		return
+	shovel_action_cooldown = 0.55
+	if place_soil:
+		if carried_soil <= 0 or not bool(ground.call("place_soil_at", target)):
+			return
+		carried_soil -= 1
+	else:
+		if carried_soil >= 6 or not bool(ground.call("dig_at", target)):
+			return
+		carried_soil += 1
+	_refresh_ammo()
+	_refresh_equipment()
+
 func _spawn_ballistic_bullet(origin: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node) -> bool:
 	var world := get_parent()
 	if world == null:
@@ -1169,6 +1336,8 @@ func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _regio
 			world.call("add_kill")
 
 func _reload() -> void:
+	if is_shovel_equipped:
+		return
 	var weapon := _weapon_data()
 	if is_reloading or is_healing or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
 		return
@@ -1213,7 +1382,7 @@ func _use_heal() -> void:
 	heal_target = null
 	if player_role == "MEDIC":
 		var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
-		var nearest_dist := 4.0
+		var nearest_dist := 6.5
 		for bot in get_tree().get_nodes_in_group("bots"):
 			if bot == null or not is_instance_valid(bot) or bool(bot.get("is_dead")):
 				continue
@@ -1249,8 +1418,12 @@ func _cancel_healing() -> void:
 func _refresh_ammo() -> void:
 	if ammo_label == null:
 		return
+	if is_shovel_equipped:
+		ammo_label.text = "ЛОПАТА   •   ГРУНТ %d / 6" % carried_soil
+		return
 	var weapon := _weapon_data()
-	ammo_label.text = "%d  %s   %d / %d" % [current_weapon_index + 1, str(weapon.name), ammo, reserve_ammo]
+	var slot := "ЗАПАСНОЙ" if current_weapon_index == SIDEARM_INDEX else str(current_weapon_index + 1)
+	ammo_label.text = "%s  %s   %d / %d" % [slot, str(weapon.name), ammo, reserve_ammo]
 
 func _refresh_health() -> void:
 	if health_label != null:
@@ -1260,19 +1433,22 @@ func _refresh_health() -> void:
 
 func _refresh_equipment() -> void:
 	if equip_label != null:
-		var role_names := {"ASSAULT": "ШТУРМОВИК", "MEDIC": "МЕДИК", "SNIPER": "СНАЙПЕР", "ANTI_TANK": "ПТ", "RADIO_OPERATOR": "РАДИСТ"}
-		var role_text := str(role_names.get(player_role, "ШТУРМОВИК"))
-		var drone_text := "   •   ДРОН: ГОТОВ" if player_role == "RADIO_OPERATOR" and drone_charge_available else ("   •   ДРОН: ИСПОЛЬЗОВАН" if player_role == "RADIO_OPERATOR" else "")
-		equip_label.text = "%s   •   ГРАН: %d   •   ДЫМ: %d   •   БИНТЫ: %d%s" % [role_text, grenades, smoke_grenades, medkits, drone_text]
+		var role_names := {"ASSAULT": "ШТУРМ", "MEDIC": "МЕДИК", "SNIPER": "СНАЙПЕР", "ANTI_TANK": "ПТ", "RADIO_OPERATOR": "РАДИСТ"}
+		var role_text := str(role_names.get(player_role, "ШТУРМ"))
+		var drone_text := " • FPV ГОТОВ" if player_role == "RADIO_OPERATOR" and drone_charge_available else (" • FPV ИСПОЛЬЗОВАН" if player_role == "RADIO_OPERATOR" else "")
+		var soil_text := " • ГРУНТ:%d" % carried_soil if carried_soil > 0 else ""
+		equip_label.text = "%s • ГР:%d • ДЫМ:%d • БИНТ:%d%s%s" % [role_text, grenades, smoke_grenades, medkits, drone_text, soil_text]
 
 func register_field_pickup(pickup: Node3D) -> void:
 	if is_instance_valid(pickup) and not nearby_field_pickups.has(pickup):
 		nearby_field_pickups.append(pickup)
 		_refresh_pickup_prompt()
+	_update_acoustics(delta)
 
 func unregister_field_pickup(pickup: Node3D) -> void:
 	nearby_field_pickups.erase(pickup)
 	_refresh_pickup_prompt()
+	_update_acoustics(delta)
 
 func _nearest_field_pickup() -> Node3D:
 	var nearest: Node3D = null
@@ -1308,6 +1484,7 @@ func _interact_with_pickup() -> void:
 	if bool(pickup.call("collect", self)):
 		nearby_field_pickups.erase(pickup)
 		_refresh_pickup_prompt()
+	_update_acoustics(delta)
 		_play_sfx(sfx_ui, SFX_UI, -2.0, 1.12)
 
 func can_take_field_ammo(amount: int) -> bool:
@@ -1481,6 +1658,10 @@ func respawn() -> void:
 			medkits = 2
 			drone_charge_available = false
 
+	is_shovel_equipped = false
+	carried_soil = 0
+	shovel_action_cooldown = 0.0
+	last_primary_weapon_index = current_weapon_index
 	ammo = ammo_by_weapon[current_weapon_index]
 	reserve_ammo = reserve_by_weapon[current_weapon_index]
 	_equip_weapon_visual()

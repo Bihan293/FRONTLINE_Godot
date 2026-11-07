@@ -14,6 +14,7 @@ const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
 const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
+const DIGGABLE_GROUND_SCRIPT = preload("res://scripts/diggable_ground.gd")
 
 const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
@@ -173,7 +174,11 @@ func _build_world() -> void:
 	# Построение блоков карты
 	var layout = _layout()
 	for box in layout.boxes():
-		_build_box(box)
+		var kind := str(box.get("kind", ""))
+		if kind == "terrain" or kind == "ground":
+			_build_diggable_ground(box)
+		else:
+			_build_box(box)
 
 	# Спавн взрывных тактических бочек с горючим
 	for barrel_pos in layout.barrels():
@@ -227,6 +232,13 @@ func _build_box(data: Dictionary) -> void:
 	if not solid:
 		inst.position = pos
 	parent.add_child(inst)
+
+func _build_diggable_ground(data: Dictionary) -> void:
+	var size: Vector3 = data.size
+	var ground = DIGGABLE_GROUND_SCRIPT.new()
+	ground.configure(Vector2(size.x, size.z), 2.0, _mat(data.color, true))
+	ground.position = data.pos + Vector3(0.0, size.y * 0.5, 0.0)
+	add_child(ground)
 
 func _spawn_player() -> void:
 	player = CharacterBody3D.new()

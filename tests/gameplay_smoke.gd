@@ -13,6 +13,7 @@ var _failures: Array[String] = []
 func _ready() -> void:
 	await get_tree().process_frame
 	_test_weapon_definitions()
+	await _test_diggable_ground()
 	_test_minimap_alignment()
 	_test_combat_roles_and_drone()
 	await _test_pause_freezes_bots()
@@ -76,6 +77,10 @@ func _test_weapon_definitions() -> void:
 	var definitions: Array = constants.get("WEAPON_DEFS", [])
 	_check(definitions.size() >= 5, "arsenal has fewer than five weapons")
 	var seen: Dictionary = {}
+	var sidearm_index := int(constants.get("SIDEARM_INDEX", -1))
+	_check(sidearm_index >= 0 and sidearm_index < definitions.size(), "backup sidearm index is invalid")
+	if sidearm_index >= 0 and sidearm_index < definitions.size():
+		_check(str(definitions[sidearm_index].get("id", "")) == "m1911", "backup sidearm is not the M1911")
 	for definition in definitions:
 		var weapon_id := str(definition["id"])
 		_check(not weapon_id.is_empty(), "weapon with empty id")
@@ -91,6 +96,43 @@ func _test_weapon_definitions() -> void:
 		if model != null:
 			model.free()
 	_check(seen.size() == definitions.size(), "weapon ids are not unique")
+	var shovel: Node3D = WEAPON_MESHES.make_weapon("entrenching_shovel")
+	_check(shovel != null, "entrenching shovel mesh missing")
+	if shovel != null:
+		_check(shovel.get_node_or_null("Muzzle") == null, "shovel model has a weapon muzzle")
+		shovel.free()
+
+func _test_diggable_ground() -> void:
+	var ground_script: Script = load("res://scripts/diggable_ground.gd")
+	_check(ground_script != null, "diggable ground script missing")
+	if ground_script == null:
+		return
+	var ground = ground_script.new()
+	ground.configure(Vector2(32.0, 32.0), 2.0, StandardMaterial3D.new())
+	add_child(ground)
+	await get_tree().physics_frame
+	var center := Vector3.ZERO
+	_check(ground.dig_at(center), "shovel could not dig a fresh ground cell")
+	_check(ground.cell_level_at(center) == -1, "dug cell did not lower by one level")
+	_check(is_equal_approx(ground.surface_height_at(center), -0.18), "dug surface height is incorrect")
+	_check(ground.dig_at(center), "shovel could not deepen an existing trench")
+	_check(not ground.dig_at(center), "trench exceeded the configured depth")
+	_check(ground.place_soil_at(center), "collected soil could not form a berm")
+	_check(ground.cell_level_at(center) == -1, "berm did not restore the expected ground level")
+	_check(ground.place_soil_at(center), "berm could not be raised above original terrain")
+	for _i in range(4):
+		_check(ground.place_soil_at(center), "berm could not be raised with another soil layer")
+	_check(not ground.place_soil_at(center), "berm exceeded its configured height")
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	var query := PhysicsRayQueryParameters3D.create(Vector3(0.0, 2.0, 0.0), Vector3(0.0, -2.0, 0.0))
+	query.collision_mask = 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	_check(not hit.is_empty() and hit.get("collider") == ground, "edited terrain is missing from physics collision")
+	if not hit.is_empty():
+		_check(absf(float(hit.position.y) - 0.72) < 0.02, "terrain collision did not follow the berm height")
+	ground.queue_free()
+	await get_tree().process_frame
 
 func _test_minimap_alignment() -> void:
 	var player := Node3D.new()
@@ -140,6 +182,17 @@ func _test_pause_freezes_bots() -> void:
 	if player == null:
 		battlefield.queue_free()
 		return
+	var original_weapon := int(player.get("current_weapon_index"))
+	player.call("_toggle_sidearm")
+	_check(int(player.get("current_weapon_index")) == 3, "quick sidearm toggle did not equip the M1911")
+	player.call("_toggle_sidearm")
+	_check(int(player.get("current_weapon_index")) == original_weapon, "quick sidearm toggle did not restore the primary weapon")
+	player.call("_toggle_shovel")
+	_check(bool(player.get("is_shovel_equipped")), "shovel toggle did not equip the shovel")
+	player.call("_use_shovel_action", false)
+	_check(int(player.get("carried_soil")) == 1, "equipped shovel did not dig soil from the map")
+	player.call("_toggle_shovel")
+	_check(not bool(player.get("is_shovel_equipped")), "shovel toggle did not restore the firearm")
 	player.call("open_pause_menu")
 	_check(get_tree().paused, "pause did not engage")
 

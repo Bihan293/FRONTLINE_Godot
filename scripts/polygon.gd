@@ -2,6 +2,7 @@ extends Node3D
 
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const DUMMY_SCRIPT = preload("res://scripts/dummy.gd")
+const DIGGABLE_GROUND_SCRIPT = preload("res://scripts/diggable_ground.gd")
 const LAYOUT = preload("res://scripts/map_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 
@@ -121,7 +122,10 @@ func _build_world() -> void:
     add_child(fill)
 
     for box in LAYOUT.boxes():
-        _build_box(box)
+        if str(box.get("kind", "")) == "floor":
+            _build_diggable_ground(box)
+        else:
+            _build_box(box)
 
     for board in LAYOUT.target_boards():
         _build_target_center(board)
@@ -164,6 +168,13 @@ func _build_box(data: Dictionary) -> void:
     if not solid:
         inst.position = pos
     parent.add_child(inst)
+
+func _build_diggable_ground(data: Dictionary) -> void:
+    var size: Vector3 = data.size
+    var ground = DIGGABLE_GROUND_SCRIPT.new()
+    ground.configure(Vector2(size.x, size.z), 2.0, _mat(data.color, true))
+    ground.position = data.pos + Vector3(0.0, size.y * 0.5, 0.0)
+    add_child(ground)
 
 func _build_target_center(pos: Vector3) -> void:
     var disc := MeshInstance3D.new()

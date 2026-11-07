@@ -97,9 +97,28 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			_add_cylinder(root, "StickL", Vector3(-0.09, -0.01, -0.16), 0.012, 0.035, dark)
 			_add_cylinder(root, "StickR", Vector3(0.09, -0.01, -0.16), 0.012, 0.035, dark)
 			muzzle_z = -0.32
+		"entrenching_shovel":
+			_add_cylinder_ex(root, "WoodShaft", Vector3(0.0, -0.055, -0.18), 0.017, 0.014, 0.62, wood, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "GripCap", Vector3(0.0, -0.055, 0.15), 0.038, 0.038, 0.12, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_box(root, "BladeSocket", Vector3(0.0, -0.055, -0.46), Vector3(0.07, 0.045, 0.10), steel)
+			var blade := MeshInstance3D.new()
+			blade.name = "SpadeBlade"
+			var blade_mesh := CylinderMesh.new()
+			blade_mesh.top_radius = 0.012
+			blade_mesh.bottom_radius = 0.11
+			blade_mesh.height = 0.24
+			blade_mesh.radial_segments = 4
+			blade_mesh.rings = 1
+			blade.mesh = blade_mesh
+			blade.rotation = Vector3(PI * 0.5, 0.0, PI * 0.25)
+			blade.position = Vector3(0.0, -0.055, -0.61)
+			blade.material_override = steel
+			root.add_child(blade)
 		_:
 			root.free()
 			return null
+	if weapon_id == "entrenching_shovel":
+		return root
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
 	muzzle.position = Vector3(0.0, 0.05, muzzle_z)
