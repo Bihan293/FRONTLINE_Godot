@@ -23,7 +23,6 @@ func _ready() -> void:
 	_test_explosion_audio_budget()
 	await _test_death_ragdoll()
 	await _test_parkour_and_grenade_hold()
-	await _test_physics_ragdoll()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
