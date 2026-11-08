@@ -1074,6 +1074,17 @@ func _on_look_delta(delta: Vector2) -> void:
 		active_drone.drone_yaw -= delta.x * TOUCH_SENS * 1.5
 		active_drone.drone_pitch = clampf(active_drone.drone_pitch - delta.y * TOUCH_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
 		return
+	# QA-sweep bugfix: в технике взгляд идёт через тот же accumulate-путь —
+	# иначе на мобильных камера не вращалась после посадки. Чувствительность
+	# понижена: тяжёлая техника/турель наводится медленнее оружия.
+	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
+		var turret_sense := TOUCH_SENS * 0.62 * GameSettings.sensitivity_scale(false)
+		yaw -= delta.x * turret_sense
+		var mount_touch_pitch := delta.y * turret_sense
+		if GameSettings.invert_y:
+			mount_touch_pitch = -mount_touch_pitch
+		pitch = clampf(pitch - mount_touch_pitch, -1.35, 1.35)
+		return
 	var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
 	var mount_factor := 0.62 if (mounted_vehicle != null and is_instance_valid(mounted_vehicle)) else 1.0
 	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor * mount_factor
@@ -1280,6 +1291,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
 		_process_mounted_vehicle(delta)
+		# QA-sweep bugfix: без применения взгляда камера не вращалась в технике.
+		_apply_look(delta)
 		return
 	if mounted_vehicle != null:
 		mounted_vehicle = null
@@ -1831,8 +1844,8 @@ func _spawn_ballistic_bullet(origin: Vector3, direction: Vector3, speed: float, 
 	if world.has_method("spawn_bullet_projectile"):
 		return bool(world.call("spawn_bullet_projectile", origin, direction, speed, damage, range_m, owner_name, owner_team, owner))
 	var bullet = BULLET_PROJECTILE_SCRIPT.new()
-	bullet.configure(origin, direction, speed, damage, range_m, owner_name, owner_team, owner)
 	world.add_child(bullet)
+	bullet.configure(origin, direction, speed, damage, range_m, owner_name, owner_team, owner)
 	return true
 
 func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _region: String) -> void:

@@ -608,8 +608,10 @@ func spawn_bullet_projectile(start_pos: Vector3, direction: Vector3, speed: floa
 	if get_tree().get_nodes_in_group("ballistic_bullets").size() >= MAX_ACTIVE_BULLETS:
 		return false
 	var bullet = BULLET_PROJECTILE_SCRIPT.new()
-	bullet.configure(start_pos, direction, speed, damage, range_m, owner_name, owner_team, owner, damage_to_player)
+	# QA-sweep: configure() выставляет global_position — только после add_child,
+	# иначе каждый выстрел пишет ERROR "!is_inside_tree()".
 	add_child(bullet)
+	bullet.configure(start_pos, direction, speed, damage, range_m, owner_name, owner_team, owner, damage_to_player)
 	return true
 
 func _spawn_reinforcement(team: String) -> void:

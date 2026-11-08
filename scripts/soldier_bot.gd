@@ -480,7 +480,10 @@ func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
 	var collider = hit.collider
 	if collider == target_actor:
 		return true
-	return collider is Area3D and collider.get_meta("owner_actor", null) == target_actor
+	if not (collider is Area3D) or not collider.has_meta("owner_actor"):
+		return false
+	# QA-sweep: guard против ERROR-спама get_meta на чужих Area3D без meta.
+	return collider.get_meta("owner_actor") == target_actor
 
 func _get_self_collision_rids() -> Array[RID]:
 	var rids: Array[RID] = [get_rid()]
@@ -847,8 +850,8 @@ func _fire_single_shot() -> void:
 		world.call("spawn_bullet_projectile", from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
 	elif world != null:
 		var bullet = BULLET_PROJECTILE_SCRIPT.new()
-		bullet.configure(from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
 		world.add_child(bullet)
+		bullet.configure(from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
 
 func _start_reload() -> void:
 	if is_reloading:
