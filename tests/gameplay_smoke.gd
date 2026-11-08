@@ -795,7 +795,9 @@ func _test_tactical_deployment_screen() -> void:
 	var player := get_tree().get_first_node_in_group("player")
 	_check(player != null, "player not found in battlefield during deploy test")
 	if player != null:
-		_check(bool(player.get("is_input_locked")), "player input not locked during deploy fly-in")
+		# QA-hotfix: свойства is_input_locked не существует — get_meta/get возвращал null,
+		# bool(null) даёт SCRIPT ERROR и красный CI (APK не собирался).
+		_check(bool(player.get("input_locked")), "player input not locked during deploy fly-in")
 
 	var cameras := battlefield.find_children("*", "Camera3D", true, false)
 	var found_intro := false
@@ -816,7 +818,10 @@ func _test_first_person_hands() -> void:
 	add_child(player)
 	await get_tree().process_frame
 
-	_check(bool(player.get("SHOW_VIEW_ARMS")), "SHOW_VIEW_ARMS is not true")
+	# QA-hotfix: константа не читается через Object.get() (null -> bool(null) -> SCRIPT ERROR).
+	var player_script: Script = player.get_script()
+	var arms_const: bool = bool(player_script.get_script_constant_map().get("SHOW_VIEW_ARMS", false))
+	_check(arms_const, "SHOW_VIEW_ARMS is not true")
 
 	var arm_l: MeshInstance3D = player.get("_view_arm_left")
 	var arm_r: MeshInstance3D = player.get("_view_arm_right")
