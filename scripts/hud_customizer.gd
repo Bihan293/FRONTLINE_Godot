@@ -100,7 +100,9 @@ func _build_ui() -> void:
 	var canvas := Control.new()
 	canvas.name = "Canvas"
 	canvas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	canvas.mouse_filter = Control.MOUSE_FILTER_PASS
+	# QA-fix TASK-0022: MOUSE_FILTER_PASS на полноэкранном Canvas съедал клики
+	# по верхней панели — кнопки «СОХРАНИТЬ»/«СБРОС»/пресеты не работали.
+	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.draw.connect(_draw_canvas)
 	root.add_child(canvas)
 

@@ -832,15 +832,19 @@ func _test_first_person_hands() -> void:
 	var arms_const: bool = bool(player_script.get_script_constant_map().get("SHOW_VIEW_ARMS", false))
 	_check(arms_const, "SHOW_VIEW_ARMS is not true")
 
-	var arm_l: MeshInstance3D = player.get("_view_arm_left")
-	var arm_r: MeshInstance3D = player.get("_view_arm_right")
-	_check(arm_l != null, "player missing _view_arm_left MeshInstance3D")
-	_check(arm_r != null, "player missing _view_arm_right MeshInstance3D")
+	var arm_l: Node3D = player.get("_view_arm_left")
+	var arm_r: Node3D = player.get("_view_arm_right")
+	_check(arm_l != null, "player missing _view_arm_left")
+	_check(arm_r != null, "player missing _view_arm_right")
 
 	if arm_l != null and arm_r != null:
-		_check(arm_l.mesh is CylinderMesh, "_view_arm_left mesh is not CylinderMesh")
-		_check(arm_r.mesh is CylinderMesh, "_view_arm_right mesh is not CylinderMesh")
-		_check(arm_l.material_override != null, "_view_arm_left missing material_override")
+		var upper_l := arm_l.get_node_or_null("Upper") as MeshInstance3D
+		var forearm_r := arm_r.get_node_or_null("Forearm") as MeshInstance3D
+		var palm_l := arm_l.get_node_or_null("Palm") as MeshInstance3D
+		_check(upper_l != null and upper_l.mesh is CylinderMesh, "_view_arm_left Upper is not a limb cylinder")
+		_check(forearm_r != null and forearm_r.mesh is CylinderMesh, "_view_arm_right Forearm is not a limb cylinder")
+		_check(palm_l != null, "_view_arm_left missing Palm")
+		_check(upper_l != null and upper_l.material_override != null, "_view_arm_left missing material_override")
 
 	player.call("_update_view_arms")
 	if arm_l != null and arm_r != null:

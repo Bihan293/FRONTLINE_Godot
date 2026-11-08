@@ -309,13 +309,19 @@ func _start_physics_ragdoll() -> void:
 	var hips_start := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
 	if hips_start != null:
 		_ragdoll_physics_hips_start = hips_start.global_position
-	var impulse := _ragdoll_dir * (2.0 if _ragdoll_headshot else 1.35) + Vector3.UP * 0.45
+	# QA-fix TASK-0022: тело падает от попадания, а не «складывается» на месте —
+	# импульс в грудь/бёдра/голову + лёгкий поворот вокруг оси.
+	var impulse := _ragdoll_dir * (2.6 if _ragdoll_headshot else 1.9) + Vector3.UP * 0.55
 	var chest := _ragdoll_physics_bones.get("Chest") as PhysicalBone3D
 	if chest != null:
 		chest.apply_central_impulse(impulse)
+		chest.apply_torque_impulse(Vector3.UP * randf_range(-0.35, 0.35))
 	var hips := _ragdoll_physics_bones.get("Hips") as PhysicalBone3D
 	if hips != null:
-		hips.apply_central_impulse(impulse * 0.35)
+		hips.apply_central_impulse(impulse * 0.55)
+	var head := _ragdoll_physics_bones.get("Head") as PhysicalBone3D
+	if head != null:
+		head.apply_central_impulse(impulse * 0.45)
 
 func _fallback_to_procedural_ragdoll() -> void:
 	if is_instance_valid(_ragdoll_physics):

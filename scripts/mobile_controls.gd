@@ -27,6 +27,8 @@ signal drone_pressed
 signal drone_vertical_changed(direction: float, pressed: bool)
 signal sidearm_pressed
 signal shovel_pressed
+signal equip_prev_pressed
+signal equip_next_pressed
 
 const JOY_RADIUS := 92.0
 const JOY_DEADZONE := 0.12
@@ -44,6 +46,10 @@ var _aim_on := false
 var _interact_visible := false
 var _drone_visible := false
 var _drone_mode := false
+var _vehicle_mode := false
+var _vehicle_input := Vector2.ZERO
+var _equip_icon_id := "rifle"
+var _equip_label := "АВТОМАТ"
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -86,8 +92,6 @@ func _layout() -> Dictionary:
 			"weapon": Vector2(115.0 * sc, s.y - 515.0 * sc),
 			"interact": Vector2(235.0 * sc, s.y - 580.0 * sc),
 			"drone": Vector2(520.0 * sc, s.y - 355.0 * sc),
-			"sidearm": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 245.0 * sc),
-			"shovel": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 135.0 * sc),
 		}
 	elif preset == 1:
 		# Компактный: кнопки сгруппированы плотнее к углам
@@ -106,8 +110,6 @@ func _layout() -> Dictionary:
 			"weapon": Vector2(s.x - 95.0 * sc, s.y - 415.0 * sc),
 			"interact": Vector2(s.x - 160.0 * sc, s.y - 430.0 * sc),
 			"drone": Vector2(s.x - 385.0 * sc, s.y - 285.0 * sc),
-			"sidearm": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 190.0 * sc),
-			"shovel": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 100.0 * sc),
 		}
 	elif preset == 2:
 		# Разреженный: для больших планшетов
@@ -126,8 +128,6 @@ func _layout() -> Dictionary:
 			"weapon": Vector2(s.x - 135.0 * sc, s.y - 570.0 * sc),
 			"interact": Vector2(s.x - 225.0 * sc, s.y - 590.0 * sc),
 			"drone": Vector2(s.x - 540.0 * sc, s.y - 400.0 * sc),
-			"sidearm": Vector2(maxf(210.0, s.x - 540.0 * sc), s.y - 275.0 * sc),
-			"shovel": Vector2(maxf(210.0, s.x - 540.0 * sc), s.y - 175.0 * sc),
 		}
 	else:
 		# Стандартный (проверенные безопасные зоны без перекрытия кнопок)
@@ -146,8 +146,6 @@ func _layout() -> Dictionary:
 			"weapon": Vector2(s.x - 115.0 * sc, s.y - 515.0 * sc),
 			"interact": Vector2(s.x - 235.0 * sc, s.y - 580.0 * sc),
 			"drone": Vector2(s.x - 520.0 * sc, s.y - 355.0 * sc),
-			"sidearm": Vector2(maxf(210.0, s.x - 520.0 * sc), s.y - 245.0 * sc),
-			"shovel": Vector2(maxf(210.0, s.x - 520.0 * sc), s.y - 135.0 * sc),
 		}
 
 	# Применяем пользовательские индивидуальные смещения с защитой от вылета за экран
@@ -156,6 +154,21 @@ func _layout() -> Dictionary:
 		var target: Vector2 = base[k] + offset
 		var r: float = _joy_radius() if k == "joy" else (_fire_radius() if k == "fire" else _small_radius())
 		base[k] = Vector2(clampf(target.x, r + 8.0, s.x - r - 8.0), clampf(target.y, r + 8.0, s.y - r - 8.0))
+
+	# Переключатель снаряжения: иконка в руке + стрелки влево/вправо (сверху справа).
+	var er := _small_radius() * 0.80
+	base["equip_icon"] = Vector2(s.x - 116.0 * sc, 58.0 * sc + 8.0)
+	base["equip_prev"] = base["equip_icon"] + Vector2(-er * 2.35, 0.0)
+	base["equip_next"] = base["equip_icon"] + Vector2(er * 2.35, 0.0)
+
+	# Крестовина управления техникой (появляется только внутри джипа).
+	var vp := Vector2(s.x - 210.0 * sc, s.y - 190.0 * sc)
+	var vr := _fire_radius() * 0.92
+	base["veh_up"] = vp + Vector2(0.0, -vr * 1.28)
+	base["veh_down"] = vp + Vector2(0.0, vr * 1.28)
+	base["veh_left"] = vp + Vector2(-vr * 1.28, 0.0)
+	base["veh_right"] = vp + Vector2(vr * 1.28, 0.0)
+	base["veh_exit"] = vp + Vector2(0.0, 0.0)
 
 	return base
 
@@ -169,6 +182,21 @@ func set_drone_visible(is_visible: bool) -> void:
 	if _drone_visible == is_visible:
 		return
 	_drone_visible = is_visible
+	queue_redraw()
+
+func set_vehicle_mode(enabled: bool) -> void:
+	if _vehicle_mode == enabled:
+		return
+	_vehicle_mode = enabled
+	_vehicle_input = Vector2.ZERO
+	_button_touches.clear()
+	_active.clear()
+	_set_joy(Vector2.ZERO)
+	queue_redraw()
+
+func set_equipment_info(icon_id: String, label: String) -> void:
+	_equip_icon_id = icon_id
+	_equip_label = label
 	queue_redraw()
 
 func set_drone_mode(enabled: bool) -> void:
@@ -196,7 +224,19 @@ func _touch_down(index: int, pos: Vector2) -> void:
 	if _button_touches.has(index):
 		return
 	var l := _layout()
-	var ids := ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact", "drone", "sidearm", "shovel"]
+	if _vehicle_mode:
+		var vehicle_ids := ["veh_up", "veh_down", "veh_left", "veh_right", "veh_exit"]
+		for id in vehicle_ids:
+			if pos.distance_to(l[id]) <= _fire_radius() * 1.10:
+				_button_touches[index] = id
+				_active[id] = true
+				_apply_vehicle_button(id, true)
+				queue_redraw()
+				return
+		if _look_touch == -1:
+			_look_touch = index
+		return
+	var ids := ["fire", "reload", "aim", "crouch", "jump", "grenade", "smoke", "heal", "peek_left", "peek_right", "weapon", "interact", "drone", "equip_prev", "equip_next"]
 	if _drone_mode:
 		ids = ["fire", "crouch", "jump", "drone"]
 	for id in ids:
@@ -224,6 +264,10 @@ func _touch_up(index: int) -> void:
 		var id: String = _button_touches[index]
 		_button_touches.erase(index)
 		_active.erase(id)
+		if _vehicle_mode and id.begins_with("veh_"):
+			_apply_vehicle_button(id, false)
+			queue_redraw()
+			return
 		if id == "fire":
 			fire_changed.emit(false)
 		elif id == "grenade":
@@ -295,10 +339,39 @@ func _press(id: String) -> void:
 			interact_pressed.emit()
 		"drone":
 			drone_pressed.emit()
-		"sidearm":
-			sidearm_pressed.emit()
-		"shovel":
-			shovel_pressed.emit()
+		"equip_prev":
+			equip_prev_pressed.emit()
+		"equip_next":
+			equip_next_pressed.emit()
+
+func _apply_vehicle_button(id: String, pressed: bool) -> void:
+	var dir := Vector2.ZERO
+	match id:
+		"veh_up":
+			dir = Vector2(0.0, -1.0)
+		"veh_down":
+			dir = Vector2(0.0, 1.0)
+		"veh_left":
+			dir = Vector2(-1.0, 0.0)
+		"veh_right":
+			dir = Vector2(1.0, 0.0)
+		"veh_exit":
+			if pressed:
+				interact_pressed.emit()
+			return
+	if pressed:
+		var axes := Vector2(_vehicle_input.x, _vehicle_input.y)
+		if dir.x != 0.0:
+			axes.x = dir.x
+		else:
+			axes.y = dir.y
+		_vehicle_input = axes
+	else:
+		if dir.x != 0.0 and is_equal_approx(_vehicle_input.x, dir.x):
+			_vehicle_input.x = 0.0
+		if dir.y != 0.0 and is_equal_approx(_vehicle_input.y, dir.y):
+			_vehicle_input.y = 0.0
+	_set_joy(_vehicle_input.limit_length(1.0))
 
 func _set_joy(value: Vector2) -> void:
 	var v := value
@@ -324,6 +397,14 @@ func _draw() -> void:
 	var knob: Vector2 = l.joy + _joy_value * jr
 	draw_circle(knob, jr * 0.40, Color(0.035, 0.045, 0.05, 0.92))
 	draw_arc(knob, jr * 0.40, 0.0, TAU, 48, Color(0.96, 0.97, 0.97, 0.76), 1.8, true)
+	if _vehicle_mode:
+		var vr := _fire_radius() * 0.92
+		_draw_button(l.veh_up, vr, "", "veh_up", Color.BLACK, font, 12)
+		_draw_button(l.veh_down, vr, "", "veh_down", Color.BLACK, font, 12)
+		_draw_button(l.veh_left, vr, "", "veh_left", Color.BLACK, font, 12)
+		_draw_button(l.veh_right, vr, "", "veh_right", Color.BLACK, font, 12)
+		_draw_button(l.veh_exit, vr * 0.80, "", "exit_vehicle", Color.BLACK, font, 9)
+		return
 	if _drone_mode:
 		_draw_button(l.fire, fr, "", "detonate", Color.BLACK, font, 16)
 		_draw_button(l.jump, sr, "", "drone_up", Color.BLACK, font, 11)
@@ -346,8 +427,20 @@ func _draw() -> void:
 		_draw_button(l.interact, sr, "", "interact", Color.BLACK, font, 11)
 	if _drone_visible:
 		_draw_button(l.drone, sr, "", "drone", Color.BLACK, font, 11)
-	_draw_button(l.sidearm, sr, "", "sidearm", Color.BLACK, font, 11)
-	_draw_button(l.shovel, sr, "", "shovel", Color.BLACK, font, 11)
+	# Снаряжение в руке: иконка + стрелки переключения (сверху справа).
+	var er := sr * 0.80
+	_draw_equip_slot(l.equip_icon, er)
+	_draw_button(l.equip_prev, er, "", "equip_prev", Color.BLACK, font, 12)
+	_draw_button(l.equip_next, er, "", "equip_next", Color.BLACK, font, 12)
+
+## Иконка предмета в руке (автомат/пистолет/лопата/РПГ) с подписью.
+func _draw_equip_slot(center: Vector2, radius: float) -> void:
+	var font := ThemeDB.fallback_font
+	draw_circle(center, radius, Color(0.012, 0.016, 0.019, 0.72))
+	draw_arc(center, radius - 1.0, 0.0, TAU, 48, Color(0.85, 0.90, 0.85, 0.70), 2.0, true)
+	_draw_icon(center, radius * 0.55, _equip_icon_id)
+	var text_sz := font.get_string_size(_equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
+	draw_string(font, center + Vector2(-text_sz.x * 0.5, radius + 13.0), _equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10, Color(0.92, 0.95, 0.90, 0.85))
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
 	var state_id := id
@@ -430,6 +523,25 @@ func _draw_icon(center: Vector2, size: float, id: String) -> void:
 				draw_line(center, center + offset * size, white, thin, true)
 				draw_circle(center + offset * size, size * 0.20, white, false, thin)
 			draw_rect(Rect2(center - Vector2(size * 0.18, size * 0.18), Vector2(size * 0.36, size * 0.36)), white, true)
+		"equip_prev", "veh_left":
+			_draw_arrow(center, Vector2.LEFT, size, white, thin)
+		"equip_next", "veh_right":
+			_draw_arrow(center, Vector2.RIGHT, size, white, thin)
+		"veh_up":
+			_draw_arrow(center, Vector2.UP, size, white, thin)
+		"veh_down":
+			_draw_arrow(center, Vector2.DOWN, size, white, thin)
+		"exit_vehicle":
+			draw_rect(Rect2(center + Vector2(-size * 0.36, -size * 0.55), Vector2(size * 0.5, size * 1.1)), white, false, thin)
+			_draw_arrow(center + Vector2(size * 0.36, 0), Vector2.RIGHT, size * 0.52, white, thin)
+		"rifle":
+			draw_line(center + Vector2(-size * 0.75, size * 0.06), center + Vector2(size * 0.60, size * 0.06), white, thin * 1.5, true)
+			draw_line(center + Vector2(-size * 0.25, size * 0.04), center + Vector2(-size * 0.05, size * 0.46), white, thin, true)
+			draw_line(center + Vector2(size * 0.34, size * 0.06), center + Vector2(size * 0.46, -size * 0.26), white, thin, true)
+			draw_line(center + Vector2(size * 0.60, -size * 0.09), center + Vector2(size * 0.60, size * 0.20), white, thin, true)
+		"rpg":
+			draw_line(center + Vector2(-size * 0.72, 0), center + Vector2(size * 0.72, 0), white, thin * 2.0, true)
+			draw_colored_polygon(PackedVector2Array([center + Vector2(size * 0.72, 0), center + Vector2(size * 0.36, -size * 0.28), center + Vector2(size * 0.36, size * 0.28)]), white)
 		"shovel":
 			draw_line(center + Vector2(-size * 0.1, size * 0.52), center + Vector2(size * 0.2, -size * 0.24), white, thin * 1.4, true)
 			draw_line(center + Vector2(size * 0.2, -size * 0.24), center + Vector2(size * 0.42, -size * 0.62), white, thin * 1.4, true)

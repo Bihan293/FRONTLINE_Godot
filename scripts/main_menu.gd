@@ -229,7 +229,8 @@ func _show_maps() -> void:
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
 	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _launch_map_tactical, Vector2(0,58))
-	var loadout_btn := _button(details, "НАСТРОИТЬ ЭКИПИРОВКУ (2D МЕНЮ)", _show_deployment, Vector2(0,44))
+	# QA-fix TASK-0022: снаряжение выбирается только на экране деплоя,
+	# при выборе карты больше не открывается редактор экипировки.
 
 	set_meta("map_details", details)
 	set_meta("polygon_preview", image)
