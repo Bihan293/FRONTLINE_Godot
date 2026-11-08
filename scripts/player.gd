@@ -854,16 +854,27 @@ func _build_hud() -> void:
 	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
 	hud.add_child(equip_label)
 
-	# На телефоне правый нижний угол занят кнопками — переносим патроны наверх.
+	# На телефоне патроны и экипировка размещаются левее блока кнопок огня и приседа (не перекрывая aim)
 	if _touch_ui_enabled():
-		ammo_label.anchor_top = 0.0
-		ammo_label.anchor_bottom = 0.0
-		ammo_label.offset_top = 270.0
-		ammo_label.offset_bottom = 306.0
-		equip_label.anchor_top = 0.0
-		equip_label.anchor_bottom = 0.0
-		equip_label.offset_top = 310.0
-		equip_label.offset_bottom = 340.0
+		ammo_label.anchor_left = 1.0
+		ammo_label.anchor_right = 1.0
+		ammo_label.anchor_top = 1.0
+		ammo_label.anchor_bottom = 1.0
+		ammo_label.offset_left = -560.0
+		ammo_label.offset_right = -170.0
+		ammo_label.offset_top = -68.0
+		ammo_label.offset_bottom = -34.0
+		ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+		equip_label.anchor_left = 1.0
+		equip_label.anchor_right = 1.0
+		equip_label.anchor_top = 1.0
+		equip_label.anchor_bottom = 1.0
+		equip_label.offset_left = -660.0
+		equip_label.offset_right = -170.0
+		equip_label.offset_top = -102.0
+		equip_label.offset_bottom = -72.0
+		equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	pickup_label = Label.new()
 	pickup_label.anchor_left = 0.5

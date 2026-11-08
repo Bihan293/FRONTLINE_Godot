@@ -150,11 +150,12 @@ func _layout() -> Dictionary:
 			"shovel": Vector2(maxf(210.0, s.x - 520.0 * sc), s.y - 135.0 * sc),
 		}
 
-	# Применяем пользовательские индивидуальные смещения
+	# Применяем пользовательские индивидуальные смещения с защитой от вылета за экран
 	for k in base.keys():
 		var offset := GameSettings.get_hud_button_offset(k) if ("get_hud_button_offset" in GameSettings) else Vector2.ZERO
 		var target: Vector2 = base[k] + offset
-		base[k] = Vector2(clampf(target.x, 35.0, s.x - 35.0), clampf(target.y, 35.0, s.y - 35.0))
+		var r: float = _joy_radius() if k == "joy" else (_fire_radius() if k == "fire" else _small_radius())
+		base[k] = Vector2(clampf(target.x, r + 8.0, s.x - r - 8.0), clampf(target.y, r + 8.0, s.y - r - 8.0))
 
 	return base
 

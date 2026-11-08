@@ -266,11 +266,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if event.index == _drag_touch and not _dragged_id.is_empty():
 			var s := get_viewport().get_visible_rect().size
-			var new_pos: Vector2 = event.position + _drag_touch_offset
-			new_pos.x = clampf(new_pos.x, 40.0, s.x - 40.0)
-			new_pos.y = clampf(new_pos.y, 80.0, s.y - 40.0)
-
 			var sc := GameSettings.hud_scale
+			var r := 92.0 * sc if _dragged_id == "joy" else (76.0 * sc if _dragged_id == "fire" else 42.0 * sc)
+			var new_pos: Vector2 = event.position + _drag_touch_offset
+			new_pos.x = clampf(new_pos.x, r + 12.0, s.x - r - 12.0)
+			new_pos.y = clampf(new_pos.y, 75.0 + r * 0.5, s.y - r - 12.0)
 			var base_pos := _get_base_position(_dragged_id, s, sc, GameSettings.hud_preset)
 			var offset := new_pos - base_pos
 			GameSettings.set_hud_button_offset(_dragged_id, offset)
