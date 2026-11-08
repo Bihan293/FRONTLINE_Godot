@@ -15,6 +15,8 @@ const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const DIGGABLE_GROUND_SCRIPT = preload("res://scripts/diggable_ground.gd")
+const TURRET_SCRIPT = preload("res://scripts/static_turret.gd")
+const JEEP_SCRIPT = preload("res://scripts/jeep.gd")
 
 const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
@@ -92,6 +94,7 @@ func _ready() -> void:
 	add_child(ambience)
 	_build_world()
 	_spawn_supply_caches()
+	_spawn_vehicles()
 	_spawn_player()
 	_build_sectors()
 	_build_hud()
@@ -213,6 +216,52 @@ func _spawn_supply_caches() -> void:
 		cache.configure_ammo(48, 65.0)
 		cache.position = pos
 		add_child(cache)
+
+func _spawn_vehicles() -> void:
+	# Задача TASK-0012: стационарные пулемёты по флангам секторов и
+	# джип у баз. На дебаг-полигоне техника не создаём.
+	var map := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	if map == "POLYGON":
+		return
+	var turrets: Array[Dictionary] = [
+		{"pos": Vector3(-64.0, 0.05, 12.0), "toward": Vector3(-40.0, 0.0, 0.0)},
+		{"pos": Vector3(-64.0, 0.05, -12.0), "toward": Vector3(-40.0, 0.0, 0.0)},
+		{"pos": Vector3(64.0, 0.05, 12.0), "toward": Vector3(40.0, 0.0, 0.0)},
+		{"pos": Vector3(64.0, 0.05, -12.0), "toward": Vector3(40.0, 0.0, 0.0)},
+	]
+	if map == "VILLAGE":
+		turrets = [
+			{"pos": Vector3(-34.0, 0.05, 6.0), "toward": Vector3(0.0, 0.0, 0.0)},
+			{"pos": Vector3(34.0, 0.05, -6.0), "toward": Vector3(0.0, 0.0, 0.0)},
+			{"pos": Vector3(0.0, 0.05, 34.0), "toward": Vector3(0.0, 0.0, 0.0)},
+		]
+	for point in turrets:
+		var turret = TURRET_SCRIPT.new()
+		add_child(turret)
+		var pos: Vector3 = point["pos"]
+		turret.global_position = pos
+		var td: Vector3 = point["toward"] - pos
+		turret.rotation.y = atan2(-td.x, -td.z)
+	# Оптимизация отдачи (TASK-0019): два джипа — по одному на базу,
+	# чтобы не удваивать draw calls Второго шага меша Antigravity.
+	var jeeps: Array[Dictionary] = [
+		{"pos": Vector3(-16.0, 0.25, 70.0), "toward": Vector3(0.0, 0.0, 0.0), "team": "IRON LEGION"},
+		{"pos": Vector3(16.0, 0.25, -70.0), "toward": Vector3(0.0, 0.0, 0.0), "team": "RED FRONT"},
+	]
+	if map == "VILLAGE":
+		jeeps = [
+			{"pos": Vector3(-30.0, 0.25, -42.0), "toward": Vector3(0.0, 0.0, 0.0), "team": "RED FRONT"},
+			{"pos": Vector3(30.0, 0.25, 42.0), "toward": Vector3(0.0, 0.0, 0.0), "team": "IRON LEGION"},
+		]
+	for point in jeeps:
+		var jeep = JEEP_SCRIPT.new()
+		add_child(jeep)
+		var jpos: Vector3 = point["pos"]
+		jpos.y = 0.25
+		jeep.global_position = jpos
+		var jd: Vector3 = point["toward"] - jpos
+		jeep.rotation.y = atan2(-jd.x, -jd.z)
+		jeep.team_name = str(point["team"])
 
 func _build_box(data: Dictionary) -> void:
 	var size: Vector3 = data.size

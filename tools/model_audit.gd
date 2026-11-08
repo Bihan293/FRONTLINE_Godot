@@ -27,12 +27,39 @@ func _ready() -> void:
 		await _capture_intro_only()
 	elif "pickups" in OS.get_cmdline_user_args():
 		await _capture_pickups_only()
+	elif "vehicles" in OS.get_cmdline_user_args():
+		await _capture_vehicles_only()
 	else:
 		await _capture_battlefield_models()
 		await _capture_village_models()
 		await _capture_polygon_models()
 	print("MODEL_AUDIT_OK: ", _captures)
 	get_tree().quit()
+
+func _capture_vehicles_only() -> void:
+	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")
+	_freeze_bots()
+	_set_hud_visible(battlefield, false)
+	var turret: Node3D = null
+	var jeep: Node3D = null
+	for node in get_tree().get_nodes_in_group("enterable_vehicles"):
+		if turret == null and node.has_method("try_fire"):
+			turret = node
+		elif jeep == null and "throttle_override" in node:
+			jeep = node
+	if turret != null:
+		var turret_focus: Vector3 = turret.global_position + Vector3(0.0, 0.8, 0.0)
+		var turret_cam := _add_free_camera(battlefield, turret_focus + Vector3(2.2, 2.0, 3.4), turret_focus)
+		await _wait_frames(5)
+		await _capture("turret")
+		turret_cam.queue_free()
+	if jeep != null:
+		var jeep_focus: Vector3 = jeep.global_position + Vector3(0.0, 0.7, 0.0)
+		var jeep_cam := _add_free_camera(battlefield, jeep_focus + Vector3(4.0, 2.2, 5.2), jeep_focus)
+		await _wait_frames(5)
+		await _capture("jeep")
+		jeep_cam.queue_free()
+	battlefield.queue_free()
 
 func _capture_pickups_only() -> void:
 	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")

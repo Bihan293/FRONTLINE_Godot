@@ -167,6 +167,7 @@ var crosshair
 
 var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
+var mounted_vehicle: Node3D = null
 var mobile_fire := false
 var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu
@@ -1067,6 +1068,24 @@ func _update_drone_controls() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if is_dead or input_locked:
 		return
+	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
+		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			var sense := MOUSE_SENS * GameSettings.sensitivity_scale(false)
+			yaw -= event.relative.x * sense
+			var mount_pitch_delta: float = event.relative.y * sense
+			if GameSettings.invert_y:
+				mount_pitch_delta = -mount_pitch_delta
+			pitch = clampf(pitch - mount_pitch_delta, -1.35, 1.35)
+			look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
+			look_sway = look_sway.limit_length(0.035)
+		elif event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode == KEY_F:
+				_exit_vehicle()
+			elif event.keycode == KEY_ESCAPE:
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		return
+	if mounted_vehicle != null:
+		mounted_vehicle = null
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V and player_role == "RADIO_OPERATOR":
 		_launch_drone()
 		return
@@ -1150,6 +1169,11 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
+	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
+		_process_mounted_vehicle(delta)
+		return
+	if mounted_vehicle != null:
+		mounted_vehicle = null
 	if is_vaulting:
 		_process_vault(delta)
 		return
@@ -1365,6 +1389,72 @@ func _physics_process(delta: float) -> void:
 		var look_down := clampf((-pitch - 0.22) / 0.45, 0.0, 1.0)
 		player_body.set_look_down(look_down)
 	_apply_look()
+
+## === Техника и турели (TASK-0012) ===
+
+func _process_mounted_vehicle(delta: float) -> void:
+	velocity = Vector3.ZERO
+	if mounted_vehicle.has_method("tick_driver"):
+		mounted_vehicle.call("tick_driver", self, delta)
+	var firing := mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	if firing and mounted_vehicle.has_method("try_fire"):
+		mounted_vehicle.call("try_fire", self)
+	_refresh_pickup_prompt()
+
+func _enter_vehicle(vehicle: Node3D) -> void:
+	if is_dead or input_locked or mounted_vehicle != null:
+		return
+	if vehicle == null or not is_instance_valid(vehicle):
+		return
+	if not vehicle.has_method("enter") or not bool(vehicle.call("can_enter", self)):
+		return
+	mounted_vehicle = vehicle
+	vehicle.call("enter", self)
+	if vehicle is PhysicsBody3D:
+		add_collision_exception_with(vehicle)
+	velocity = Vector3.ZERO
+	if weapon_root != null:
+		weapon_root.visible = false
+	var eye_height := 1.20
+	if vehicle.has_method("driver_eye_height"):
+		eye_height = float(vehicle.call("driver_eye_height"))
+	camera.position.y = eye_height
+	if vehicle.has_method("seat_position"):
+		global_position = vehicle.call("seat_position")
+
+func _exit_vehicle() -> void:
+	var vehicle := mounted_vehicle
+	mounted_vehicle = null
+	if vehicle != null and is_instance_valid(vehicle):
+		if vehicle.has_method("exit_vehicle"):
+			vehicle.call("exit_vehicle", self)
+		if vehicle is PhysicsBody3D:
+			remove_collision_exception_with(vehicle)
+		if vehicle.has_method("exit_position"):
+			global_position = vehicle.call("exit_position")
+	velocity = Vector3.ZERO
+	camera.position.y = 1.80
+	if weapon_root != null and not is_dead:
+		weapon_root.visible = true
+	if player_body != null and not is_dead:
+		player_body.visible = false
+
+func _nearest_enterable() -> Node3D:
+	if mounted_vehicle != null:
+		return null
+	var nearest: Node3D = null
+	var best_distance := 2.8
+	for node in get_tree().get_nodes_in_group("enterable_vehicles"):
+		var station := node as Node3D
+		if station == null or not is_instance_valid(station):
+			continue
+		if not station.has_method("can_enter") or not bool(station.call("can_enter", self)):
+			continue
+		var distance := global_position.distance_to(station.global_position)
+		if distance < best_distance:
+			best_distance = distance
+			nearest = station
+	return nearest
 
 func _apply_look() -> void:
 	rotation.y = yaw
@@ -1921,16 +2011,38 @@ func _nearest_field_pickup() -> Node3D:
 	return nearest
 
 func _refresh_pickup_prompt() -> void:
-	var pickup := _nearest_field_pickup()
+	if mounted_vehicle != null and not is_instance_valid(mounted_vehicle):
+		mounted_vehicle = null
+	var enterable: Node3D = null
+	var pickup: Node3D = null
+	if mounted_vehicle == null:
+		enterable = _nearest_enterable()
+		pickup = _nearest_field_pickup()
+	var prompt: Node3D = null
+	if mounted_vehicle != null:
+		prompt = mounted_vehicle
+	elif enterable != null:
+		prompt = enterable
+	elif pickup != null:
+		prompt = pickup
 	if pickup_label != null:
-		pickup_label.visible = pickup != null
-		if pickup != null and pickup.has_method("prompt_text"):
-			pickup_label.text = str(pickup.call("prompt_text", OS.has_feature("mobile")))
+		pickup_label.visible = prompt != null
+		if prompt != null and prompt.has_method("prompt_text"):
+			pickup_label.text = str(prompt.call("prompt_text", OS.has_feature("mobile")))
 	if mobile_controls != null:
-		mobile_controls.set_interact_visible(pickup != null and OS.has_feature("mobile"))
+		var show_interact := (mounted_vehicle != null or enterable != null or pickup != null) and OS.has_feature("mobile")
+		mobile_controls.set_interact_visible(show_interact)
 
 func _interact_with_pickup() -> void:
 	if is_dead or input_locked:
+		return
+	if mounted_vehicle != null:
+		_exit_vehicle()
+		return
+	var enterable := _nearest_enterable()
+	if enterable != null:
+		_enter_vehicle(enterable)
+		_refresh_pickup_prompt()
 		return
 	var pickup := _nearest_field_pickup()
 	if pickup == null or not pickup.has_method("collect"):
@@ -2043,6 +2155,8 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: String = "chest") -> void:
 	if active_drone != null and is_instance_valid(active_drone):
 		active_drone.return_to_operator()
+	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
+		_exit_vehicle()
 	_cancel_healing()
 	if camera != null:
 		camera.current = true

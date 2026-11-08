@@ -26,6 +26,7 @@ func _ready() -> void:
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
+	await _test_vehicles()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -450,6 +451,88 @@ func _test_parkour_and_grenade_hold() -> void:
 
 		p.queue_free()
 		await get_tree().process_frame
+
+func _test_vehicles() -> void:
+	var turret_script: Script = load("res://scripts/static_turret.gd")
+	var jeep_script: Script = load("res://scripts/jeep.gd")
+	_check(turret_script != null, "static_turret script missing")
+	_check(jeep_script != null, "jeep script missing")
+	if turret_script == null or jeep_script == null:
+		return
+
+	var turret = turret_script.new()
+	turret.position = Vector3.ZERO
+	add_child(turret)
+	_check(not bool(turret.can_enter(null)), "turret accepts null occupant")
+	_check(str(turret.prompt_text(false)).contains("MG"), "turret enter prompt does not mention MG")
+
+	var player := PLAYER_SCRIPT.new()
+	add_child(player)
+	player.position = Vector3(0.0, 0.25, 1.6)
+	await get_tree().process_frame
+	_check(bool(turret.can_enter(player)), "turret refuses a valid player")
+	player.call("_interact_with_pickup")
+	_check(is_instance_valid(player.get("mounted_vehicle")) and player.get("mounted_vehicle") == turret, "player did not mount the turret")
+	var weapon_root := player.get("weapon_root") as Node3D
+	_check(weapon_root == null or not weapon_root.visible, "weapon viewmodel stayed visible on the turret")
+	var bullets_before := get_tree().get_nodes_in_group("ballistic_bullets").size()
+	turret.try_fire(player)
+	await get_tree().physics_frame
+	var bullets_after := get_tree().get_nodes_in_group("ballistic_bullets").size()
+	_check(bullets_after > bullets_before, "turret fire did not spawn a ballistic bullet")
+	player.call("_exit_vehicle")
+	_check(player.get("mounted_vehicle") == null, "player stayed mounted after exit")
+	_check(is_instance_valid(turret.occupant) == false or turret.occupant == null, "turret kept occupant after exit")
+	_check(absf((player.get("camera") as Camera3D).position.y - 1.80) < 0.01, "camera height was not restored after turret exit")
+
+	var jeep = jeep_script.new()
+	jeep.position = Vector3(6.0, 0.3, 0.0)
+	add_child(jeep)
+	var floor_body := StaticBody3D.new()
+	floor_body.collision_layer = 1
+	floor_body.collision_mask = 0
+	var floor_shape := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(14.0, 0.2, 14.0)
+	floor_shape.shape = floor_box
+	floor_shape.position.y = -0.1
+	floor_body.add_child(floor_shape)
+	floor_body.position = Vector3(6.0, 0.0, 0.0)
+	add_child(floor_body)
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	player.position = jeep.seat_position() + Vector3(0.0, 0.1, 0.0)
+	player.call("_enter_vehicle", jeep)
+	_check(player.get("mounted_vehicle") == jeep, "player did not enter the jeep")
+	jeep.set("throttle_override", 1.0)
+	jeep.set("steer_override", 0.0)
+	var start_z: float = jeep.global_position.z
+	for _i in range(45):
+		await get_tree().physics_frame
+	_check(jeep.global_position.z < start_z - 0.6, "jeep did not drive forward under throttle")
+	_check(global_pos_close(player.global_position, jeep.seat_position(), 0.12), "driver did not follow the jeep seat")
+	jeep.set("throttle_override", 0.0)
+	player.call("_exit_vehicle")
+	_check(player.get("mounted_vehicle") == null, "player stayed in the jeep after exit")
+
+	var jeep2 = jeep_script.new()
+	jeep2.position = Vector3(6.0, 0.3, 4.0)
+	add_child(jeep2)
+	await get_tree().physics_frame
+	jeep2.receive_hit(600.0, Vector3(6.0, 0.0, 4.0), "chest", "Smoke Test")
+	_check(bool(jeep2.destroyed), "jeep did not explode after heavy damage")
+	_check(not bool(jeep2.can_enter(player)), "destroyed jeep still accepts drivers")
+
+	player.queue_free()
+	turret.queue_free()
+	jeep.queue_free()
+	jeep2.queue_free()
+	floor_body.queue_free()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+static func global_pos_close(a: Vector3, b: Vector3, tolerance: float) -> bool:
+	return a.distance_to(b) <= tolerance
 
 func _report() -> void:
 	if _failures.is_empty():

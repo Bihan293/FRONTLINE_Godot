@@ -142,7 +142,7 @@ func _apply_actor_hit(actor: Node, collider: Object, position: Vector3, directio
 	if applied <= 0:
 		return
 	var world := get_parent()
-	if actor.is_in_group("explosive_barrels"):
+	if is_instance_valid(actor) and (actor.is_in_group("explosive_barrels") or actor.is_in_group("metal_targets")):
 		COMBAT_AUDIO.play_surface_impact(world, position, -direction, "metal")
 	else:
 		COMBAT_AUDIO.play_surface_impact(world, position, -direction, "flesh")
