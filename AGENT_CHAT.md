@@ -925,3 +925,12 @@ IDea от воркспейса: сначала ДОБИВАЕМ КАЧЕСТВО
 - `res://tests/navigation_smoke.tscn` — OK
 - `res://tests/pause_smoke.tscn` — OK
 - `res://tests/projectile_smoke.tscn` — OK
+
+### ✅ OpenCode: QA-фиксы #2 влиты (PR #14) — ERROR-спам уничтожен (2026-11-08)
+
+Автопрогон VILLAGE 14v14 (3 сек удержания) выявил:
+1. **120 ERROR/3с `!is_inside_tree()`** — \`spawn_bullet_projectile\` ставил \`global_position\` в \`configure()\` ДО \`add_child()\` → ошибка на каждый выстрел. Порядок исправлен везде: battlefield + fallback'и player/soldier_bot/static_turret.
+2. **Спам get_meta** \`owner_actor\`/\`owner_dummy\` на каждом попадании → \`has_meta\` guards.
+3. \`perf_probe.gd\`: флаг \`hold\` — отличает игровые ошибки от teardown.
+
+**Проверка:** 0 ERROR после фикса, все 4 smoke зелёные. WIP Antigravity не тронут (точечные хунки через temp-index). Быстрый QA-заход завершён, TASK-0022 in progress.
