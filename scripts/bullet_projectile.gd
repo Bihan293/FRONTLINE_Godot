@@ -110,7 +110,11 @@ func _resolve_impact(hit: Dictionary, direction: Vector3) -> void:
 	var normal: Vector3 = hit.get("normal", -direction)
 	var actor: Node
 	if collider is Node:
-		actor = collider.get_meta("owner_actor", collider.get_meta("owner_dummy", null))
+		# QA-sweep: get_meta без guard'а пишет ERROR-спам в консоль на каждом попадании.
+		if collider.has_meta("owner_actor"):
+			actor = collider.get_meta("owner_actor")
+		elif collider.has_meta("owner_dummy"):
+			actor = collider.get_meta("owner_dummy")
 		if actor == null and collider.has_method("receive_hit"):
 			actor = collider
 	if actor is Node and actor.has_method("receive_hit"):

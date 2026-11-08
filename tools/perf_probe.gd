@@ -38,6 +38,11 @@ func _ready() -> void:
 		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
 		Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
 	])
+	if "hold" in OS.get_cmdline_user_args():
+		# QA-sweep инструмент: держим сцену живой 3 сек, чтобы различать
+		# ошибки во время игры и при разрушении сцены.
+		await get_tree().create_timer(3.0).timeout
+		print("HOLD_PHASE_DONE")
 	battlefield.queue_free()
 	await get_tree().process_frame
 	get_tree().quit()

@@ -123,8 +123,8 @@ func try_fire(player: Node3D) -> bool:
 		world.call("spawn_bullet_projectile", origin, direction, BULLET_SPEED, BULLET_DAMAGE, BULLET_RANGE, "Player", team_name(), player)
 	elif world != null:
 		var bullet = BULLET_SCRIPT.new()
-		bullet.configure(origin, direction, BULLET_SPEED, BULLET_DAMAGE, BULLET_RANGE, "Player", team_name(), player)
 		world.add_child(bullet)
+		bullet.configure(origin, direction, BULLET_SPEED, BULLET_DAMAGE, BULLET_RANGE, "Player", team_name(), player)
 	if _flash != null:
 		_flash.visible = true
 		_flash_time = 0.05
