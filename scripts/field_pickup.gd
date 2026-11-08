@@ -155,7 +155,14 @@ func _build_weapon_visual() -> void:
 	# Кладём оружие плашмя, а не ставим вертикальной «палкой».
 	model.rotation = Vector3(0.0, PI * 0.5, 0.0)
 	model.position.y = 0.14
+	_disable_shadows(model)
 	add_child(model)
+
+func _disable_shadows(node: Node) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for child in node.get_children():
+		_disable_shadows(child)
 
 func _build_ammo_visual() -> void:
 	var crate := MeshInstance3D.new()
@@ -165,6 +172,7 @@ func _build_ammo_visual() -> void:
 	crate.mesh = crate_mesh
 	crate.position.y = 0.20
 	crate.material_override = _make_material(Color(0.24, 0.30, 0.20), 0.78)
+	crate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(crate)
 
 	var lid := MeshInstance3D.new()
@@ -173,6 +181,7 @@ func _build_ammo_visual() -> void:
 	lid.mesh = lid_mesh
 	lid.position.y = 0.42
 	lid.material_override = _make_material(Color(0.52, 0.43, 0.20), 0.58)
+	lid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(lid)
 
 	var label := Label3D.new()

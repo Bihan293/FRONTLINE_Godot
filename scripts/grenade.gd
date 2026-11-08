@@ -233,9 +233,12 @@ func _apply_blast_damage(pos: Vector3) -> void:
 
 func _shake_player_camera(pos: Vector3) -> void:
 	var player = get_tree().get_first_node_in_group("player")
-	if player != null and is_instance_valid(player) and "recoil" in player:
-		var dist := pos.distance_to(player.global_position)
-		if dist < 30.0:
-			var intensity := (1.0 - dist / 30.0) * 0.15
-			player.recoil.y += intensity
-			player.recoil.x += randf_range(-intensity, intensity) * 0.8
+	if player != null and is_instance_valid(player):
+		if player.has_method("apply_explosion_shake"):
+			player.call("apply_explosion_shake", pos, 32.0, 0.95)
+		elif "recoil" in player:
+			var dist := pos.distance_to(player.global_position)
+			if dist < 30.0:
+				var intensity := (1.0 - dist / 30.0) * 0.15
+				player.recoil.y += intensity
+				player.recoil.x += randf_range(-intensity, intensity) * 0.8

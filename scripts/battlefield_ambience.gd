@@ -7,6 +7,7 @@ class_name FRONTLINEAmbience
 ## - Далёкие раскаты артиллерии фронта
 
 const AUDIO_SAMPLE_RATE := 22050
+const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 static var instance: FRONTLINEAmbience
 
@@ -100,7 +101,7 @@ static func check_bullet_flyby(ray_from: Vector3, ray_to: Vector3, ear_pos: Vect
 		return
 	var world := instance.get_parent()
 	if world != null:
-		FRONTLINECombatAudio.trigger_bullet_flyby_3d(world, ray_from, ray_to, ear_pos)
+		COMBAT_AUDIO.trigger_bullet_flyby_3d(world, ray_from, ray_to, ear_pos)
 		return
 	var seg := ray_to - ray_from
 	var seg_len := seg.length()

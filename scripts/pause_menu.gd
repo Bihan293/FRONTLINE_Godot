@@ -112,11 +112,25 @@ func _build_settings(parent: VBoxContainer) -> void:
 		quality.text = "КАЧЕСТВО: " + GameSettings.quality_name()
 	)
 
+	var hud_btn := _add_button(content, "ИЗМЕНИТЬ РАСПОЛОЖЕНИЕ КНОПОК HUD", _open_hud_customizer, 48)
+	hud_btn.add_theme_font_size_override("font_size", 15)
+
 	var reset := _add_button(content, "СБРОСИТЬ УПРАВЛЕНИЕ", _reset_controls, 44)
 	reset.add_theme_font_size_override("font_size", 14)
 
 	var back := _add_button(parent, "НАЗАД", _show_main, 52)
 	back.add_theme_font_size_override("font_size", 16)
+
+func _open_hud_customizer() -> void:
+	var customizer_script: Script = load("res://scripts/hud_customizer.gd")
+	if customizer_script != null:
+		var customizer = customizer_script.new()
+		get_tree().root.add_child(customizer)
+		customizer.closed.connect(func():
+			var mc = get_tree().get_first_node_in_group("mobile_controls")
+			if mc != null and mc.has_method("queue_redraw"):
+				mc.call("queue_redraw")
+		)
 
 func _add_button(parent: Control, text: String, callback: Callable, height: int) -> Button:
 	var button := Button.new()

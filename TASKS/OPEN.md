@@ -13,7 +13,7 @@
 | TASK-0009 | P1 | in progress | OpenCode | Build immersive positional combat audio with distance, occlusion, indoor reverberation, and grenade acoustics |
 | TASK-0010 | P2 | in progress | OpenCode | Prepare the itch.io page, screenshots and press kit |
 | TASK-0011 | P1 | done | Codex | Add a guaranteed backup M1911, a terrain-digging entrenching shovel, and black icon-only mobile controls |
-| TASK-0012 | P1 | deferred until 2026-11-08 (user request) | OpenCode (deferred until 2026-11-08) | Add vehicles, transport and static turrets |
+| TASK-0012 | P1 | in progress (unblocked 2026-11-08; branch opencode/vehicles) | OpenCode | Add vehicles, transport and static turrets |
 | TASK-0013 | P1 | queued after TASK-0012 | OpenCode | Add sandbox mode with spawn menu, slow motion and free camera |
 | TASK-0014 | P1 | planned | OpenCode (later queue) | Build a fourth battle map (factory/port) |
 | TASK-0015 | P1 | planned | OpenCode | Add a third mode and match configuration |
@@ -31,5 +31,9 @@
 | TASK-0027 | P0 | done | Antigravity / code_qa_agent | Parkour & vaulting over fences, low walls and windows with dynamic camera dip and collider squish |
 | TASK-0028 | P0 | done | Antigravity / modeler_agent / code_qa_agent | Grenade hold/cook animation with procedural F-1 'Limonka' mesh, pin-pulling, and release-to-throw state machine |
 | TASK-0029 | P1 | done | Antigravity / modeler_agent / asset_qa_agent | Level detailing pass for Village (cottages with interiors, porches, stoves), Battlefield (ruins, window vaults, trench duckboards/banquettes), and Polygon parkour course |
+| TASK-0030 | P0 | done | Antigravity / code_qa_agent | Free weapon pickup from the ground without class restrictions |
+| TASK-0031 | P0 | done | Antigravity / asset_qa_agent | Interactive HUD button customizer with drag-and-drop, presets, scale slider and safe zone alignment |
+| TASK-0032 | P0 | done | Antigravity / modeler_agent / code_qa_agent | 200% optimization pass: 65%+ shadow pass culling on micro-objects, bot AI tick rate throttling (4Hz-10Hz), node caching, minimap & compass throttling |
+
 
 

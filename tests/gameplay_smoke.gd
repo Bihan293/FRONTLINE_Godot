@@ -23,6 +23,7 @@ func _ready() -> void:
 	_test_explosion_audio_budget()
 	await _test_death_ragdoll()
 	await _test_parkour_and_grenade_hold()
+	await _test_bodycam_kinematics_and_camera_safety()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
@@ -406,11 +407,18 @@ func _test_role_weapon_restrictions() -> void:
 	_check(player != null, "player missing for weapon restriction test")
 	if player != null:
 		var before := int(player.get("current_weapon_index"))
-		player.call("_switch_weapon", 6) # Kar98k is not in the assault kit
-		_check(int(player.get("current_weapon_index")) == before, "assault switched to a non-role weapon")
+		player.call("_switch_weapon", 6) # Kar98k is not in the initial assault kit
+		_check(int(player.get("current_weapon_index")) == before, "assault switched to an unowned weapon before pickup")
 		player.call("_switch_weapon", 3) # M1911 sidearm is allowed
 		_check(int(player.get("current_weapon_index")) == 3, "assault cannot switch to the allowed sidearm")
-		_check(not bool(player.call("can_take_weapon_pickup", 6, 5, 45)), "assault can pick up a sniper rifle")
+		_check(bool(player.call("can_take_weapon_pickup", 6, 5, 45)), "player cannot pick up a fallen sniper rifle from the field")
+		var picked: bool = bool(player.call("take_weapon_pickup", 6, 5, 45))
+		_check(picked, "take_weapon_pickup returned false for fallen rifle")
+		_check(int(player.get("current_weapon_index")) == 6, "player weapon index did not change to picked rifle")
+		_check(bool(player.call("can_take_weapon_pickup", 1, 32, 128)), "player cannot pick up an MP-40 pickup")
+		var picked_mp40: bool = bool(player.call("take_weapon_pickup", 1, 32, 128))
+		_check(picked_mp40, "take_weapon_pickup returned false for MP-40")
+		_check(int(player.get("current_weapon_index")) == 1, "player weapon index did not change to MP-40")
 	battlefield.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -483,7 +491,7 @@ func _test_vehicles() -> void:
 	player.call("_exit_vehicle")
 	_check(player.get("mounted_vehicle") == null, "player stayed mounted after exit")
 	_check(is_instance_valid(turret.occupant) == false or turret.occupant == null, "turret kept occupant after exit")
-	_check(absf((player.get("camera") as Camera3D).position.y - 1.80) < 0.01, "camera height was not restored after turret exit")
+	_check(absf((player.get("camera") as Camera3D).position.y - 1.70) < 0.01, "camera height was not restored after turret exit")
 
 	var jeep = jeep_script.new()
 	jeep.position = Vector3(6.0, 0.3, 0.0)
@@ -533,6 +541,55 @@ func _test_vehicles() -> void:
 
 static func global_pos_close(a: Vector3, b: Vector3, tolerance: float) -> bool:
 	return a.distance_to(b) <= tolerance
+
+func _test_bodycam_kinematics_and_camera_safety() -> void:
+	var player_script: Script = load("res://scripts/player.gd")
+	_check(player_script != null, "player script missing for bodycam kinematics test")
+	if player_script == null:
+		return
+
+	var player: CharacterBody3D = player_script.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	# 1. Kinematics: acceleration with realistic inertia
+	var initial_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(initial_h_vel.length() < 0.01, "player spawned with non-zero horizontal velocity")
+
+	player.set("mobile_move", Vector2(0.0, -1.0))
+	for _i in range(8):
+		player.call("_physics_process", 0.016)
+
+	var moving_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(moving_h_vel.length() > 0.3, "player did not accelerate forward with inertia")
+	_check(moving_h_vel.length() < 9.5, "player speed exploded during acceleration")
+
+	# 2. Kinematics: braking deceleration (glide instead of instant zero)
+	player.set("mobile_move", Vector2.ZERO)
+	player.call("_physics_process", 0.016)
+	var glide_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(glide_h_vel.length() > 0.05, "player stopped instantly with zero inertia on input release")
+
+	# 3. Camera safety and collision boundaries
+	var cam: Camera3D = player.get("camera")
+	_check(cam != null, "player missing camera")
+	if cam != null:
+		# Standing height check
+		_check(cam.position.y >= 1.60 and cam.position.y <= 1.95, "standing camera height outside [1.60, 1.95]: %f" % cam.position.y)
+
+		# Crouch height transition
+		player.set("stance", 1)
+		for _i in range(12):
+			player.call("_physics_process", 0.016)
+		_check(cam.position.y < 1.65, "camera did not lower in crouch stance: %f" % cam.position.y)
+
+		# Lean calculation check
+		player.set("mobile_lean_right", true)
+		player.call("_physics_process", 0.016)
+		_check(absf(cam.position.x) >= 0.0, "camera lean calculation failed")
+
+	player.queue_free()
+	await get_tree().process_frame
 
 func _report() -> void:
 	if _failures.is_empty():

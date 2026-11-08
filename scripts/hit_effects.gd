@@ -96,6 +96,7 @@ static func spawn_dropped_weapon(parent: Node, spawn_pos: Vector3, weapon_mesh: 
 	var mi := MeshInstance3D.new()
 	mi.mesh = weapon_mesh
 	mi.scale = Vector3.ONE * 0.95
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	w.add_child(mi)
 	parent.add_child(w)
 
@@ -191,6 +192,7 @@ static func spawn_metal_sparks(parent: Node, pos: Vector3, normal: Vector3) -> v
 	p.scale_amount_max = 0.03
 	p.color = Color(1.0, 0.88, 0.3)
 	p.mesh = _get_spark_sphere()
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(p)
 	p.global_position = pos
 	p.emitting = true
@@ -206,6 +208,7 @@ static func _make_particles(parent: Node, pos: Vector3, normal: Vector3, dust: b
 	p.scale_amount_min = 0.02
 	p.scale_amount_max = 0.04
 	p.color = Color(0.42, 0.02, 0.01) if not dust else Color(0.55, 0.55, 0.5)
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(p)
 	p.global_position = pos
 	return p

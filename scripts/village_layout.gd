@@ -351,7 +351,35 @@ static func _build_cottage(out: Array[Dictionary], hp: Vector3, hs: Vector3, fro
 	_push(out, Vector3(hp.x - yard_w * 0.5, 0.54, fz + front_z_dir * (side_len * 0.5)), Vector3(0.20, 1.08, side_len), fence_col, true, "picket_fence")
 	_push(out, Vector3(hp.x + yard_w * 0.5, 0.54, fz + front_z_dir * (side_len * 0.5)), Vector3(0.20, 1.08, side_len), fence_col, true, "picket_fence")
 
-static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Color, coll: bool, tag: String) -> void:
+## Крупные несущие конструкции, отбрасывающие тени на карте.
+## Мелкие декорации, штакетники, рамы, ставни, ступени, мебель и осыпи
+## отключают отбрасывание теней, экономя более 50% теневых draw calls на мобильных GPU.
+const SHADOW_TAGS := {
+	"house_wall": true,
+	"house_roof": true,
+	"attic_pediment": true,
+	"door_lintel": true,
+	"window_lintel": true,
+	"church_hall": true,
+	"church_roof": true,
+	"bell_tower": true,
+	"tower_roof": true,
+	"watchtower": true,
+	"tower_platform": true,
+	"windmill_tower": true,
+	"windmill_cap": true,
+	"barn_wall": true,
+	"barn_lintel": true,
+	"barn_roof": true,
+	"hq_tent": true,
+	"hq_roof": true,
+	"hq_bunker": true,
+	"bunker_earth": true,
+	"forest_wall": true,
+}
+
+static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Color, coll: bool, tag: String, cast_shadow: Variant = null) -> void:
+	var shadow: bool = (cast_shadow as bool) if cast_shadow != null else SHADOW_TAGS.get(tag, false)
 	arr.append({
 		"pos": pos,
 		"size": size,
@@ -360,4 +388,5 @@ static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Co
 		"coll": coll,
 		"kind": tag,
 		"tag": tag,
+		"cast_shadow": shadow,
 	})

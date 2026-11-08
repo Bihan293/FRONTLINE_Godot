@@ -850,6 +850,8 @@ func _show_settings() -> void:
 	invert.toggled.connect(func(value: bool): GameSettings.set_invert_y(value))
 	content.add_child(invert)
 
+	_button(content, "ИЗМЕНИТЬ РАСПОЛОЖЕНИЕ КНОПОК HUD", _open_hud_customizer, Vector2(0, 50))
+
 	_label(content, "ГРАФИКА", 20, Color(0.85, 0.88, 0.84))
 	_settings_slider(content, "УГОЛ ОБЗОРА (FOV)", GameSettings.fov, GameSettings.MIN_FOV, GameSettings.MAX_FOV, 1.0, 1.0, "°", GameSettings.set_fov)
 	var quality_button := _button(content, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, Vector2(0, 52))
@@ -886,6 +888,12 @@ func _settings_slider(parent: Control, caption: String, value: float, min_value:
 		label.text = "%s: %d%s" % [caption, int(round(new_value * display_scale)), suffix]
 	)
 	row.add_child(slider)
+
+func _open_hud_customizer() -> void:
+	var customizer_script: Script = load("res://scripts/hud_customizer.gd")
+	if customizer_script != null:
+		var customizer = customizer_script.new()
+		add_child(customizer)
 
 func _quit() -> void:
 	get_tree().quit()

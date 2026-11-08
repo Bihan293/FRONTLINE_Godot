@@ -84,6 +84,17 @@ var look_sway := Vector2.ZERO
 var lean_amount := 0.0
 var mobile_lean_left := false
 var mobile_lean_right := false
+
+# === BODYCAM / DUMMY WAR РЕАЛИЗМ ===
+var cam_yaw := 0.0
+var cam_pitch := 0.0
+var cam_roll := 0.0
+var last_applied_yaw := 0.0
+var cam_shake_trauma := 0.0
+var bodycam_time := 0.0
+var bodycam_rec_dot: Label = null
+var bodycam_osd_label: Label = null
+var bodycam_vignette: ColorRect = null
 var current_weapon_index := 0
 var last_primary_weapon_index := 0
 var is_shovel_equipped := false
@@ -123,7 +134,7 @@ var throwable_cooldown := 0.0
 var player_role := "ASSAULT"
 var role_primary_weapon_index := 0
 var role_weapon_indices: Array[int] = [0, 3]
-var active_drone: FRONTLINERadioDrone = null
+var active_drone: CharacterBody3D = null
 var drone_charge_available := true
 var drone_vertical_input := 0.0
 
@@ -199,6 +210,9 @@ func _ready() -> void:
 	_build_pause_menu()
 	if not OS.has_feature("mobile"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	cam_yaw = yaw
+	cam_pitch = pitch
+	last_applied_yaw = yaw
 	_apply_look()
 
 func _build_player() -> void:
@@ -212,7 +226,7 @@ func _build_player() -> void:
 	player_collision.position.y = 0.975
 	add_child(player_collision)
 	camera = Camera3D.new()
-	camera.position = Vector3(0, 1.80, -0.10)
+	camera.position = Vector3(0, 1.70, -0.08) # Нательное крепление бодикамеры (Bodycam)
 	camera.fov = GameSettings.fov
 	camera.current = true
 	add_child(camera)
@@ -278,6 +292,7 @@ func _equip_weapon_visual() -> void:
 	flash_mat.emission_energy_multiplier = 5.0
 	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	muzzle_flash.material_override = flash_mat
+	muzzle_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	muzzle_flash.visible = false
 	muzzle_flash.name = "MuzzleFlash"
 	muzzle_anchor.add_child(muzzle_flash)
@@ -795,6 +810,73 @@ func _build_hud() -> void:
 	blood_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(blood_overlay)
 
+	# Мягкая процедурная виньетка оптической линзы нательной камеры (Bodycam Vignette)
+	bodycam_vignette = ColorRect.new()
+	bodycam_vignette.name = "BodycamVignette"
+	bodycam_vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bodycam_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vign_mat := ShaderMaterial.new()
+	var vign_shader := Shader.new()
+	vign_shader.code = """
+shader_type canvas_item;
+void fragment() {
+    vec2 uv = UV - 0.5;
+    float dist = length(uv);
+    float vig = smoothstep(0.42, 0.74, dist);
+    COLOR = vec4(0.01, 0.02, 0.03, vig * 0.45);
+}
+"""
+	vign_mat.shader = vign_shader
+	bodycam_vignette.material = vign_mat
+	hud.add_child(bodycam_vignette)
+
+	# Нательный OSD бодикамеры (Bodycam OSD): правый верхний угол левее кнопки паузы
+	var bodycam_container := VBoxContainer.new()
+	bodycam_container.name = "BodycamOSD"
+	bodycam_container.anchor_left = 1.0
+	bodycam_container.anchor_right = 1.0
+	bodycam_container.offset_left = -440.0
+	bodycam_container.offset_right = -120.0
+	bodycam_container.offset_top = 16.0
+	bodycam_container.offset_bottom = 64.0
+	bodycam_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bodycam_container.add_theme_constant_override("separation", 2)
+	hud.add_child(bodycam_container)
+
+	var line1 := HBoxContainer.new()
+	line1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bodycam_container.add_child(line1)
+
+	var cam_title := Label.new()
+	cam_title.text = "AXON BODY 4   "
+	cam_title.add_theme_font_size_override("font_size", 14)
+	cam_title.add_theme_color_override("font_color", Color(0.92, 0.94, 0.96, 0.88))
+	cam_title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	cam_title.add_theme_constant_override("shadow_offset_x", 2)
+	cam_title.add_theme_constant_override("shadow_offset_y", 2)
+	cam_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line1.add_child(cam_title)
+
+	bodycam_rec_dot = Label.new()
+	bodycam_rec_dot.text = "● REC"
+	bodycam_rec_dot.add_theme_font_size_override("font_size", 14)
+	bodycam_rec_dot.add_theme_color_override("font_color", Color(1.0, 0.18, 0.15, 1.0))
+	bodycam_rec_dot.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	bodycam_rec_dot.add_theme_constant_override("shadow_offset_x", 2)
+	bodycam_rec_dot.add_theme_constant_override("shadow_offset_y", 2)
+	bodycam_rec_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line1.add_child(bodycam_rec_dot)
+
+	bodycam_osd_label = Label.new()
+	bodycam_osd_label.text = "2026-11-08 14:32:05Z   BAT 94%"
+	bodycam_osd_label.add_theme_font_size_override("font_size", 13)
+	bodycam_osd_label.add_theme_color_override("font_color", Color(0.85, 0.88, 0.90, 0.80))
+	bodycam_osd_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	bodycam_osd_label.add_theme_constant_override("shadow_offset_x", 2)
+	bodycam_osd_label.add_theme_constant_override("shadow_offset_y", 2)
+	bodycam_osd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bodycam_container.add_child(bodycam_osd_label)
+
 	crosshair = CROSSHAIR.new()
 	hud.add_child(crosshair)
 
@@ -854,16 +936,27 @@ func _build_hud() -> void:
 	equip_label.add_theme_color_override("font_color", Color(0.92, 0.82, 0.55))
 	hud.add_child(equip_label)
 
-	# На телефоне правый нижний угол занят кнопками — переносим патроны наверх.
+	# На телефоне патроны и экипировка размещаются левее блока кнопок огня и приседа (не перекрывая aim)
 	if _touch_ui_enabled():
-		ammo_label.anchor_top = 0.0
-		ammo_label.anchor_bottom = 0.0
-		ammo_label.offset_top = 270.0
-		ammo_label.offset_bottom = 306.0
-		equip_label.anchor_top = 0.0
-		equip_label.anchor_bottom = 0.0
-		equip_label.offset_top = 310.0
-		equip_label.offset_bottom = 340.0
+		ammo_label.anchor_left = 1.0
+		ammo_label.anchor_right = 1.0
+		ammo_label.anchor_top = 1.0
+		ammo_label.anchor_bottom = 1.0
+		ammo_label.offset_left = -560.0
+		ammo_label.offset_right = -170.0
+		ammo_label.offset_top = -68.0
+		ammo_label.offset_bottom = -34.0
+		ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+		equip_label.anchor_left = 1.0
+		equip_label.anchor_right = 1.0
+		equip_label.anchor_top = 1.0
+		equip_label.anchor_bottom = 1.0
+		equip_label.offset_left = -660.0
+		equip_label.offset_right = -170.0
+		equip_label.offset_top = -102.0
+		equip_label.offset_bottom = -72.0
+		equip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	pickup_label = Label.new()
 	pickup_label.anchor_left = 0.5
@@ -975,8 +1068,8 @@ func _on_look_delta(delta: Vector2) -> void:
 	if GameSettings.invert_y:
 		pitch_delta = -pitch_delta
 	pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
-	look_sway += Vector2(delta.x, delta.y) * 0.00006
-	look_sway = look_sway.limit_length(0.035)
+	look_sway += Vector2(delta.x, delta.y) * 0.00035
+	look_sway = look_sway.limit_length(0.045)
 
 func _on_fire_changed(pressed: bool) -> void:
 	mobile_fire = pressed
@@ -1012,7 +1105,7 @@ func _launch_drone() -> void:
 	if not drone_charge_available or get_parent() == null:
 		return
 	drone_charge_available = false
-	var drone := RADIO_DRONE_SCRIPT.new() as FRONTLINERadioDrone
+	var drone: CharacterBody3D = RADIO_DRONE_SCRIPT.new()
 	if drone == null:
 		return
 	get_parent().add_child(drone)
@@ -1110,8 +1203,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameSettings.invert_y:
 			pitch_delta = -pitch_delta
 		pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
-		look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
-		look_sway = look_sway.limit_length(0.035)
+		look_sway += Vector2(event.relative.x, event.relative.y) * 0.00035
+		look_sway = look_sway.limit_length(0.045)
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1242,30 +1335,46 @@ func _physics_process(delta: float) -> void:
 		var low_hp_alpha := clampf((35.0 - health) / 35.0, 0.0, 0.3) if health < 35.0 else 0.0
 		blood_overlay.color.a = low_hp_alpha
 
-	var bob_amount := 0.25 if aiming else 1.0
-	var kick_offset := Vector3(0.0, 0.015, 0.04) * weapon_kick
+	# Bodycam / Dummy War физика оружия: вес, покачивание и свободная наводка
+	var run_boost := 1.0 + sprint_anim * 0.9
+	var bob_factor := 0.20 if aiming else 1.0
 	var bob_offset := Vector3(
-		sin(bob_time) * 0.007 * bob_amount,
-		absf(cos(bob_time)) * 0.006 * bob_amount,
+		sin(bob_time) * 0.010 * run_boost * bob_factor,
+		absf(cos(bob_time)) * 0.009 * run_boost * bob_factor,
 		0.0
 	)
 	var breath_offset := Vector3(0.0, sin(breathing_time * 1.8) * 0.002, 0.0)
-	var sway_offset := Vector3(-look_sway.x, look_sway.y, 0.0)
-	look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 8.0, 0.0, 1.0))
+	var kick_offset := Vector3(0.0, 0.020, 0.05) * weapon_kick
+
+	# Подавление свободного sway при прицеливании для идеального ADS (аудит QA)
+	var sway_mult := 1.0 - aim_blend * 0.90
+	var sway_pos := Vector3(-look_sway.x * 0.85, look_sway.y * 0.85, 0.0) * sway_mult
+	var sway_rot := Vector3(look_sway.y * 1.8, -look_sway.x * 2.2, look_sway.x * 1.5) * sway_mult
+	look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 9.0, 0.0, 1.0))
 
 	var stance_offset := Vector3.ZERO
 	if stance == 1:
 		stance_offset = Vector3(0.0, -0.015, 0.02)
 	elif stance == 2:
 		stance_offset = Vector3(0.0, -0.06, 0.05)
-	var sprint_offset := Vector3(0.10, -0.11, 0.03) * sprint_anim
-	var landing_offset := Vector3(0.0, -0.04, 0.0) * landing_anim
 
-	var target_weapon_pos := weapon_base.lerp(weapon_aim_position, aim_blend) + kick_offset + bob_offset + breath_offset + sway_offset + stance_offset + sprint_offset + landing_offset
-	weapon_root.position = weapon_root.position.lerp(target_weapon_pos, clampf(delta * 20.0, 0.0, 1.0))
-	weapon_root.rotation.x = -weapon_kick * 0.18 + sway_offset.y * 0.6 + sprint_anim * 0.16 + landing_anim * 0.10
-	weapon_root.rotation.y = sway_offset.x * 0.6
-	weapon_root.rotation.z = -sprint_anim * 0.30
+	# Тактический спринт (Low Ready / удержание оружия при беге)
+	var sprint_offset := Vector3(0.06, -0.11, 0.04) * sprint_anim
+	var sprint_rot := Vector3(sprint_anim * 0.20, sprint_anim * 0.12, -sprint_anim * 0.35)
+
+	# Просадка оружия при приземлении
+	var landing_offset := Vector3(0.0, -0.05, 0.03) * landing_anim
+	var landing_rot := Vector3(landing_anim * 0.10, 0.0, 0.0)
+
+	var target_weapon_pos := weapon_base.lerp(weapon_aim_position, aim_blend) + kick_offset + bob_offset + breath_offset + sway_pos + stance_offset + sprint_offset + landing_offset
+	weapon_root.position = weapon_root.position.lerp(target_weapon_pos, clampf(delta * 22.0, 0.0, 1.0))
+
+	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
+	weapon_root.rotation = Vector3(
+		-weapon_kick * 0.22 + sway_rot.x + sprint_rot.x + landing_rot.x,
+		sway_rot.y + sprint_rot.y,
+		sway_rot.z + sprint_rot.z - strafe_roll * 0.40
+	)
 	_update_view_arms()
 
 	if muzzle_flash_time > 0.0:
@@ -1354,18 +1463,27 @@ func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
 	if on_floor and not _was_on_floor and fall_speed < -3.0:
 		landing_anim = 1.0
+		_play_sfx(sfx_footstep, SFX_FOOTSTEPS[0], -2.5, 0.74) # Глухой тактический звук приземления и снаряжения
 	_was_on_floor = on_floor
 	landing_anim = maxf(0.0, landing_anim - delta * 5.0)
 	var sprint_target := 1.0 if (planar_speed > SPEED + 0.4 and not aiming and stance == 0 and on_floor) else 0.0
 	sprint_anim = lerpf(sprint_anim, sprint_target, clampf(delta * 8.0, 0.0, 1.0))
 
+	# Обновление времени и OSD бодикамеры (Bodycam)
+	bodycam_time += delta
+	if bodycam_rec_dot != null:
+		bodycam_rec_dot.modulate.a = 0.30 + 0.70 * absf(sin(bodycam_time * 3.6))
+	if bodycam_osd_label != null:
+		var dt := Time.get_datetime_dict_from_system()
+		bodycam_osd_label.text = "%04d-%02d-%02d %02d:%02d:%02dZ   BAT 94%%" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second]
+
 	recoil = recoil.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
 	var target_height := 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
 	player_capsule.height = lerpf(player_capsule.height, target_height, clampf(delta * 10.0, 0.0, 1.0))
 	player_collision.position.y = player_capsule.height * 0.5
-	var target_y := 1.80 if stance == 0 else (1.34 if stance == 1 else 0.54)
-	var cam_bob_y := sin(bob_time * 2.0) * 0.004 * bob_amount
-	var cam_bob_x := sin(bob_time) * 0.005 * bob_amount
+	var target_y := 1.70 if stance == 0 else (1.28 if stance == 1 else 0.52)
+	var cam_bob_y := absf(sin(bob_time * 2.0)) * 0.014 * run_boost * bob_factor
+	var cam_bob_x := sin(bob_time) * 0.010 * run_boost * bob_factor
 	var lean_input := float(Input.is_key_pressed(KEY_E) or mobile_lean_right) - float(Input.is_key_pressed(KEY_Q) or mobile_lean_left)
 	var lean_side := lean_input * 0.42
 	if absf(lean_side) > 0.01:
@@ -1381,14 +1499,14 @@ func _physics_process(delta: float) -> void:
 			lean_side = signf(lean_side) * minf(absf(lean_side), available)
 	var lean_target := lean_side / 0.42
 	lean_amount = lerpf(lean_amount, lean_target, clampf(delta * 12.0, 0.0, 1.0))
-	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y - landing_anim * 0.055, delta * 10.0)
-	camera.position.x = lerpf(camera.position.x, cam_bob_x + lean_amount * 0.42, delta * 10.0)
+	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y - landing_anim * 0.09, delta * 12.0)
+	camera.position.x = lerpf(camera.position.x, cam_bob_x + lean_amount * 0.42, delta * 12.0)
 	if player_body != null:
 		player_body.set_motion(planar_speed, planar_speed > SPEED + 0.5)
 		player_body.set_stance(stance)
 		var look_down := clampf((-pitch - 0.22) / 0.45, 0.0, 1.0)
 		player_body.set_look_down(look_down)
-	_apply_look()
+	_apply_look(delta)
 
 ## === Техника и турели (TASK-0012) ===
 
@@ -1433,7 +1551,8 @@ func _exit_vehicle() -> void:
 		if vehicle.has_method("exit_position"):
 			global_position = vehicle.call("exit_position")
 	velocity = Vector3.ZERO
-	camera.position.y = 1.80
+	# Стоячая высота камеры после высадки (lerp в _physics_process дочекается).
+	camera.position.y = 1.70
 	if weapon_root != null and not is_dead:
 		weapon_root.visible = true
 	if player_body != null and not is_dead:
@@ -1456,14 +1575,49 @@ func _nearest_enterable() -> Node3D:
 			nearest = station
 	return nearest
 
-func _apply_look() -> void:
+func _apply_look(delta: float = 0.016) -> void:
 	rotation.y = yaw
 	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
-	camera.rotation = Vector3(
-		clampf(pitch + recoil.y, -1.45, 1.45),
-		recoil.x,
-		-lean_amount * deg_to_rad(9.0) + strafe_roll
+
+	# Инерция и упругий лаг нательной камеры (Bodycam)
+	var cam_lag_speed := lerpf(16.0, 38.0, aim_blend)
+	cam_yaw = lerp_angle(cam_yaw, yaw, clampf(delta * cam_lag_speed, 0.0, 1.0))
+	cam_pitch = lerpf(cam_pitch, pitch, clampf(delta * cam_lag_speed, 0.0, 1.0))
+	var yaw_diff := wrapf(cam_yaw - yaw, -PI, PI)
+	var yaw_speed := (yaw - last_applied_yaw) / maxf(delta, 0.001)
+	last_applied_yaw = yaw
+	var turn_roll := clampf(-yaw_speed * 0.010, -deg_to_rad(3.5), deg_to_rad(3.5)) * (1.0 - aim_blend * 0.85)
+
+	# Сотрясение камеры (Травма от выстрелов и взрывов)
+	cam_shake_trauma = maxf(0.0, cam_shake_trauma - delta * 4.2)
+	var shake_mag := cam_shake_trauma * cam_shake_trauma
+	var shake_rot := Vector3(
+		randf_range(-1.0, 1.0) * deg_to_rad(2.2) * shake_mag,
+		randf_range(-1.0, 1.0) * deg_to_rad(1.8) * shake_mag,
+		randf_range(-1.0, 1.0) * deg_to_rad(2.5) * shake_mag
 	)
+
+	var run_boost := 1.0 + sprint_anim * 0.9
+	var bob_factor := 0.20 if aiming else 1.0
+	var cam_bob_roll := cos(bob_time) * deg_to_rad(1.3 * run_boost) * bob_factor if not aiming else 0.0
+
+	var total_roll := -lean_amount * deg_to_rad(9.5) + strafe_roll + turn_roll + cam_bob_roll + shake_rot.z
+	camera.rotation = Vector3(
+		clampf(cam_pitch + recoil.y - landing_anim * deg_to_rad(3.5) + shake_rot.x, -1.45, 1.45),
+		yaw_diff * 0.65 + recoil.x + shake_rot.y,
+		total_roll
+	)
+
+func add_camera_trauma(amount: float) -> void:
+	cam_shake_trauma = clampf(cam_shake_trauma + amount, 0.0, 1.0)
+
+func apply_explosion_shake(explosion_pos: Vector3, radius: float = 32.0, max_trauma: float = 0.95) -> void:
+	var dist := global_position.distance_to(explosion_pos)
+	if dist < radius:
+		var factor := 1.0 - (dist / radius)
+		add_camera_trauma(factor * max_trauma)
+		recoil.y += factor * 0.08
+		recoil.x += randf_range(-factor, factor) * 0.06
 
 func _down_action() -> void:
 	if is_dead or input_locked:
@@ -1533,9 +1687,37 @@ func _shoot() -> void:
 	var casing_vel := camera.global_transform.basis.x * 2.6 + camera.global_transform.basis.y * 1.4 - camera.global_transform.basis.z * 0.4
 	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, casing_vel)
 
-	recoil.y = minf(recoil.y + randf_range(0.009, 0.015), 0.13)
-	recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.045, 0.045)
-	weapon_kick = 0.07
+	var kick_strength: float = 0.08
+	var trauma_add: float = 0.18
+	match str(weapon.id):
+		"shotgun":
+			kick_strength = 0.22
+			trauma_add = 0.45
+			recoil.y = minf(recoil.y + 0.038, 0.16)
+			recoil.x = clampf(recoil.x + randf_range(-0.015, 0.015), -0.05, 0.05)
+		"mosin", "kar98k":
+			kick_strength = 0.18
+			trauma_add = 0.38
+			recoil.y = minf(recoil.y + 0.030, 0.15)
+			recoil.x = clampf(recoil.x + randf_range(-0.012, 0.012), -0.045, 0.045)
+		"ak47":
+			kick_strength = 0.11
+			trauma_add = 0.24
+			recoil.y = minf(recoil.y + randf_range(0.012, 0.020), 0.14)
+			recoil.x = clampf(recoil.x + randf_range(-0.008, 0.008), -0.045, 0.045)
+		"mp40", "ppsh41":
+			kick_strength = 0.07
+			trauma_add = 0.14
+			recoil.y = minf(recoil.y + randf_range(0.006, 0.011), 0.11)
+			recoil.x = clampf(recoil.x + randf_range(-0.005, 0.005), -0.035, 0.035)
+		_:
+			kick_strength = 0.08
+			trauma_add = 0.16
+			recoil.y = minf(recoil.y + randf_range(0.008, 0.014), 0.12)
+			recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.04, 0.04)
+
+	weapon_kick = kick_strength
+	add_camera_trauma(trauma_add)
 	if muzzle_flash != null:
 		muzzle_flash.visible = true
 		muzzle_flash_time = 0.045
@@ -2069,8 +2251,6 @@ func take_field_ammo(amount: int) -> int:
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
 		return false
-	if not role_weapon_indices.has(index):
-		return false
 	var stored_clip := ammo if index == current_weapon_index else ammo_by_weapon[index]
 	var stored_reserve := reserve_ammo if index == current_weapon_index else reserve_by_weapon[index]
 	var definition: Dictionary = WEAPON_DEFS[index]
@@ -2094,6 +2274,14 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	ammo_by_weapon[previous_index] = 0
 	reserve_by_weapon[previous_index] = 0
 	_spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
+
+	# Свободный подбор любого оружия: заменяем слот основного оружия в пуле
+	if not role_weapon_indices.has(index):
+		var prev_slot := role_weapon_indices.find(previous_index)
+		if prev_slot >= 0:
+			role_weapon_indices[prev_slot] = index
+		else:
+			role_weapon_indices.insert(0, index)
 
 	current_weapon_index = index
 	var incoming: Dictionary = WEAPON_DEFS[index]

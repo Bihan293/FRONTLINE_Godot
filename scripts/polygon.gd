@@ -165,6 +165,8 @@ func _build_box(data: Dictionary) -> void:
     var inst := MeshInstance3D.new()
     inst.mesh = mesh
     inst.material_override = _mat(data.color, textured)
+    if not bool(data.get("cast_shadow", true)):
+        inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     if not solid:
         inst.position = pos
     parent.add_child(inst)

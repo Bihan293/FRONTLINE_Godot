@@ -113,6 +113,7 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			blade.rotation = Vector3(PI * 0.5, 0.0, PI * 0.25)
 			blade.position = Vector3(0.0, -0.055, -0.61)
 			blade.material_override = steel
+			blade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(blade)
 		"grenade", "f1", "f1_grenade":
 			root.free()

@@ -2,6 +2,7 @@ extends Node3D
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const TACTICAL_GEAR = preload("res://scripts/tactical_gear.gd")
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
@@ -582,22 +583,7 @@ static func _make_detail_texture() -> Texture2D:
 
 func _add_equipment(root: Node3D, model_path: String) -> void:
     var is_red := model_path.to_upper().contains("SOVIET") or team_name.to_upper().contains("RED")
-    var helmet_path := "res://assets/models/equipment/Soviet_Helmet.glb" if is_red else "res://assets/models/equipment/German_Helmet.glb"
-    var vest_path := "res://assets/models/equipment/Soviet_Vest.glb" if is_red else "res://assets/models/equipment/German_Vest.glb"
-    var helmet := load(helmet_path)
-    if helmet != null:
-        var h: Node3D = helmet.instantiate()
-        # Базовые координаты шлема — низ на уровне origin, у головы блочной модели.
-        h.position = Vector3(0.0, 1.78, 0.0)
-        root.add_child(h)
-    var vest := load(vest_path)
-    if vest != null:
-        var v: Node3D = vest.instantiate()
-        # Центр бронежилета совпадает с грудной костью. Чуть увеличиваем,
-        # чтобы пластины лежали поверх формы, а не утопали в торсе.
-        v.position = Vector3(0.0, 1.345, 0.0)
-        v.scale = Vector3(1.12, 1.03, 1.18)
-        root.add_child(v)
+    TACTICAL_GEAR.add_tactical_loadout(root, is_red, true)
 
 func _fix_normals(root: Node) -> void:
     # Исходные GLB солдат не содержат NORMAL. Godot их не генерирует,

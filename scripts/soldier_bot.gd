@@ -10,6 +10,7 @@ signal soldier_fired(pos: Vector3)
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const TACTICAL_GEAR = preload("res://scripts/tactical_gear.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
@@ -86,8 +87,12 @@ var difficulty_spread_mult: float = 1.0
 var difficulty_reaction_mult: float = 1.0
 var difficulty_recovery_mult: float = 1.0
 var _medic_timer: float = randf_range(3.0, 6.0)
+var _cached_cam: Camera3D = null
+var _cached_player: Node3D = null
+var _label_update_timer: float = 0.0
 
 func _ready() -> void:
+	_label_update_timer = randf_range(0.0, 0.25)
 	add_to_group("bots")
 	add_to_group("damageable_actor")
 	collision_layer = SOLDIER_LAYER_MASK
@@ -171,11 +176,14 @@ func _build_visuals() -> void:
 		push_error("FRONTLINE: cannot load soldier GLB " + path)
 		return
 	var model = packed.instantiate()
+	var is_red: bool = team_name.to_upper().contains("RED")
+	TACTICAL_GEAR.add_tactical_loadout(model, is_red, true)
 	_visual.add_child(model)
 
 	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
 	var has_rig := skeleton is Skeleton3D
 	if has_rig:
+		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
 		# Attach the procedural script before entering the tree so its _ready()
 		# can bind the skeleton built above. Setting the script after adding the
 		# visual to the live pivot leaves _skeleton null and disables animation/ragdoll.
@@ -334,11 +342,16 @@ func _physics_process(delta: float) -> void:
 		var reload_tilt := -0.32 if is_reloading else 0.0
 		_gun_pivot.rotation.z = lerpf(_gun_pivot.rotation.z, reload_tilt, clampf(delta * 8.0, 0.0, 1.0))
 	if _label != null:
-		var cam := get_viewport().get_camera_3d()
-		var label_dist := 999.0
-		if cam != null:
-			label_dist = global_position.distance_to(cam.global_position)
-		_label.visible = label_dist < 36.0
+		_label_update_timer -= delta
+		if _label_update_timer <= 0.0:
+			_label_update_timer = 0.25
+			if _cached_cam == null or not is_instance_valid(_cached_cam):
+				var vp := get_viewport()
+				_cached_cam = vp.get_camera_3d() if vp != null else null
+			var label_dist := 999.0
+			if _cached_cam != null and is_instance_valid(_cached_cam):
+				label_dist = global_position.distance_to(_cached_cam.global_position)
+			_label.visible = label_dist < 36.0
 
 func _update_ai(delta: float) -> void:
 	# Подавление постепенно рассеивается с учетом сложности
@@ -362,10 +375,16 @@ func _update_ai(delta: float) -> void:
 		velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
 		return
 
-	# Проверка целей с учетом реакции на выбранной сложности
+	# Проверка целей с учетом реакции на выбранной сложности и дистанции до игрока
 	target_check_timer -= delta
 	if target_check_timer <= 0.0:
-		target_check_timer = randf_range(0.2, 0.45) * difficulty_reaction_mult
+		if _cached_player == null or not is_instance_valid(_cached_player):
+			_cached_player = get_tree().get_first_node_in_group("player") as Node3D
+		var dist_to_player := global_position.distance_to(_cached_player.global_position) if (_cached_player != null and is_instance_valid(_cached_player)) else 999.0
+		if dist_to_player > 40.0:
+			target_check_timer = randf_range(0.35, 0.50) * difficulty_reaction_mult
+		else:
+			target_check_timer = randf_range(0.2, 0.40) * difficulty_reaction_mult
 		_find_target()
 
 	if current_target != null and is_instance_valid(current_target):
@@ -398,7 +417,9 @@ func _find_target() -> void:
 	var best_dist := 75.0
 
 	# 1. Проверяем игрока
-	var player = get_tree().get_first_node_in_group("player") as Node3D
+	if _cached_player == null or not is_instance_valid(_cached_player):
+		_cached_player = get_tree().get_first_node_in_group("player") as Node3D
+	var player := _cached_player
 	if player != null and is_instance_valid(player):
 		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 		var player_dead: bool = player.get("is_dead") if "is_dead" in player else false
@@ -699,7 +720,9 @@ func _fire_single_shot() -> void:
 
 	var bullet_range := 150.0
 	var to := from + shoot_dir * bullet_range
-	var player_node = get_tree().get_first_node_in_group("player")
+	if _cached_player == null or not is_instance_valid(_cached_player):
+		_cached_player = get_tree().get_first_node_in_group("player") as Node3D
+	var player_node := _cached_player
 	if player_node != null and is_instance_valid(player_node) and "camera" in player_node and player_node.camera != null:
 		FRONTLINEAmbience.check_bullet_flyby(from, to, player_node.camera.global_position)
 
@@ -764,8 +787,14 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		return 0
 	health -= damage
 	suppression = minf(1.0, suppression + 0.45)
+
+	# Физический кинетический импульс пули (Dummy War / Bodycam)
+	var hit_dir := (global_position - attacker_pos).normalized()
+	hit_dir.y = 0.0
+	velocity += hit_dir * clampf(float(damage) * 0.14, 1.4, 5.5)
+
 	if _proc != null and health > 0.0:
-		_proc.add_flinch(0.55 if region == "chest" else 0.75)
+		_proc.add_flinch(clampf(float(damage) * 0.035, 0.75, 2.0))
 	if health > 0.0 and randf() < 0.45:
 		_shout("РАНЕН!" if team_name.contains("RED") else "GETROFFEN!", Color(0.95, 0.25, 0.25))
 
@@ -782,7 +811,9 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	is_dead = true
 	health = 0.0
-	velocity = Vector3.ZERO
+	var hit_dir := (global_position - attacker_pos).normalized()
+	hit_dir.y = 0.0
+	velocity = hit_dir * 3.2 + Vector3.UP * 1.0
 	# Труп продолжает держаться на земле, но не блокирует живых бойцов невидимой капсулой.
 	collision_layer = 0
 	collision_mask = WORLD_LAYER_MASK
@@ -817,7 +848,6 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 		_label.modulate = Color(0.9, 0.2, 0.2, 0.8)
 
 	# Запускаем физический рэгдолл скелета
-	var hit_dir := (global_position - attacker_pos).normalized()
 	if _proc != null:
 		_proc.set_ragdoll(true, hit_dir, region == "head")
 
