@@ -76,6 +76,9 @@ class DroppedWeaponNode extends Node3D:
 static func spawn_casing(parent: Node, spawn_pos: Vector3, eject_velocity: Vector3) -> void:
 	if parent == null:
 		return
+	# Low-пресет: гильзы не спавним (каждая — отдельный нод и физтело).
+	if GameSettings.quality == 0:
+		return
 	var c := CasingNode.new()
 	c.position = spawn_pos
 	c.velocity = eject_velocity + Vector3(randf_range(-0.3, 0.3), randf_range(-0.2, 0.4), randf_range(-0.3, 0.3))
@@ -167,8 +170,8 @@ static func spawn_directional_blood(parent: Node, pos: Vector3, bullet_dir: Vect
 		particles.emitting = true
 		particles.finished.connect(particles.queue_free)
 
-	# Мелкая кровавая взвесь вокруг раны (читается объёмнее, чем один спрайт).
-	var mist := _make_particles(ground_parent, pos + normal * 0.15, normal, false)
+	# Мелкая кровавая взвесь вокруг раны (на low пропускаем: второй эмиттер).
+	var mist := _make_particles(ground_parent, pos + normal * 0.15, normal, false) if GameSettings.quality > 0 else null
 	if mist != null:
 		mist.amount = 10
 		mist.initial_velocity_min = 0.2
@@ -188,6 +191,9 @@ static func spawn_directional_blood(parent: Node, pos: Vector3, bullet_dir: Vect
 
 static func spawn_bullet_hole(parent: Node, pos: Vector3, normal: Vector3) -> void:
 	if parent == null:
+		return
+	# Low-пресет: не плодим дырки от пуль (десятки квадов в бою).
+	if GameSettings.quality == 0:
 		return
 	var mat := _hole_material()
 	var decal := MeshInstance3D.new()
@@ -264,7 +270,9 @@ static func _surface_transform(pos: Vector3, normal: Vector3, offset: float) -> 
 
 static func _register_decal(decal: MeshInstance3D) -> void:
 	_decals.append(decal)
-	while _decals.size() > 60:
+	# На низком пресете держим меньше декалей (draw calls + overdraw на телефоне).
+	var max_decals := 24 if GameSettings.quality == 0 else 60
+	while _decals.size() > max_decals:
 		var old = _decals.pop_front()
 		if old != null and is_instance_valid(old):
 			old.queue_free()

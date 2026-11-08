@@ -194,7 +194,8 @@ func apply_video() -> void:
 	match quality:
 		0:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.scaling_3d_scale = 0.75
+			# Мобильный low: меньше пикселей = главный выигрыш на слабых GPU.
+			vp.scaling_3d_scale = 0.65
 		1:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			vp.scaling_3d_scale = 0.90
