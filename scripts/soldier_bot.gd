@@ -87,6 +87,17 @@ var _navigation: FRONTLINEBotNavigation
 var _route_path := PackedVector3Array()
 var _route_index := 0
 var _route_repath_timer := 0.0
+# QA-fix TASK-0022: антизастревание и потеря цели за укрытием.
+var _stuck_check_timer := 0.0
+var _stuck_last_pos := Vector3.ZERO
+var _unstick_timer := 0.0
+var _unstick_dir := Vector3.ZERO
+var _los_lost_timer := 0.0
+# QA-fix TASK-0022: тактическая «живость» — перебежки, приседания, разброс маршрутов.
+var _personal_offset_x := 0.0
+var _bound_timer := 0.0
+var _bound_crouch := false
+var _scan_time := 0.0
 var _route_goal := Vector3.ZERO
 var _route_has_attempted := false
 var _shout_timer := 0.0
@@ -101,6 +112,10 @@ var _cached_player: Node3D = null
 var _label_update_timer: float = 0.0
 
 func _ready() -> void:
+	# Индивидуальный маршрут и ритм перебежек, чтобы отделение не шло «паровозиком».
+	_personal_offset_x = randf_range(-9.0, 9.0)
+	_bound_timer = randf_range(0.6, 2.2)
+	_bound_crouch = false
 	_label_update_timer = randf_range(0.0, 0.25)
 	add_to_group("bots")
 	add_to_group("damageable_actor")
@@ -339,13 +354,17 @@ func _physics_process(delta: float) -> void:
 
 	_handle_effects(delta)
 	_update_ai(delta)
+	_apply_separation(delta)
 	move_and_slide()
+	_update_stuck_watch(delta)
 
 	# Обновление анимаций процедуры
 	var horiz_vel := Vector2(velocity.x, velocity.z).length()
 	if _proc != null:
 		_proc.set_motion(horiz_vel, horiz_vel > SPEED_WALK + 0.5)
-		_proc.set_crouching(stance == 1)
+		_proc.set_crouching(stance >= 1)
+		if _proc.has_method("set_prone"):
+			_proc.call("set_prone", stance == 2)
 		_proc.set_reloading(is_reloading)
 	if _gun_pivot != null:
 		var reload_tilt := -0.32 if is_reloading else 0.0
@@ -360,7 +379,54 @@ func _physics_process(delta: float) -> void:
 			var label_dist := 999.0
 			if _cached_cam != null and is_instance_valid(_cached_cam):
 				label_dist = global_position.distance_to(_cached_cam.global_position)
-			_label.visible = label_dist < 36.0
+			# На low подписи ботов отключены: Label3D дорого стоят на мобильном.
+			_label.visible = GameSettings.quality > 0 and label_dist < 36.0
+
+## Мягкое расталкивание союзников: боты не сбиваются в кучу в углах и проходах.
+func _apply_separation(delta: float) -> void:
+	var push := Vector3.ZERO
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b == self or not is_instance_valid(b):
+			continue
+		var other := b as Node3D
+		if other == null:
+			continue
+		var d := global_position - other.global_position
+		d.y = 0.0
+		var dist := d.length()
+		if dist > 0.05 and dist < 2.3:
+			push += d.normalized() * ((2.3 - dist) / 2.3)
+	if push.length_squared() > 0.001:
+		push = push.limit_length(1.0)
+		velocity.x += push.x * 18.0 * delta
+		velocity.z += push.z * 18.0 * delta
+
+## QA-fix TASK-0022: боты больше не «залипают» в углах стен.
+## Если бот хочет идти, но за 0.7 с сместился меньше 22 см — короткий
+## боковой шаг с подскоком и сброс пути, чтобы выбраться из угла.
+func _update_stuck_watch(delta: float) -> void:
+	if _unstick_timer > 0.0:
+		_unstick_timer -= delta
+		if _unstick_dir.length_squared() > 0.01:
+			velocity.x = _unstick_dir.x * SPEED_WALK
+			velocity.z = _unstick_dir.z * SPEED_WALK
+		return
+	_stuck_check_timer -= delta
+	if _stuck_check_timer > 0.0:
+		return
+	_stuck_check_timer = 0.7
+	var moved := global_position.distance_to(_stuck_last_pos)
+	_stuck_last_pos = global_position
+	var wants_move := Vector2(velocity.x, velocity.z).length() > SPEED_CROUCH * 0.6
+	if wants_move and moved < 0.22:
+		var heading := Vector3(velocity.x, 0.0, velocity.z).normalized()
+		var side := Vector3(-heading.z, 0.0, heading.x) * (1.0 if randf() < 0.5 else -1.0)
+		_unstick_dir = (side + heading * 0.35).normalized()
+		_unstick_timer = 0.55
+		_route_repath_timer = 0.0
+		_route_has_attempted = false
+		if is_on_floor():
+			velocity.y = 4.2
 
 func _update_ai(delta: float) -> void:
 	# Подавление постепенно рассеивается с учетом сложности
@@ -509,6 +575,20 @@ func _combat_behavior(delta: float) -> void:
 	var to := tpos - global_position
 	var dist := to.length()
 
+	# QA-fix TASK-0022: не стрелять сквозь укрытие. Если цель пропала из виду,
+	# бот не «палит в стену», а перепозиционируется; через 1.2 с цель сбрасывается.
+	var can_see := _has_line_of_sight(current_target, _target_aim_point(current_target))
+	if can_see:
+		_los_lost_timer = 0.0
+	else:
+		_los_lost_timer += delta
+		fire_cooldown = maxf(fire_cooldown, 0.30)
+		if _los_lost_timer > 1.2:
+			current_target = null
+			_los_lost_timer = 0.0
+			target_check_timer = 0.0
+			return
+
 	# Плавный поворот к противнику
 	var target_yaw := atan2(-to.x, -to.z)
 	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 8.0, 0.0, 1.0))
@@ -526,6 +606,13 @@ func _combat_behavior(delta: float) -> void:
 		velocity.x = lerpf(velocity.x, 0.0, delta * 6.0)
 		velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
 		return
+
+	# Дистанция боя зависит от оружия: снайпер держится позади, ППШ лезет в ближний бой.
+	var preferred_max := 26.0
+	if bot_weapon_index == 2 or bot_weapon_index == 6:
+		preferred_max = 42.0
+	elif bot_weapon_index == 1 or bot_weapon_index == 5:
+		preferred_max = 19.0
 
 	# Тактическое маневрирование в перестрелке: стрейф, укрытия, выглядывание (peeking)
 	combat_strafe_timer -= delta
@@ -549,14 +636,14 @@ func _combat_behavior(delta: float) -> void:
 			combat_strafe_dir = Vector3.ZERO
 			stance = 0 # встать для беглого огня
 
-	if dist > 34.0:
+	if dist > preferred_max:
 		# Сближение с обходом препятствий
 		var move_dir := _avoid_obstacles(_route_direction(tpos, delta))
 		velocity.x = move_dir.x * SPEED_WALK
 		velocity.z = move_dir.z * SPEED_WALK
 		stance = 0
-	elif dist < 8.5 or health < 45.0:
-		# Отход назад при сильном сближении или ранении
+	elif dist < 8.5 or health < 45.0 or ((bot_weapon_index == 2 or bot_weapon_index == 6) and dist < 16.0):
+		# Отход назад при сильном сближении, ранении или если снайперу навязали ближний бой
 		var back_dir := _avoid_obstacles(-to.normalized())
 		var speed_k := 0.75 if health >= 45.0 else 0.90
 		velocity.x = back_dir.x * SPEED_WALK * speed_k
@@ -564,8 +651,12 @@ func _combat_behavior(delta: float) -> void:
 		stance = 1 if health < 45.0 else 0
 	else:
 		# Огневой контакт: активный стрейф и огонь из укрытия
-		if suppression > 0.35:
-			stance = 1 # огонь подавления заставляет прижаться к земле
+		if suppression > 0.55 and randf() < 0.45:
+			stance = 2 # под плотным огнём залегает
+		elif suppression > 0.30 or dist > 18.0:
+			stance = 1 # приседает для стрельбы из укрытия
+		elif dist < 12.0:
+			stance = 0 # в упор встаёт и стрейфит
 		if combat_strafe_dir != Vector3.ZERO:
 			var sdir := _avoid_obstacles(combat_strafe_dir)
 			velocity.x = lerpf(velocity.x, sdir.x * SPEED_CROUCH * 1.35, delta * 6.0)
@@ -575,14 +666,14 @@ func _combat_behavior(delta: float) -> void:
 			velocity.z = lerpf(velocity.z, 0.0, delta * 5.0)
 
 	# Бросок гранаты при подходящей дистанции
-	if dist >= 14.0 and dist <= 32.0 and grenades > 0:
+	if can_see and dist >= 14.0 and dist <= 32.0 and grenades > 0:
 		grenade_cooldown -= delta
 		if grenade_cooldown <= 0.0:
 			_throw_bot_grenade(tpos)
 
-	# Стрельба очередями
+	# Стрельба очередями — только по видимой цели.
 	fire_cooldown -= delta
-	if fire_cooldown <= 0.0:
+	if fire_cooldown <= 0.0 and can_see:
 		_shoot_burst()
 
 func _throw_bot_grenade(target_pt: Vector3) -> void:
@@ -629,7 +720,7 @@ func _advance_behavior(delta: float) -> void:
 	var squad := int(get_instance_id() % 3)
 	var sector_x: float = sector_positions[squad]
 
-	var offset_x := float(int(get_instance_id() % 5) - 2) * 2.5
+	var offset_x := float(int(get_instance_id() % 5) - 2) * 2.5 + _personal_offset_x
 	var target_sector := Vector3(sector_x + offset_x, 0.0, 0.0)
 
 	# Если бот уже вышел к линии секторов (Z около 0), развиваем наступление вглубь вражеских рубежей
@@ -644,10 +735,25 @@ func _advance_behavior(delta: float) -> void:
 
 	var forward_dir := _avoid_obstacles(_route_direction(objective, delta))
 
-	velocity.x = forward_dir.x * SPEED_SPRINT
-	velocity.z = forward_dir.z * SPEED_SPRINT
+	# Перебежки «от укрытия к укрытию»: короткий спринт, затем пауза-сканирование
+	# в приседе. Так отделение не идёт гуськом и не стоит толпой.
+	_bound_timer -= delta
+	if _bound_timer <= 0.0:
+		_bound_crouch = not _bound_crouch
+		_bound_timer = randf_range(0.7, 1.2) if _bound_crouch else randf_range(1.6, 3.0)
+		_scan_time = 0.0
+	if _bound_crouch:
+		stance = 1
+		velocity.x = lerpf(velocity.x, 0.0, clampf(delta * 5.0, 0.0, 1.0))
+		velocity.z = lerpf(velocity.z, 0.0, clampf(delta * 5.0, 0.0, 1.0))
+		_scan_time += delta
+		rotation.y += sin(_scan_time * 2.2) * 1.1 * delta
+	else:
+		stance = 0
+		velocity.x = forward_dir.x * SPEED_SPRINT
+		velocity.z = forward_dir.z * SPEED_SPRINT
 
-	if forward_dir.length_squared() > 0.001:
+	if not _bound_crouch and forward_dir.length_squared() > 0.001:
 		var target_yaw := atan2(-forward_dir.x, -forward_dir.z)
 		rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 4.0, 0.0, 1.0))
 	if _gun_pivot != null:
