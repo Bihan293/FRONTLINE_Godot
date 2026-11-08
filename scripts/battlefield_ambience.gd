@@ -48,17 +48,17 @@ func _make_whiz_stream() -> AudioStreamWAV:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var filtered_noise := 0.0
-	var phase := 0.0
 	for i in range(frame_count):
 		var t := float(i) / float(AUDIO_SAMPLE_RATE)
 		var progress := t / duration
 		var noise := rng.randf_range(-1.0, 1.0)
 		filtered_noise = lerpf(filtered_noise, noise, 0.34)
-		var frequency := lerpf(1850.0, 620.0, progress)
-		phase += TAU * frequency / float(AUDIO_SAMPLE_RATE)
 		var envelope := pow(maxf(0.0, sin(PI * progress)), 0.7)
-		var crack := noise * exp(-t * 85.0) * 0.45
-		var sample := (filtered_noise * 0.62 + sin(phase) * 0.30 + crack) * envelope * 0.55
+		# QA-fix TASK-0022: без тонального «писка» — только широкополосный
+		# шумовой свист пули, как у реального пролёта.
+		var crack := noise * exp(-t * 85.0) * 0.5
+		var high := noise - filtered_noise
+		var sample := (filtered_noise * 0.45 + high * 0.35 + crack) * envelope * 0.55
 		pcm.encode_s16(i * 2, clampi(roundi(sample * 32767.0), -32768, 32767))
 	return _make_wav(pcm)
 

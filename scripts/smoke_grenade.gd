@@ -143,6 +143,8 @@ func deploy_smoke() -> void:
 	p.scale_amount_max = 1.2
 	p.color = Color(0.90, 0.92, 0.94, 0.0)
 	p.fixed_fps = 20
+	# Дым — самый дорогой по fillrate эффект: обрезаем дальность и размер на low.
+	p.visibility_range_end = 85.0 if low_quality else 200.0
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.position = deploy_pos + Vector3(0, 0.25, 0)
 	get_parent().add_child(p)
@@ -151,7 +153,7 @@ func deploy_smoke() -> void:
 	# Облако «наливается»: частицы растут и уплотняются первые ~3.5 секунды.
 	var grow_tw := p.create_tween()
 	grow_tw.tween_property(p, "scale_amount_min", 2.6, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	grow_tw.parallel().tween_property(p, "scale_amount_max", 4.8, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	grow_tw.parallel().tween_property(p, "scale_amount_max", 3.6 if low_quality else 4.8, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	grow_tw.parallel().tween_property(p, "color:a", 0.62, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 	smoke_deployed.emit(deploy_pos)

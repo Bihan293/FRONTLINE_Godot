@@ -269,10 +269,12 @@ static func spawn_explosion(parent: Node, pos: Vector3, power := 1.0) -> void:
 	smoke.initial_velocity_min = 1.4
 	smoke.initial_velocity_max = 4.2
 	smoke.gravity = Vector3(0.25, 0.55, 0.18)
-	smoke.scale_amount_min = 1.3
-	smoke.scale_amount_max = 3.2
+	smoke.scale_amount_min = 1.0 if low else 1.3
+	smoke.scale_amount_max = 2.4 if low else 3.2
 	smoke.position = pos + Vector3.UP * 0.45
 	smoke.fixed_fps = 20
+	# Дальние облака не рисуем — огромные прозрачные сферы убивают fillrate.
+	smoke.visibility_range_end = 70.0 if low else 200.0
 	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(smoke)
 	smoke.emitting = true
@@ -304,6 +306,7 @@ static func spawn_explosion(parent: Node, pos: Vector3, power := 1.0) -> void:
 	debris.scale_amount_max = 1.4
 	debris.position = pos + Vector3.UP * 0.3
 	debris.fixed_fps = 24
+	debris.visibility_range_end = 80.0 if low else 200.0
 	debris.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(debris)
 	debris.emitting = true
@@ -458,7 +461,7 @@ static func _surface_transform(pos: Vector3, normal: Vector3, offset: float) -> 
 static func _register_decal(decal: MeshInstance3D) -> void:
 	_decals.append(decal)
 	# На низком пресете держим меньше декалей (draw calls + overdraw на телефоне).
-	var max_decals := 24 if GameSettings.quality == 0 else 60
+	var max_decals := 12 if GameSettings.quality == 0 else 60
 	while _decals.size() > max_decals:
 		var old = _decals.pop_front()
 		if old != null and is_instance_valid(old):

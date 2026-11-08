@@ -430,10 +430,12 @@ func _process(delta: float) -> void:
 		var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
 		_cached_cam_dist = global_position.distance_to(cam.global_position) if cam != null else 0.0
 
-	# При дистанции больше 40м троттлим расчет скелета до 30 кадров/с, больше 75м - до 15 кадров/с
-	if _cached_cam_dist > 40.0:
+	# При дистанции больше near троттлим скелет; на low пороги жёстче.
+	var lod_near := GameSettings.bot_lod_near()
+	var lod_far := GameSettings.bot_lod_far()
+	if _cached_cam_dist > lod_near:
 		_lod_step_accum += delta
-		var min_interval := 0.066 if _cached_cam_dist > 75.0 else 0.033
+		var min_interval := (0.10 if GameSettings.quality == 0 else 0.066) if _cached_cam_dist > lod_far else (0.050 if GameSettings.quality == 0 else 0.033)
 		if _lod_step_accum < min_interval:
 			return
 		delta = _lod_step_accum
@@ -574,48 +576,33 @@ func _process_ragdoll(delta: float) -> void:
 	var t := ease(_ragdoll_fall, 0.45)
 	var blend := clampf(delta * 14.0, 0.0, 1.0)
 
-	# Опускаем таз к полу: тело ложится на землю
-	var target_drop := 0.74 * t
+	# QA-fix TASK-0022: естественное падение на бок, а не «поза червячка».
+	var side := _ragdoll_side
 	if _hips_id >= 0:
-		_skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -target_drop, 0))
+		_skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -0.55 * t, 0))
 
-	# Проверяем вектор попадания относительно бойца
-	var forward := -global_transform.basis.z
-	var hit_front := _ragdoll_dir.dot(forward) < 0.2
+	# Тело заваливается на бок (вокруг локальной оси Z) и чуть проседает.
+	rotation.z = lerpf(rotation.z, _base_rotation.z + side * PI * 0.48 * t, clampf(delta * 4.0, 0.0, 1.0))
+	rotation.x = lerpf(rotation.x, _base_rotation.x + 0.12 * t, clampf(delta * 4.0, 0.0, 1.0))
+	position.y = lerpf(position.y, 0.12, clampf(delta * 5.0, 0.0, 1.0))
 
-	# Заваливаем всё тело целиком: кости дают позу, корень — падение.
-	var fall_angle := (-PI * 0.5 if hit_front else PI * 0.5) * t
-	rotation.x = lerpf(rotation.x, _base_rotation.x + fall_angle, clampf(delta * 5.0, 0.0, 1.0))
-	rotation.z = lerpf(rotation.z, _base_rotation.z + _ragdoll_side * 0.22 * t, clampf(delta * 5.0, 0.0, 1.0))
-	position.y = lerpf(position.y, 0.08, clampf(delta * 5.0, 0.0, 1.0))
+	# Руки раскидываются, одна подгибается под корпус.
+	_set_pose("LeftUpperArm", _q(Vector3.RIGHT, 0.55 * t) * _q(Vector3.FORWARD, -0.35 * t), blend)
+	_set_pose("RightUpperArm", _q(Vector3.RIGHT, -0.25 * t) * _q(Vector3.FORWARD, 0.55 * t), blend)
+	_set_pose("LeftLowerArm", _q(Vector3.RIGHT, -0.45 * t), blend)
+	_set_pose("RightLowerArm", _q(Vector3.RIGHT, -0.30 * t), blend)
 
-	if hit_front:
-		# Попадание спереди: корпус откидывается назад, колени подкашиваются вперёд
-		var head_snap := 1.2 if _ragdoll_headshot else 0.55
-		_set_pose("Head", _q(Vector3.RIGHT, head_snap * t) * _q(Vector3.UP, 0.3 * _ragdoll_side * t), blend)
-		_set_pose("Neck", _q(Vector3.RIGHT, 0.4 * t), blend)
-		_set_pose("Chest", _q(Vector3.RIGHT, 0.45 * t) * _q(Vector3.FORWARD, 0.2 * _ragdoll_side * t), blend)
-		_set_pose("Spine", _q(Vector3.RIGHT, 0.35 * t), blend)
-		_set_pose("LeftUpperLeg", _q(Vector3.RIGHT, -0.85 * t) * _q(Vector3.UP, 0.25 * t), blend)
-		_set_pose("RightUpperLeg", _q(Vector3.RIGHT, -0.70 * t) * _q(Vector3.UP, -0.25 * t), blend)
-		_set_pose("LeftLowerLeg", _q(Vector3.RIGHT, 1.40 * t), blend)
-		_set_pose("RightLowerLeg", _q(Vector3.RIGHT, 1.25 * t), blend)
-	else:
-		# Попадание сзади: тело складывается вперёд и валится на живот/бок
-		_set_pose("Head", _q(Vector3.RIGHT, -0.6 * t) * _q(Vector3.FORWARD, 0.4 * _ragdoll_side * t), blend)
-		_set_pose("Neck", _q(Vector3.RIGHT, -0.35 * t), blend)
-		_set_pose("Chest", _q(Vector3.RIGHT, -0.55 * t), blend)
-		_set_pose("Spine", _q(Vector3.RIGHT, -0.45 * t), blend)
-		_set_pose("LeftUpperLeg", _q(Vector3.RIGHT, 0.7 * t), blend)
-		_set_pose("RightUpperLeg", _q(Vector3.RIGHT, 0.9 * t), blend)
-		_set_pose("LeftLowerLeg", _q(Vector3.RIGHT, 0.8 * t), blend)
-		_set_pose("RightLowerLeg", _q(Vector3.RIGHT, 1.1 * t), blend)
+	# Ноги слегка согнуты, без «коленей к груди».
+	_set_pose("LeftUpperLeg", _q(Vector3.RIGHT, 0.35 * t) * _q(Vector3.UP, 0.12 * t), blend)
+	_set_pose("RightUpperLeg", _q(Vector3.RIGHT, 0.18 * t) * _q(Vector3.UP, -0.10 * t), blend)
+	_set_pose("LeftLowerLeg", _q(Vector3.RIGHT, 0.45 * t), blend)
+	_set_pose("RightLowerLeg", _q(Vector3.RIGHT, 0.25 * t), blend)
 
-	# Руки обвисают и падают вдоль тела
-	_set_pose("LeftUpperArm", _q(Vector3.FORWARD, -0.4 * t) * _q(Vector3.RIGHT, -0.3 * t), blend)
-	_set_pose("RightUpperArm", _q(Vector3.FORWARD, 0.4 * t) * _q(Vector3.RIGHT, -0.3 * t), blend)
-	_set_pose("LeftLowerArm", _q(Vector3.RIGHT, 0.2 * t), blend)
-	_set_pose("RightLowerArm", _q(Vector3.RIGHT, 0.2 * t), blend)
+	# Корпус и голова мягко оседают на бок.
+	_set_pose("Spine", _q(Vector3.RIGHT, 0.10 * t) * _q(Vector3.FORWARD, side * 0.18 * t), blend)
+	_set_pose("Chest", _q(Vector3.RIGHT, 0.08 * t) * _q(Vector3.FORWARD, side * 0.14 * t), blend)
+	_set_pose("Neck", _q(Vector3.RIGHT, 0.10 * t), blend)
+	_set_pose("Head", _q(Vector3.UP, side * 0.45 * t) * _q(Vector3.RIGHT, 0.18 * t), blend)
 
 	if _ragdoll_timer > 1.8:
 		_ragdoll_settled = true

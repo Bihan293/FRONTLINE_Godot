@@ -158,6 +158,7 @@ var vault_land_pos := Vector3.ZERO
 # Анимация взведения и броска гранаты с удержанием кнопки (Cook / Aim & Release)
 enum GrenadeActionState { IDLE, EQUIP, PULL_PIN, HOLD_AIM, THROW_SWING, RECOVER }
 var grenade_anim_state: GrenadeActionState = GrenadeActionState.IDLE
+var _grenade_payload := "frag"
 var grenade_anim_timer := 0.0
 var is_grenade_held := false
 var grenade_view_root: Node3D
@@ -238,6 +239,8 @@ func _build_player() -> void:
 	camera = Camera3D.new()
 	camera.position = Vector3(0, 1.70, -0.08) # Нательное крепление бодикамеры (Bodycam)
 	camera.fov = GameSettings.fov
+	# Low-пресет: дальний план 170 м — меньше vertices/overdraw.
+	camera.far = GameSettings.view_distance()
 	camera.current = true
 	add_child(camera)
 	audio_listener = AudioListener3D.new()
@@ -632,7 +635,7 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var is_red: bool = player_team.to_upper().contains("RED") or player_team.to_upper().contains("SOVIET")
 	var sleeve := StandardMaterial3D.new()
 	# Тёмная полевая ткань — без «синих» оттенков, ближе к Dummy War.
-	sleeve.albedo_color = Color(0.26, 0.22, 0.15) if is_red else Color(0.19, 0.21, 0.15)
+	sleeve.albedo_color = Color(0.24, 0.20, 0.14) if is_red else Color(0.16, 0.18, 0.13)
 	sleeve.roughness = 0.95
 	var glove := StandardMaterial3D.new()
 	glove.albedo_color = Color(0.32, 0.25, 0.18)
@@ -711,22 +714,26 @@ func _update_view_arms() -> void:
 		if _view_arm_right != null:
 			_view_arm_right.visible = false
 		return
-	# QA-fix TASK-0022: в первом лице показываем кисти с пальцами и манжетами
-	# прямо на оружии. Длинные цилиндрические «руки» убраны — они читались
-	# как палки из ушей и закрывали полэкрана.
+	# QA-fix TASK-0022: кисти с пальцами + предплечья, уходящие за нижний
+	# край кадра — руки не «висят в воздухе» и не закрывают полэкрана.
+	var cam_xf := camera.global_transform
 	if wrist_left_marker != null and _view_arm_left != null:
-		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true)
+		var l_start: Vector3 = wrist_left_marker.global_position + cam_xf.basis * Vector3(-0.18, -0.26, 0.12)
+		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true, l_start)
 	if wrist_right_marker != null and _view_arm_right != null:
-		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false)
+		var r_start: Vector3 = wrist_right_marker.global_position + cam_xf.basis * Vector3(0.18, -0.26, 0.12)
+		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false, r_start)
 
-func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool) -> void:
+func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, forearm_start: Vector3) -> void:
 	arm.visible = true
 	var upper := arm.get_node_or_null("Upper") as MeshInstance3D
 	var forearm := arm.get_node_or_null("Forearm") as MeshInstance3D
 	if upper != null:
 		upper.visible = false
 	if forearm != null:
-		forearm.visible = false
+		# Предплечье соединяет кисть с нижним краем кадра — рука не «висит».
+		forearm.visible = true
+		_place_limb_segment(forearm, forearm_start, marker_xf.origin)
 	# Корень руки совмещаем с кистевым маркером оружия (масштаб оружия учтён).
 	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
 	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
@@ -2193,9 +2200,15 @@ func _on_mobile_grenade_changed(pressed: bool) -> void:
 	else:
 		_release_grenade_throw()
 
-func _start_grenade_hold() -> void:
-	if grenades <= 0 or is_dead or input_locked or is_healing or active_drone != null or is_reloading or is_vaulting:
+func _start_grenade_hold(payload: String = "frag") -> void:
+	if payload == "smoke":
+		if smoke_grenades <= 0:
+			return
+	elif grenades <= 0:
 		return
+	if is_dead or input_locked or is_healing or active_drone != null or is_reloading or is_vaulting:
+		return
+	_grenade_payload = payload
 	is_grenade_held = true
 	if grenade_anim_state == GrenadeActionState.IDLE or grenade_anim_state == GrenadeActionState.RECOVER:
 		grenade_anim_state = GrenadeActionState.EQUIP
@@ -2226,7 +2239,27 @@ func _release_grenade_throw() -> void:
 		pass
 
 func _spawn_thrown_grenade() -> void:
-	if grenade_has_spawned or grenades <= 0:
+	if grenade_has_spawned:
+		return
+	if _grenade_payload == "smoke":
+		if smoke_grenades <= 0:
+			return
+		grenade_has_spawned = true
+		smoke_grenades -= 1
+		_refresh_equipment()
+		var smoke := SMOKE_SCRIPT.new()
+		var smoke_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+		var smoke_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
+		smoke.position = smoke_pos
+		smoke.linear_velocity = smoke_dir.normalized() * 13.5 + velocity * 0.4
+		smoke.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
+		smoke.thrower_name = "Player"
+		get_parent().add_child(smoke)
+		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
+		if grenade_safety_lever != null:
+			grenade_safety_lever.visible = false
+		return
+	if grenades <= 0:
 		return
 	grenade_has_spawned = true
 	grenades -= 1
@@ -2484,20 +2517,13 @@ func _process_vault(delta: float) -> void:
 		move_and_slide()
 
 func _throw_smoke() -> void:
-	if smoke_grenades <= 0 or is_dead:
+	if smoke_grenades <= 0 or is_dead or input_locked:
 		return
-	smoke_grenades -= 1
-	_refresh_equipment()
-	var s := SMOKE_SCRIPT.new()
-	# QA-fix TASK-0022: дымовая вылетает из кисти, а не из головы персонажа.
-	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
-	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
-	s.position = spawn_pos
-	s.linear_velocity = throw_dir.normalized() * 13.5 + velocity * 0.4
-	s.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
-	s.thrower_name = "Player"
-	get_parent().add_child(s)
-	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
+	# QA-fix TASK-0022: дымовая бросается через ту же анимацию, что и Ф-1
+	# (достал -> выдернул чеку -> замах -> бросок), а не «вылетает из головы».
+	if grenade_anim_state == GrenadeActionState.IDLE:
+		_start_grenade_hold("smoke")
+		_release_grenade_throw()
 
 func _use_heal() -> void:
 	if medkits <= 0 or is_dead or is_healing:

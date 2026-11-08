@@ -195,7 +195,7 @@ func apply_video() -> void:
 		0:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			# Мобильный low: меньше пикселей = главный выигрыш на слабых GPU.
-			vp.scaling_3d_scale = 0.65
+			vp.scaling_3d_scale = 0.55
 		1:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			vp.scaling_3d_scale = 0.90
@@ -212,6 +212,21 @@ func shadows_enabled() -> bool:
 
 func shadow_distance() -> float:
 	return 45.0 if quality == 1 else 90.0
+
+## Дистанция прорисовки: на low обрезаем дальний план, чтобы не тратить
+## fillrate на геометрию, которую всё равно скрывает туман.
+func view_distance() -> float:
+	if quality == 0:
+		return 170.0
+	if quality == 1:
+		return 260.0
+	return 400.0
+
+func bot_lod_near() -> float:
+	return 22.0 if quality == 0 else 40.0
+
+func bot_lod_far() -> float:
+	return 45.0 if quality == 0 else 75.0
 
 func fog_enabled() -> bool:
 	return quality > 0
