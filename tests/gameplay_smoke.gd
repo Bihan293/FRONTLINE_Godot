@@ -16,6 +16,7 @@ const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
 const STREET_PROPS_SCRIPT = preload("res://scripts/tactical_street_props.gd")
+const COMMERCIAL_PROPS_SCRIPT = preload("res://scripts/tactical_commercial_props.gd")
 
 var _failures: Array[String] = []
 
@@ -45,6 +46,7 @@ func _ready() -> void:
 	await _test_hud_customizer_input()
 	await _test_tactical_buildings_pack()
 	await _test_tactical_street_props_pack()
+	await _test_tactical_commercial_props_pack()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -1045,6 +1047,36 @@ func _test_heal_animation() -> void:
 	_check(not bool(player.get("is_healing")), "healing state stuck after completion")
 	_check(heal_bar != null and not heal_bar.visible, "heal bar still visible after completion")
 	player.queue_free()
+
+func _test_tactical_commercial_props_pack() -> void:
+	_check(COMMERCIAL_PROPS_SCRIPT != null, "tactical_commercial_props.gd missing")
+	if COMMERCIAL_PROPS_SCRIPT == null:
+		return
+
+	var types: Array[String] = COMMERCIAL_PROPS_SCRIPT.get_available_types()
+	_check(types.size() >= 30, "expected at least 30 commercial/institutional props, got %d" % types.size())
+
+	var low_cover_checks := ["cash_register_counter", "commercial_freezer_horizontal", "hospital_gurney_bed", "school_gym_vault_box"]
+	for lcp in low_cover_checks:
+		var info: Dictionary = COMMERCIAL_PROPS_SCRIPT.get_prop_info(lcp)
+		var h: float = float(info.get("cover_height", 0.0))
+		_check(h >= 0.70 and h <= 1.15, "commercial prop %s cover_height %f outside [0.70, 1.15]m" % [lcp, h])
+		_check(bool(info.get("can_vault", false)), "commercial prop %s must have can_vault=true" % lcp)
+
+	for t in ["cash_register_counter", "supermarket_shelf_aisle", "mall_planter_pot", "hospital_gurney_bed", "school_desk_double", "fire_hose_cabinet"]:
+		var boxes: Array[Dictionary] = COMMERCIAL_PROPS_SCRIPT.get_prop_boxes(t, Vector3(10, 0, 10), 90.0)
+		_check(boxes.size() > 0, "no boxes generated for commercial prop %s" % t)
+
+		var node: Node3D = COMMERCIAL_PROPS_SCRIPT.create_prop_node(t)
+		_check(node != null, "create_prop_node returned null for %s" % t)
+		if node != null:
+			add_child(node)
+			var sb: StaticBody3D = node.get_node_or_null("PropCollision") as StaticBody3D
+			_check(sb != null, "missing PropCollision for %s" % t)
+			if sb != null:
+				_check(sb.collision_layer == 1, "wrong collision layer for %s" % t)
+			node.queue_free()
+
 	await get_tree().process_frame
 
 func _report() -> void:

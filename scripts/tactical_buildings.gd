@@ -44,6 +44,7 @@ const COLOR_LINTEL := Color(0.38, 0.35, 0.32)
 const COLOR_STEEL := Color(0.30, 0.32, 0.34)
 const COLOR_RUBBLE := Color(0.52, 0.48, 0.44)
 const COLOR_WOOD_BEAM := Color(0.36, 0.26, 0.18)
+const COLOR_GLASS_TINT := Color(0.65, 0.78, 0.82)
 
 static func get_available_types() -> Array[String]:
 	return [
@@ -55,7 +56,11 @@ static func get_available_types() -> Array[String]:
 		"house_ruin_destroyed",
 		"house_checkpoint_tower",
 		"house_l_shaped_villa",
-		"house_bunker_pillbox"
+		"house_bunker_pillbox",
+		"building_supermarket",
+		"building_shopping_mall",
+		"building_hospital",
+		"building_school"
 	]
 
 static func get_building_info(type_name: String) -> Dictionary:
@@ -159,6 +164,50 @@ static func get_building_info(type_name: String) -> Dictionary:
 				"roof_access": true,
 				"description": "Стены 0.60м, зигзагообразный противоосколочный тамбур, 4 пулемётные амбразуры с широким сектором обстрела."
 			}
+		"building_supermarket":
+			return {
+				"name": "Супермаркет / магазин с дебаркадером",
+				"floors": 1,
+				"width": 22.0,
+				"length": 16.0,
+				"height": 5.8,
+				"balconies": 0,
+				"roof_access": true,
+				"description": "Просторный торговый зал, кассовая зона, витрины, задний склад с разгрузочной рампой и пожарная лестница на крышу."
+			}
+		"building_shopping_mall":
+			return {
+				"name": "2-этажный торговый центр (ТЦ) с атриумом",
+				"floors": 2,
+				"width": 26.0,
+				"length": 20.0,
+				"height": 9.2,
+				"balconies": 4,
+				"roof_access": true,
+				"description": "Двухсветный атриум, галереи 2 этажа с ограждениями, бутики, эскалаторный марш, зенитный фонарь и крыша."
+			}
+		"building_hospital":
+			return {
+				"name": "3-этажный клинический корпус больницы",
+				"floors": 3,
+				"width": 24.0,
+				"length": 16.0,
+				"height": 11.6,
+				"balconies": 0,
+				"roof_access": true,
+				"description": "Приёмный покой скорой, длинный коридор с палатами CQB, операционный блок, две лестничные клетки и вертолётная площадка на крыше."
+			}
+		"building_school":
+			return {
+				"name": "2-этажная школа со спортзалом",
+				"floors": 2,
+				"width": 28.0,
+				"length": 18.0,
+				"height": 8.6,
+				"balconies": 1,
+				"roof_access": true,
+				"description": "Учебное крыло с классами и широким коридором, высокий спортзал двойной высоты (7м) с балконом для зрителей."
+			}
 		_:
 			return {}
 
@@ -185,6 +234,14 @@ static func get_building_boxes(type_name: String, origin: Vector3 = Vector3.ZERO
 			_build_l_shaped_villa(local_boxes)
 		"house_bunker_pillbox":
 			_build_bunker_pillbox(local_boxes)
+		"building_supermarket":
+			_build_supermarket(local_boxes)
+		"building_shopping_mall":
+			_build_shopping_mall(local_boxes)
+		"building_hospital":
+			_build_hospital(local_boxes)
+		"building_school":
+			_build_school(local_boxes)
 		_:
 			_build_1story(local_boxes)
 
@@ -311,6 +368,58 @@ static func get_building_tactical_points(type_name: String, origin: Vector3 = Ve
 				Vector3(-5.0, 0.90, -1.0), Vector3(5.0, 0.90, -1.0)  # Боковые амбразуры
 			])
 			local_pts["snipers"].append(Vector3(0.0, 3.50, 0.0)) # Перископ на крыше
+		"building_supermarket":
+			local_pts["entrances"].append_array([
+				Vector3(0.0, 0.20, 8.0), # Главный вход
+				Vector3(4.0, 0.90, -8.0), # Дебаркадер
+				Vector3(-6.0, 0.20, -8.0) # Служебный вход
+			])
+			local_pts["windows"].append_array([
+				Vector3(-5.0, 0.88, 8.0), Vector3(5.0, 0.88, 8.0)
+			])
+			local_pts["snipers"].append_array([
+				Vector3(-10.0, 5.0, -7.0), Vector3(10.0, 5.0, 7.0)
+			])
+		"building_shopping_mall":
+			local_pts["entrances"].append_array([
+				Vector3(-3.0, 0.20, 10.0), Vector3(3.0, 0.20, 10.0), # Порталы
+				Vector3(-6.0, 0.20, -10.0), Vector3(6.0, 0.20, -10.0) # Задние выходы
+			])
+			local_pts["balconies"].append_array([
+				Vector3(0.0, 3.80, -3.8), Vector3(0.0, 3.80, 3.8), # Галереи атриума
+				Vector3(-4.8, 3.80, 0.0), Vector3(4.8, 3.80, 0.0)
+			])
+			local_pts["snipers"].append_array([
+				Vector3(-12.0, 8.0, -9.0), Vector3(12.0, 8.0, 9.0)
+			])
+		"building_hospital":
+			local_pts["entrances"].append_array([
+				Vector3(0.0, 0.20, 8.0), # Приёмный покой
+				Vector3(-8.0, 0.20, -8.0), # Служебный выход
+				Vector3(-12.0, 0.20, 0.0), Vector3(12.0, 0.20, 0.0)
+			])
+			local_pts["windows"].append_array([
+				Vector3(-5.0, 0.88, 8.0), Vector3(5.0, 0.88, 8.0),
+				Vector3(-5.0, 4.28, 8.0), Vector3(5.0, 4.28, 8.0),
+				Vector3(-5.0, 7.68, 8.0), Vector3(5.0, 7.68, 8.0)
+			])
+			local_pts["snipers"].append_array([
+				Vector3(-11.0, 10.6, -7.0), Vector3(11.0, 10.6, 7.0),
+				Vector3(0.0, 10.6, 0.0) # Вертолётная площадка
+			])
+		"building_school":
+			local_pts["entrances"].append_array([
+				Vector3(6.0, 0.20, 9.0), # Парадный вход школы
+				Vector3(-7.0, 0.20, -9.0) # Запасной выход спортзала
+			])
+			local_pts["balconies"].append(Vector3(-1.0, 3.60, 0.0)) # Балкон спортзала
+			local_pts["windows"].append_array([
+				Vector3(4.0, 0.88, 9.0), Vector3(9.0, 0.88, 9.0),
+				Vector3(4.0, 4.28, 9.0), Vector3(9.0, 4.28, 9.0)
+			])
+			local_pts["snipers"].append_array([
+				Vector3(-13.0, 7.8, -8.0), Vector3(13.0, 7.8, 8.0)
+			])
 
 	var rad := deg_to_rad(rot_deg)
 	var cos_a := cos(rad)
@@ -860,6 +969,245 @@ static func _build_bunker_pillbox(out: Array[Dictionary]) -> void:
 
 	# Бронированный перископ / башенка на крыше
 	_push(out, Vector3(0.0, y_roof + 0.90, 0.0), Vector3(1.8, 0.80, 1.8), COLOR_STEEL, true, "bunker_cupola")
+
+# ==============================================================================
+# 10. СУПЕРМАРКЕТ / МАГАЗИН С ДЕБАРКАДЕРОМ (22м х 16м х 4.6м)
+# ==============================================================================
+static func _build_supermarket(out: Array[Dictionary]) -> void:
+	var w := 22.0
+	var l := 16.0
+	var h := 4.40
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Массивный фундамент и пол
+	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 1.0, 0.30, l + 1.0), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.32, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor")
+
+	# Фасадный вход (Z = hl = 8.0): главный двустворчатый портал в центре (X=0.0, ширина 3.2м), широкие витрины слева и справа
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, hl), w, h, true, [0.0], [-5.0, 5.0])
+
+	# Задняя стена дебаркадера (Z = -hl = -8.0): погрузочные ворота склада (X=4.0, ширина 3.6м), дверь персонала (X=-6.0)
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, -hl), w, h, true, [-6.0, 4.0], [])
+	# Бетонная разгрузочная рампа снаружи дебаркадера
+	_push(out, Vector3(4.0, 0.45, -hl - 1.5), Vector3(4.6, 0.90, 3.0), COLOR_CONCRETE_WALL, true, "loading_dock")
+
+	# Боковые стены с верхними световыми просветами
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.30, 0.0), l, h, false, [], [-2.0, 3.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.30, 0.0), l, h, false, [], [-2.0, 3.0])
+
+	# Внутренняя несущая стена между торговым залом и складом (Z = -2.0) с широким проходом в центре (3.0м)
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, -2.0), w - 0.4, h, true, [0.0], [])
+
+	# Кабинет администрации / охраны на складе (X от -hw до -5.0, Z от -hl до -2.0)
+	_build_wall_with_doors_and_windows(out, Vector3(-5.0, 0.30, -5.0), 6.0, h, false, [1.0], [-1.0])
+
+	# Металлическая внешняя пожарная лестница на крышу на восточной стене
+	_build_stair_flight(out, Vector3(hw + 0.8, 0.30, 3.0), 1.4, h, 1)
+
+	# Плоская крыша с защитным парапетом 0.98м
+	var y_roof := 0.30 + h
+	_push(out, Vector3(0.0, y_roof + 0.12, 0.0), Vector3(w + 0.6, 0.24, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.12, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT)
+
+	# 2 промышленные климатические установки (HVAC) на крыше (тактические укрытия)
+	_push(out, Vector3(-5.0, y_roof + 0.95, 2.0), Vector3(2.6, 1.4, 1.8), COLOR_STEEL, true, "rooftop_hvac")
+	_push(out, Vector3(4.0, y_roof + 0.95, -4.0), Vector3(2.8, 1.4, 2.0), COLOR_STEEL, true, "rooftop_hvac")
+
+# ==============================================================================
+# 11. 2-ЭТАЖНЫЙ ТОРГОВЫЙ ЦЕНТР С АТРИУМОМ (26м х 20м х 7.8м)
+# ==============================================================================
+static func _build_shopping_mall(out: Array[Dictionary]) -> void:
+	var w := 26.0
+	var l := 20.0
+	var story_h := 3.60
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Фундамент и пол 1 этажа
+	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 1.0, 0.30, l + 1.0), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.32, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor_1")
+
+	# 1-й ЭТАЖ:
+	# Фасад (Z = hl = 10.0): парадные порталы атриума (X = -3.0 и X = 3.0), витрины
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, hl), w, story_h, true, [-3.0, 3.0], [-8.0, 8.0])
+	# Задняя стена (Z = -hl = -10.0): аварийные выходы
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, -hl), w, story_h, true, [-6.0, 6.0], [])
+	# Боковые стены 1 этажа с окнами
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.30, 0.0), l, story_h, false, [], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.30, 0.0), l, story_h, false, [], [-4.0, 4.0])
+
+	# Внутренние стены торговых бутиков 1 этажа:
+	# Продольные фасады бутиков слева и справа от центрального прохода
+	_build_wall_with_doors_and_windows(out, Vector3(-5.0, 0.30, 0.0), l - 4.0, story_h, false, [-3.0, 3.0], [])
+	_build_wall_with_doors_and_windows(out, Vector3(5.0, 0.30, 0.0), l - 4.0, story_h, false, [-3.0, 3.0], [])
+	# Поперечные перегородки между бутиками
+	_build_wall_with_doors_and_windows(out, Vector3(-hw * 0.5 - 2.5, 0.30, 0.0), hw - 5.0, story_h, true, [], [])
+	_build_wall_with_doors_and_windows(out, Vector3(hw * 0.5 + 2.5, 0.30, 0.0), hw - 5.0, story_h, true, [], [])
+
+	# Главный лестничный/эскалаторный марш в атриуме (подъём от Z=3.5 к Z=-2.5 на высоту 3.6м)
+	_build_stair_flight(out, Vector3(0.0, 0.30, 0.5), 2.4, story_h, -1)
+
+	# Вспомогательная лестничная клетка в северо-восточном углу
+	_build_stair_flight(out, Vector3(hw - 3.0, 0.30, -hl + 3.0), 1.6, story_h, 1)
+
+	# ПЕРЕКРЫТИЕ 2 ЭТАЖА (Y = 0.30 + story_h = 3.90м)
+	# Вырез под открытый центральный двухсветный атриум (размером 10.0м x 8.0м)
+	var y2 := 0.30 + story_h
+	_build_floor_slab_with_stair_opening(out, y2, w - 0.2, l - 0.2, Vector3(0.0, y2, 0.0), Vector3(10.0, 0.28, 8.0), COLOR_SLAB_FLOOR, "floor_2")
+
+	# Ограждение-балюстрада вокруг проёма атриума на 2 этаже (высота 0.98м)
+	_build_parapet_ring(out, Vector3(0.0, y2 + 0.14, 0.0), 10.2, 8.2, PARAPET_HEIGHT)
+
+	# 2-й ЭТАЖ:
+	# Стены 2 этажа по периметру
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, hl), w, story_h, true, [], [-7.0, 0.0, 7.0])
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, -hl), w, story_h, true, [], [-7.0, 7.0])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, y2, 0.0), l, story_h, false, [], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, y2, 0.0), l, story_h, false, [], [-4.0, 4.0])
+
+	# ПЛОСКАЯ КРЫША С ЗЕНИТНЫМ ФОНАРЁМ
+	var y_roof := y2 + story_h
+	_push(out, Vector3(0.0, y_roof + 0.14, 0.0), Vector3(w + 0.6, 0.28, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.14, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT + 0.07)
+
+	# Стеклянный зенитный купол-пирамида над атриумом
+	_push(out, Vector3(0.0, y_roof + 0.85, 0.0), Vector3(10.4, 1.2, 8.4), COLOR_GLASS_TINT, true, "atrium_skylight")
+	_push(out, Vector3(0.0, y_roof + 1.50, 0.0), Vector3(8.0, 0.10, 6.0), COLOR_STEEL, true, "skylight_frame")
+
+# ==============================================================================
+# 12. 3-ЭТАЖНЫЙ КЛИНИЧЕСКИЙ КОРПУС БОЛЬНИЦЫ (24м х 16м х 11.2м)
+# ==============================================================================
+static func _build_hospital(out: Array[Dictionary]) -> void:
+	var w := 24.0
+	var l := 16.0
+	var story_h := 3.40
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Фундамент и цоколь
+	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 1.0, 0.30, l + 1.0), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.32, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor_1")
+
+	# ЦИКЛ ПО 3 ЭТАЖАМ:
+	for fl in range(3):
+		var y_fl := 0.30 + float(fl) * story_h
+
+		# Внешние стены этажа
+		if fl == 0:
+			# 1 этаж: центральный портал приёмного покоя скорой (ширина 3.2м), окна палат
+			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, hl), w, story_h, true, [0.0], [-6.0, 6.0])
+			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, -hl), w, story_h, true, [-6.0], [0.0, 6.0])
+		else:
+			# 2 и 3 этажи: регулярные окна палат
+			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, hl), w, story_h, true, [], [-6.0, 0.0, 6.0])
+			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, -hl), w, story_h, true, [], [-6.0, 0.0, 6.0])
+
+		# Торцевые стены
+		_build_wall_with_doors_and_windows(out, Vector3(-hw, y_fl, 0.0), l, story_h, false, [], [0.0])
+		_build_wall_with_doors_and_windows(out, Vector3(hw, y_fl, 0.0), l, story_h, false, [], [0.0])
+
+		# Центральный коридор (Z в [-1.4, 1.4]): две продольные перегородки
+		# Южная стена коридора (Z = -1.4)
+		_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, -1.4), w - 5.0, story_h, true, [-5.0, 0.0, 5.0], [])
+		# Северная стена коридора (Z = 1.4)
+		_build_wall_with_doors_and_windows(out, Vector3(0.0, y_fl, 1.4), w - 5.0, story_h, true, [-5.0, 0.0, 5.0], [])
+
+		# Поперечные перегородки между палатами
+		_push_wall_segment(out, Vector3(-5.0, y_fl, (hl + 1.4) * 0.5), 0.0, story_h * 0.5, hl - 1.4, story_h, WALL_THICKNESS, false, COLOR_INTERIOR_WALL)
+		_push_wall_segment(out, Vector3(5.0, y_fl, (hl + 1.4) * 0.5), 0.0, story_h * 0.5, hl - 1.4, story_h, WALL_THICKNESS, false, COLOR_INTERIOR_WALL)
+		_push_wall_segment(out, Vector3(-5.0, y_fl, -(hl + 1.4) * 0.5), 0.0, story_h * 0.5, hl - 1.4, story_h, WALL_THICKNESS, false, COLOR_INTERIOR_WALL)
+		_push_wall_segment(out, Vector3(5.0, y_fl, -(hl + 1.4) * 0.5), 0.0, story_h * 0.5, hl - 1.4, story_h, WALL_THICKNESS, false, COLOR_INTERIOR_WALL)
+
+		# Лестничные марши на западном и восточном крыльях
+		if fl < 2:
+			_build_stair_flight(out, Vector3(-hw + 2.5, y_fl, 0.0), 1.8, story_h, 1)
+			_build_stair_flight(out, Vector3(hw - 2.5, y_fl, 0.0), 1.8, story_h, -1)
+
+			# Плита перекрытия следующего этажа
+			var y_slab := y_fl + story_h
+			_build_floor_slab_with_stair_opening(out, y_slab, w - 0.2, l - 0.2, Vector3(-hw + 2.5, y_slab, 0.0), Vector3(2.4, 0.28, 4.0), COLOR_SLAB_FLOOR, "floor_%d" % (fl + 2))
+
+	# Выход с 3 этажа на крышу
+	var y3 := 0.30 + story_h * 2.0
+	_build_stair_flight(out, Vector3(-hw + 2.5, y3, 0.0), 1.8, story_h, 1)
+
+	# ПЛОСКАЯ КРЫША С ВЕРТОЛЁТНОЙ ПЛОЩАДКОЙ И ПАРАПЕТОМ
+	var y_roof := 0.30 + story_h * 3.0
+	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(-hw + 2.5, y_roof, 0.0), Vector3(2.4, 0.28, 4.2))
+
+	# Маркировка вертолётной площадки на крыше (Helipad)
+	# Красный квадрат 8.0м х 8.0м
+	_push(out, Vector3(1.0, y_roof + 0.15, 0.0), Vector3(8.0, 0.02, 8.0), COLOR_BRICK_BASE, false, "helipad")
+	# Белый крест
+	_push(out, Vector3(1.0, y_roof + 0.17, 0.0), Vector3(6.0, 0.02, 1.6), COLOR_CONCRETE_WALL, false, "helipad_mark")
+	_push(out, Vector3(1.0, y_roof + 0.17, 0.0), Vector3(1.6, 0.02, 6.0), COLOR_CONCRETE_WALL, false, "helipad_mark")
+
+# ==============================================================================
+# 13. 2-ЭТАЖНАЯ ШКОЛА СО СПОРТИВНЫМ ЗАЛОМ (28м х 18м х 8.0м)
+# ==============================================================================
+static func _build_school(out: Array[Dictionary]) -> void:
+	var w := 28.0
+	var l := 18.0
+	var story_h := 3.60
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Фундамент и цоколь
+	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 1.0, 0.30, l + 1.0), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.32, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor_1")
+
+	# 1. СПОРТИВНЫЙ ЗАЛ (Западное крыло: X от -hw до 0.0, двойная высота 7.20м)
+	var gym_w := hw
+	var gym_c_x := -hw * 0.5
+
+	# Внешние стены спортзала
+	_build_wall_with_doors_and_windows(out, Vector3(gym_c_x, 0.30, hl), gym_w, story_h * 2.0, true, [], [-3.5, 3.5])
+	_build_wall_with_doors_and_windows(out, Vector3(gym_c_x, 0.30, -hl), gym_w, story_h * 2.0, true, [-3.5], [3.5])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.30, 0.0), l, story_h * 2.0, false, [], [-4.0, 4.0])
+
+	# 2. РАЗДЕЛИТЕЛЬНАЯ СТЕНА МЕЖДУ СПОРТЗАЛОМ И УЧЕБНЫМ КРЫЛОМ (X = 0.0)
+	# 1 этаж: широкий двустворчатый проход в спортзал (Z = 0.0, ширина 2.6м)
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, 0.0), l, story_h, false, [0.0], [])
+	# 2 этаж: смотровой балкон-галерея для зрителей спортзала
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30 + story_h, 0.0), l, story_h, false, [-3.0, 3.0], [])
+	# Консольный балкон-подиум в сторону спортзала на 2 этаже (X = -1.2, ширина 12м)
+	_push(out, Vector3(-1.2, 0.30 + story_h, 0.0), Vector3(2.4, 0.22, 12.0), COLOR_BALCONY_SLAB, true, "gym_balcony")
+	_push(out, Vector3(-2.3, 0.30 + story_h + PARAPET_HEIGHT * 0.5, 0.0), Vector3(0.16, PARAPET_HEIGHT, 12.0), COLOR_PARAPET, true, "gym_railing")
+
+	# 3. УЧЕБНОЕ КРЫЛО (Восточное крыло: X от 0.0 до hw, 2 этажа)
+	var acad_w := hw
+	var acad_c_x := hw * 0.5
+
+	# Фасад учебного крыла (Z = hl = 9.0): парадный вход школы на 1 этаже
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30, hl), acad_w, story_h, true, [0.0], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30 + story_h, hl), acad_w, story_h, true, [], [-4.0, 0.0, 4.0])
+
+	# Задняя стена учебного крыла (Z = -hl = -9.0)
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30, -hl), acad_w, story_h, true, [], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30 + story_h, -hl), acad_w, story_h, true, [], [-4.0, 4.0])
+
+	# Восточный торец
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.30, 0.0), l, story_h, false, [], [-3.0, 3.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.30 + story_h, 0.0), l, story_h, false, [], [-3.0, 3.0])
+
+	# Коридор учебного крыла (Z в [-1.5, 1.5]) и классы
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30, -1.5), acad_w - 2.0, story_h, true, [-2.5, 2.5], [])
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30, 1.5), acad_w - 2.0, story_h, true, [-2.5, 2.5], [])
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30 + story_h, -1.5), acad_w - 2.0, story_h, true, [-2.5, 2.5], [])
+	_build_wall_with_doors_and_windows(out, Vector3(acad_c_x, 0.30 + story_h, 1.5), acad_w - 2.0, story_h, true, [-2.5, 2.5], [])
+
+	# Лестничный марш на 2 этаж в учебном крыле
+	_build_stair_flight(out, Vector3(acad_c_x + 3.0, 0.30, 0.0), 2.0, story_h, 1)
+
+	# Плита перекрытия 2 этажа учебного крыла
+	var y_acad2 := 0.30 + story_h
+	_build_floor_slab_with_stair_opening(out, y_acad2, acad_w - 0.2, l - 0.2, Vector3(acad_c_x + 3.0, y_acad2, 0.0), Vector3(2.4, 0.28, 4.0), COLOR_SLAB_FLOOR, "floor_2")
+
+	# ПЛОСКАЯ КРЫША НАД ВСЕЙ ШКОЛОЙ (Y = 0.30 + story_h * 2.0)
+	var y_roof := 0.30 + story_h * 2.0
+	_push(out, Vector3(0.0, y_roof + 0.14, 0.0), Vector3(w + 0.6, 0.28, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.14, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT + 0.07)
 
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ АРХИТЕКТУРНЫЕ КОМПОНЕНТЫ

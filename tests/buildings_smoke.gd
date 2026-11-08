@@ -26,7 +26,14 @@ const EXPANDED_TYPES: Array[String] = [
 	"house_bunker_pillbox"
 ]
 
-const ALL_9_TYPES: Array[String] = [
+const LARGE_INSTITUTIONAL_TYPES: Array[String] = [
+	"building_supermarket",
+	"building_shopping_mall",
+	"building_hospital",
+	"building_school"
+]
+
+const ALL_13_TYPES: Array[String] = [
 	"house_1story",
 	"house_2story",
 	"house_3story",
@@ -35,7 +42,11 @@ const ALL_9_TYPES: Array[String] = [
 	"house_ruin_destroyed",
 	"house_checkpoint_tower",
 	"house_l_shaped_villa",
-	"house_bunker_pillbox"
+	"house_bunker_pillbox",
+	"building_supermarket",
+	"building_shopping_mall",
+	"building_hospital",
+	"building_school"
 ]
 
 var _failures: Array[String] = []
@@ -49,6 +60,7 @@ func _ready() -> void:
 	await _test_stairs_continuity_and_floor_access()
 	await _test_multistory_5story_vertical_traversal()
 	await _test_expanded_tactical_building_types()
+	await _test_large_commercial_institutional_buildings()
 	await _test_furniture_pack()
 	_report()
 
@@ -351,7 +363,44 @@ func _test_expanded_tactical_building_types() -> void:
 				_check(kinds.has("wall"), "Bunker missing reinforced walls")
 				_check(kinds.has("roof_slab") or kinds.has("building_base") or kinds.has("floor"), "Bunker missing heavy slab/base")
 
-## 8. Проверка процедурного пака мебели (16 типов)
+## 8. Проверка крупных общественных и коммерческих зданий (супермаркет, ТЦ, больница, школа)
+func _test_large_commercial_institutional_buildings() -> void:
+	var available: Array[String] = TACTICAL_BUILDINGS.get_available_types()
+	for lt in LARGE_INSTITUTIONAL_TYPES:
+		_check(lt in available, "Large building %s missing from available types" % lt)
+		if not lt in available:
+			continue
+
+		var info: Dictionary = TACTICAL_BUILDINGS.get_building_info(lt)
+		_check(not info.is_empty(), "Empty info for %s" % lt)
+		_check(float(info.get("width", 0)) >= 20.0, "%s width < 20.0m" % lt)
+		_check(float(info.get("length", 0)) >= 14.0, "%s length < 14.0m" % lt)
+
+		var boxes: Array[Dictionary] = TACTICAL_BUILDINGS.get_building_boxes(lt)
+		_check(boxes.size() >= 30, "%s generated too few boxes: %d" % [lt, boxes.size()])
+
+		var kinds := {}
+		for b in boxes:
+			if bool(b.get("solid", true)):
+				kinds[b["kind"]] = true
+
+		match lt:
+			"building_supermarket":
+				_check(kinds.has("loading_dock"), "Supermarket missing loading_dock")
+				_check(kinds.has("rooftop_hvac"), "Supermarket missing rooftop_hvac")
+			"building_shopping_mall":
+				_check(kinds.has("atrium_skylight"), "Shopping mall missing atrium_skylight")
+				_check(kinds.has("stair_step"), "Shopping mall missing stair_step in atrium")
+			"building_hospital":
+				_check(kinds.has("helipad") or kinds.has("roof_slab"), "Hospital missing helipad or roof_slab")
+				_check(int(info.get("floors", 0)) == 3, "Hospital must be 3 floors")
+			"building_school":
+				_check(kinds.has("gym_balcony"), "School missing gym_balcony")
+				_check(int(info.get("floors", 0)) == 2, "School must be 2 floors")
+
+	await get_tree().physics_frame
+
+## 9. Проверка процедурного пака мебели (16 типов)
 func _test_furniture_pack() -> void:
 	var types: Array[String] = TACTICAL_FURNITURE.get_available_types()
 	_check(types.size() == 16, "Expected 16 furniture types, got %d" % types.size())

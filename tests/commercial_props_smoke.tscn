@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bv8m4q7q5s2p2"]
+
+[ext_resource type="Script" path="res://tests/commercial_props_smoke.gd" id="1_cmprc"]
+
+[node name="CommercialPropsSmoke" type="Node3D"]
+script = ExtResource("1_cmprc")
