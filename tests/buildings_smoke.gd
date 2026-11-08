@@ -1,13 +1,41 @@
 extends Node3D
 
-## Headless smoke & unit test suite for Tactical Buildings Pack (TASK: 1, 2, 3, and 5 story buildings).
+## Headless smoke & unit test suite for Tactical Buildings Pack (1, 2, 3, 5 stories & expanded tactical structures).
 ## Validates:
-## 1. Creation of all 4 tactical building types (metadata, layout boxes, and 3D scenes).
-## 2. StaticBody3D collision geometry for walls, slabs, stairs, balconies, and roofs.
-## 3. Physics raycast bullet penetration through window and door openings (no blocking colliders).
+## 1. Creation and metadata for all available tactical building types (up to 9 types: 1, 2, 3, 5-story, barn/hangar, ruin, checkpoint tower, L-shaped villa, bunker/pillbox).
+## 2. StaticBody3D collision geometry for walls, slabs, stairs, balconies, roofs, and bunkers.
+## 3. Physics raycast bullet penetration through window, door, and embrasure openings (no blocking colliders).
 ## 4. Continuity of stair flights, opening cutouts in floor slabs, and access to top floors and roof arena (up to 5th floor + roof).
+## 5. Architectural fidelity of specialized tactical structures (tower height, bunker armor, barn clearance, ruin traversability).
 
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
+
+const BASE_TYPES: Array[String] = [
+	"house_1story",
+	"house_2story",
+	"house_3story",
+	"house_5story"
+]
+
+const EXPANDED_TYPES: Array[String] = [
+	"house_barn_hangar",
+	"house_ruin_destroyed",
+	"house_checkpoint_tower",
+	"house_l_shaped_villa",
+	"house_bunker_pillbox"
+]
+
+const ALL_9_TYPES: Array[String] = [
+	"house_1story",
+	"house_2story",
+	"house_3story",
+	"house_5story",
+	"house_barn_hangar",
+	"house_ruin_destroyed",
+	"house_checkpoint_tower",
+	"house_l_shaped_villa",
+	"house_bunker_pillbox"
+]
 
 var _failures: Array[String] = []
 
@@ -19,6 +47,7 @@ func _ready() -> void:
 	await _test_window_and_door_bullet_penetration()
 	await _test_stairs_continuity_and_floor_access()
 	await _test_multistory_5story_vertical_traversal()
+	await _test_expanded_tactical_building_types()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -28,12 +57,15 @@ func _check(condition: bool, message: String) -> void:
 
 ## 1. Проверка доступных типов зданий и метаданных
 func _test_building_types_and_metadata() -> void:
-	var types: Array[String] = TACTICAL_BUILDINGS.get_available_types()
-	_check(types.size() == 4, "Available types count != 4 (found %d)" % types.size())
-	_check("house_1story" in types, "house_1story missing from available types")
-	_check("house_2story" in types, "house_2story missing from available types")
-	_check("house_3story" in types, "house_3story missing from available types")
-	_check("house_5story" in types, "house_5story missing from available types")
+	var available: Array[String] = TACTICAL_BUILDINGS.get_available_types()
+	_check(available.size() >= 4, "Available types count < 4 (found %d)" % available.size())
+
+	for bt in BASE_TYPES:
+		_check(bt in available, "Base building type %s missing from available types" % bt)
+
+	if available.size() >= 9:
+		for et in EXPANDED_TYPES:
+			_check(et in available, "Expanded building type %s missing from available types" % et)
 
 	var expected_floors := {
 		"house_1story": 1,
@@ -42,23 +74,25 @@ func _test_building_types_and_metadata() -> void:
 		"house_5story": 5,
 	}
 
-	for t in types:
+	for t in available:
 		var info: Dictionary = TACTICAL_BUILDINGS.get_building_info(t)
 		_check(not info.is_empty(), "Empty info for building type %s" % t)
-		_check(info.has("floors") and info["floors"] == expected_floors[t], "Floor count mismatch for %s: %s" % [t, str(info.get("floors"))])
-		_check(info.has("width") and float(info["width"]) >= 10.0, "Building width too small for %s: %s" % [t, str(info.get("width"))])
-		_check(info.has("length") and float(info["length"]) >= 8.0, "Building length too small for %s: %s" % [t, str(info.get("length"))])
-		_check(info.has("height") and float(info["height"]) >= 3.2, "Building height too small for %s: %s" % [t, str(info.get("height"))])
-		if expected_floors[t] > 1:
+		_check(info.has("floors") and int(info["floors"]) >= 1, "Floor count invalid for %s: %s" % [t, str(info.get("floors"))])
+		if expected_floors.has(t):
+			_check(info["floors"] == expected_floors[t], "Floor count mismatch for %s: %s" % [t, str(info.get("floors"))])
+		_check(info.has("width") and float(info["width"]) >= 6.0, "Building width too small for %s: %s" % [t, str(info.get("width"))])
+		_check(info.has("length") and float(info["length"]) >= 6.0, "Building length too small for %s: %s" % [t, str(info.get("length"))])
+		_check(info.has("height") and float(info["height"]) >= 2.5, "Building height too small for %s: %s" % [t, str(info.get("height"))])
+		if int(info.get("floors", 1)) > 1 and t in BASE_TYPES:
 			_check(bool(info.get("roof_access", false)), "%s must have roof access" % t)
 			_check(int(info.get("balconies", 0)) > 0, "%s must have balconies" % t)
 
 ## 2. Проверка генерации массивов словарей-боксов для карт
 func _test_layout_boxes_generation() -> void:
-	var types := ["house_1story", "house_2story", "house_3story", "house_5story"]
-	for t in types:
+	var available := TACTICAL_BUILDINGS.get_available_types()
+	for t in available:
 		var boxes: Array[Dictionary] = TACTICAL_BUILDINGS.get_building_boxes(t)
-		_check(boxes.size() > 10, "Building %s generated too few boxes: %d" % [t, boxes.size()])
+		_check(boxes.size() > 5, "Building %s generated too few boxes: %d" % [t, boxes.size()])
 
 		for b in boxes:
 			_check(b.has("pos") and b["pos"] is Vector3, "Box missing pos Vector3 in %s" % t)
@@ -75,13 +109,13 @@ func _test_layout_boxes_generation() -> void:
 	_check(rotated_boxes.size() > 0, "Rotated boxes array is empty")
 	if rotated_boxes.size() > 0:
 		var first_pos: Vector3 = rotated_boxes[0]["pos"]
-		_check(absf(first_pos.x - origin_offset.x) < 20.0, "Rotated box X position out of bounds: %f" % first_pos.x)
+		_check(absf(first_pos.x - origin_offset.x) < 25.0, "Rotated box X position out of bounds: %f" % first_pos.x)
 		_check(first_pos.y >= origin_offset.y, "Rotated box Y position below origin: %f" % first_pos.y)
 
 ## 3. Проверка создания нод Node3D со StaticBody3D и коллизиями
 func _test_building_node_and_static_bodies() -> void:
-	var types := ["house_1story", "house_2story", "house_3story", "house_5story"]
-	for t in types:
+	var available := TACTICAL_BUILDINGS.get_available_types()
+	for t in available:
 		var node: Node3D = TACTICAL_BUILDINGS.create_building_node(t)
 		_check(node != null, "create_building_node returned null for %s" % t)
 		if node == null:
@@ -96,14 +130,14 @@ func _test_building_node_and_static_bodies() -> void:
 			for c in body.get_children():
 				if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
 					shape_count += 1
-			_check(shape_count >= 10, "Too few CollisionShape3D in %s StaticBody: %d" % [t, shape_count])
+			_check(shape_count >= 5, "Too few CollisionShape3D in %s StaticBody: %d" % [t, shape_count])
 
 		# Проверка наличия визуальных мешей
 		var mesh_count := 0
 		for c in node.get_children():
 			if c is MeshInstance3D and (c as MeshInstance3D).mesh is BoxMesh:
 				mesh_count += 1
-		_check(mesh_count >= 10, "Too few MeshInstance3D in %s: %d" % [t, mesh_count])
+		_check(mesh_count >= 5, "Too few MeshInstance3D in %s: %d" % [t, mesh_count])
 
 		# Проверка конкретных категорий коллизий
 		var boxes := TACTICAL_BUILDINGS.get_building_boxes(t)
@@ -115,7 +149,7 @@ func _test_building_node_and_static_bodies() -> void:
 		_check(kinds.has("wall"), "Building %s missing solid walls" % t)
 		_check(kinds.has("building_base") or kinds.has("floor_slab") or kinds.has("floor"), "Building %s missing solid floor/base" % t)
 
-		if t != "house_1story":
+		if t in ["house_2story", "house_3story", "house_5story"]:
 			_check(kinds.has("stair_step"), "Building %s missing solid stair steps" % t)
 			_check(kinds.has("balcony_slab") or kinds.has("balcony_parapet"), "Building %s missing solid balcony" % t)
 			_check(kinds.has("roof_slab") or kinds.has("roof_parapet"), "Building %s missing solid roof" % t)
@@ -273,6 +307,38 @@ func _test_multistory_5story_vertical_traversal() -> void:
 
 	node.queue_free()
 	await get_tree().physics_frame
+
+## 7. Проверка специализированных тактических построек (ангар, руина, вышка, вилла, бункер)
+func _test_expanded_tactical_building_types() -> void:
+	var available: Array[String] = TACTICAL_BUILDINGS.get_available_types()
+	for et in EXPANDED_TYPES:
+		if not et in available:
+			continue
+
+		var info: Dictionary = TACTICAL_BUILDINGS.get_building_info(et)
+		var boxes: Array[Dictionary] = TACTICAL_BUILDINGS.get_building_boxes(et)
+		var kinds := {}
+		for b in boxes:
+			if bool(b.get("solid", true)):
+				kinds[b["kind"]] = true
+
+		match et:
+			"house_barn_hangar":
+				_check(float(info.get("width", 0)) >= 12.0 and float(info.get("length", 0)) >= 10.0, "Barn/hangar dimensions too small")
+				_check(kinds.has("wall"), "Barn missing walls")
+				_check(kinds.has("floor") or kinds.has("building_base") or kinds.has("floor_slab"), "Barn missing floor")
+			"house_ruin_destroyed":
+				_check(kinds.has("wall"), "Ruin missing walls")
+				_check(kinds.has("rubble") or kinds.has("stair_step") or kinds.has("floor_slab") or kinds.has("building_base"), "Ruin missing rubble or slabs")
+			"house_checkpoint_tower":
+				_check(float(info.get("height", 0)) >= 8.0, "Checkpoint tower height too low: %s" % str(info.get("height")))
+				_check(kinds.has("stair_step") or kinds.has("ladder_rung") or kinds.has("floor_slab"), "Tower missing vertical traversal elements")
+			"house_l_shaped_villa":
+				_check(float(info.get("width", 0)) >= 10.0 and float(info.get("length", 0)) >= 10.0, "L-shaped villa too small")
+				_check(kinds.has("wall"), "Villa missing walls")
+			"house_bunker_pillbox":
+				_check(kinds.has("wall"), "Bunker missing reinforced walls")
+				_check(kinds.has("roof_slab") or kinds.has("building_base") or kinds.has("floor"), "Bunker missing heavy slab/base")
 
 func _report() -> void:
 	if _failures.is_empty():

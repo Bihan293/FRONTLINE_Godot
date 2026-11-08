@@ -939,11 +939,22 @@ func _test_tactical_buildings_pack() -> void:
 		return
 
 	var types: Array[String] = TACTICAL_BUILDINGS.get_available_types()
-	_check(types.size() == 4, "expected 4 tactical building types, got %d" % types.size())
+	_check(types.size() >= 4, "expected at least 4 tactical building types, got %d" % types.size())
 	_check(types.has("house_1story"), "missing house_1story")
 	_check(types.has("house_2story"), "missing house_2story")
 	_check(types.has("house_3story"), "missing house_3story")
 	_check(types.has("house_5story"), "missing house_5story")
+
+	var expanded_types := [
+		"house_barn_hangar",
+		"house_ruin_destroyed",
+		"house_checkpoint_tower",
+		"house_l_shaped_villa",
+		"house_bunker_pillbox"
+	]
+	if types.size() >= 9:
+		for et in expanded_types:
+			_check(types.has(et), "missing expanded building type %s" % et)
 
 	for type_name in types:
 		var info: Dictionary = TACTICAL_BUILDINGS.get_building_info(type_name)

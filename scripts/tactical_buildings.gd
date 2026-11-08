@@ -2,31 +2,35 @@ extends RefCounted
 class_name FRONTLINETacticalBuildings
 
 ## Пак проработанных 3D-моделей зданий для тактического боя (FRONTLINE / Dummy War / Bodycam style).
-## Включает:
-## - 1-этажный опорный пункт / дом с круговой обороной и наружным выходом на крышу
-## - 2-этажный городской дом с лестницей, балконом и выходом на крышу
-## - 3-этажное административное здание / штаб с двухмаршевой лестницей, боковым и фронтальным балконами
-## - 5-этажный жилой дом (многоэтажка) с центральным лестничным узлом, тактическими проломами в стенах,
-##   балконами на всех этажах и эксплуатируемой крышей с укрытиями
+## Включает 9 уникальных боевых типов:
+## 1. house_1story — 1-этажный опорный пункт с круговыми бойницами и выходом на крышу
+## 2. house_2story — 2-этажный городской дом с лестницей, балконом и выходом на крышу
+## 3. house_3story — 3-этажное административное здание / штаб с холлами и 2 балконами
+## 4. house_5story — 5-этажный жилой дом с двухмаршевой лестницей, проломами в стенах и террасой на крыше
+## 5. house_barn_hangar — промышленный ангар с высокими потолками, воротами для техники и подвесными мостками
+## 6. house_ruin_destroyed — разрушенное 3-этажное здание с пандусами из обрушившихся плит и снайперским гнездом
+## 7. house_checkpoint_tower — 3-ярусная укреплённая наблюдательная вышка / КПП с круговой 360° боевой площадкой
+## 8. house_l_shaped_villa — 2-этажная Г-образная усадьба/вилла с внутренним двором для перекрёстного огня и угловым балконом
+## 9. house_bunker_pillbox — тяжёлый железобетонный ДОТ со сверхтолстыми стенами, зигзаг-тамбуром и узкими амбразурами
 ##
-## Все здания спроектированы БЕЗ мебели (чистая боевая архитектура):
+## Все здания спроектированы БЕЗ мебели (чистая тактическая архитектура):
 ## - Проработанные комнаты и коридоры для манёвров, зачистки помещений (CQB) и обходов с флангов
-## - Дверные проёмы 1.30 м х 2.20 м (свободный проход для двух бойцов и ботов)
-## - Оконные проёмы: подоконник 0.88 м (идеально для стрельбы с колена/стоя, наклонов Q/E и паркура/перемаха)
-## - Лестничные пролёты со ступенями высотой 0.20 м (ниже floor_snap_length 0.25 м, без застреваний)
-## - Балконы с защитным парапетом 0.98 м (1.0 м) для ведения огня и укрытия
-## - Эксплуатируемые плоские крыши с периметральным защитным парапетом 1.05 м
+## - Дверные проёмы 1.30–2.00 м (свободный проход для двух бойцов и ботов)
+## - Оконные проёмы: подоконник 0.88–0.90 м (идеально для упора оружия, наклонов Q/E и паркура/перемаха)
+## - Лестничные пролёты со ступенями высотой <= 0.20 м (гарантированно ниже floor_snap_length 0.25 м, без застревания)
+## - Балконы с защитным парапетом 0.98 м (1.0 м) для укрытия и обстрела улицы
+## - Эксплуатируемые крыши с периметральным защитным парапетом 1.05 м
 
-const STORY_HEIGHT := 3.20 # Высота этажа (чистая высота потолка 2.96 м + плита 0.24 м)
-const WALL_THICKNESS := 0.28 # Толщина несущих стен
-const SILL_HEIGHT := 0.88 # Высота подоконника (рассчитана под паркур и упор оружия)
-const WINDOW_HEIGHT := 1.25 # Высота окна (дает 1.25 м свободного просвета > 1.15 м для паркура)
+const STORY_HEIGHT := 3.20 # Высота этажа
+const WALL_THICKNESS := 0.28 # Толщина типовых стен
+const SILL_HEIGHT := 0.88 # Высота подоконника
+const WINDOW_HEIGHT := 1.25 # Высота окна
 const WINDOW_WIDTH := 1.30 # Ширина окна
 const DOOR_HEIGHT := 2.20 # Высота двери
 const DOOR_WIDTH := 1.30 # Ширина двери
-const PARAPET_HEIGHT := 0.98 # Высота балконных и кровельных парапетов (укрытие 1.0 м)
+const PARAPET_HEIGHT := 0.98 # Высота балконных и кровельных парапетов (1.0 м)
 
-# Палитра материалов (бетон, штукатурка, кирпич, плиты перекрытий, парапеты, сталь)
+# Палитра материалов (бетон, штукатурка, кирпич, плиты перекрытий, парапеты, сталь, булыжник)
 const COLOR_CONCRETE_WALL := Color(0.68, 0.65, 0.60)
 const COLOR_STUCCO_WALL := Color(0.74, 0.71, 0.65)
 const COLOR_BRICK_BASE := Color(0.48, 0.26, 0.20)
@@ -39,9 +43,20 @@ const COLOR_ROOF_GRAVEL := Color(0.34, 0.34, 0.34)
 const COLOR_LINTEL := Color(0.38, 0.35, 0.32)
 const COLOR_STEEL := Color(0.30, 0.32, 0.34)
 const COLOR_RUBBLE := Color(0.52, 0.48, 0.44)
+const COLOR_WOOD_BEAM := Color(0.36, 0.26, 0.18)
 
 static func get_available_types() -> Array[String]:
-	return ["house_1story", "house_2story", "house_3story", "house_5story"]
+	return [
+		"house_1story",
+		"house_2story",
+		"house_3story",
+		"house_5story",
+		"house_barn_hangar",
+		"house_ruin_destroyed",
+		"house_checkpoint_tower",
+		"house_l_shaped_villa",
+		"house_bunker_pillbox"
+	]
 
 static func get_building_info(type_name: String) -> Dictionary:
 	match type_name:
@@ -87,7 +102,62 @@ static func get_building_info(type_name: String) -> Dictionary:
 				"height": 18.8,
 				"balconies": 6,
 				"roof_access": true,
-				"description": "Центральная двухмаршевая лестничная клетка, 16 квартир, проломы в перегородках для фланговых атак, терраса на крыше с укрытиями вентиляции."
+				"description": "Центральная двухмаршевая лестничная клетка, 16 квартир, проломы в перегородках, терраса на крыше с укрытиями вентиляции."
+			}
+		"house_barn_hangar":
+			return {
+				"name": "Промышленный ангар / амбар-депо",
+				"floors": 2,
+				"width": 18.0,
+				"length": 14.0,
+				"height": 7.6,
+				"balconies": 0,
+				"roof_access": true,
+				"description": "Высокие потолки, сквозные ворота 4.2м для техники, подвесные галереи на высоте 3.6м с мостиком и стальной лестницей."
+			}
+		"house_ruin_destroyed":
+			return {
+				"name": "Разрушенное 3-этажное здание / руина",
+				"floors": 3,
+				"width": 13.0,
+				"length": 10.0,
+				"height": 8.8,
+				"balconies": 1,
+				"roof_access": true,
+				"description": "Артиллерийские проломы в стенах, наклонные пандусы из обрушившихся плит вместо лестниц, снайперское гнездо на 3 этаже."
+			}
+		"house_checkpoint_tower":
+			return {
+				"name": "3-ярусная укреплённая наблюдательная вышка / КПП",
+				"floors": 3,
+				"width": 7.0,
+				"length": 7.0,
+				"height": 11.6,
+				"balconies": 1,
+				"roof_access": true,
+				"description": "Караулка внизу, наблюдательный пункт на 2 ярусе, открытая 360° снайперская площадка с навесом наверху."
+			}
+		"house_l_shaped_villa":
+			return {
+				"name": "2-этажная Г-образная усадьба с двориком",
+				"floors": 2,
+				"width": 15.0,
+				"length": 14.0,
+				"height": 7.8,
+				"balconies": 1,
+				"roof_access": true,
+				"description": "Г-образная форма с внутренним двориком для перекрёстного огня из двух крыльев, угловой балкон 2 этажа, коридоры 90°."
+			}
+		"house_bunker_pillbox":
+			return {
+				"name": "Тяжёлый железобетонный ДОТ / бункер",
+				"floors": 1,
+				"width": 10.0,
+				"length": 8.0,
+				"height": 3.6,
+				"balconies": 0,
+				"roof_access": true,
+				"description": "Стены 0.60м, зигзагообразный противоосколочный тамбур, 4 пулемётные амбразуры с широким сектором обстрела."
 			}
 		_:
 			return {}
@@ -105,6 +175,16 @@ static func get_building_boxes(type_name: String, origin: Vector3 = Vector3.ZERO
 			_build_3story(local_boxes)
 		"house_5story":
 			_build_5story(local_boxes)
+		"house_barn_hangar":
+			_build_barn_hangar(local_boxes)
+		"house_ruin_destroyed":
+			_build_ruin_destroyed(local_boxes)
+		"house_checkpoint_tower":
+			_build_checkpoint_tower(local_boxes)
+		"house_l_shaped_villa":
+			_build_l_shaped_villa(local_boxes)
+		"house_bunker_pillbox":
+			_build_bunker_pillbox(local_boxes)
 		_:
 			_build_1story(local_boxes)
 
@@ -186,6 +266,51 @@ static func get_building_tactical_points(type_name: String, origin: Vector3 = Ve
 				Vector3(-7.2, 17.7, -5.8), Vector3(7.2, 17.7, -5.8),
 				Vector3(-7.2, 17.7, 5.8), Vector3(7.2, 17.7, 5.8)
 			])
+		"house_barn_hangar":
+			local_pts["entrances"].append_array([
+				Vector3(0.0, 0.20, -6.0), Vector3(0.0, 0.20, 6.0), # Ворота
+				Vector3(-9.0, 0.20, 0.0), Vector3(9.0, 0.20, 0.0)  # Пешеходные двери
+			])
+			local_pts["balconies"].append_array([
+				Vector3(-7.6, 3.60, 0.0), Vector3(7.6, 3.60, 0.0), # Мостки
+				Vector3(0.0, 3.60, 0.0) # Мостик-переход
+			])
+			local_pts["snipers"].append_array([
+				Vector3(-7.6, 3.60, -4.5), Vector3(7.6, 3.60, -4.5),
+				Vector3(-7.6, 3.60, 4.5), Vector3(7.6, 3.60, 4.5)
+			])
+		"house_ruin_destroyed":
+			local_pts["entrances"].append_array([Vector3(-2.0, 0.20, -5.0), Vector3(3.2, 0.60, -5.0)])
+			local_pts["balconies"].append(Vector3(-2.5, 3.40, -5.7))
+			local_pts["snipers"].append_array([
+				Vector3(-4.0, 6.80, -3.5), # Снайперское гнездо 3 этажа
+				Vector3(4.0, 3.40, 2.0)
+			])
+		"house_checkpoint_tower":
+			local_pts["entrances"].append_array([Vector3(0.0, 0.20, -3.5), Vector3(0.0, 0.20, 3.5)])
+			local_pts["balconies"].append(Vector3(0.0, 7.20, 0.0))
+			local_pts["snipers"].append_array([
+				Vector3(-2.5, 7.20, -2.5), Vector3(2.5, 7.20, -2.5),
+				Vector3(-2.5, 7.20, 2.5), Vector3(2.5, 7.20, 2.5)
+			])
+		"house_l_shaped_villa":
+			local_pts["entrances"].append_array([
+				Vector3(-2.0, 0.20, -7.0), # Парадный вход
+				Vector3(-3.0, 0.20, 0.0),  # Вход из дворика
+				Vector3(0.5, 0.20, 3.5)    # Вход в боковое крыло
+			])
+			local_pts["balconies"].append(Vector3(-1.0, 3.60, 0.7))
+			local_pts["snipers"].append_array([
+				Vector3(-6.5, 7.40, -6.0), Vector3(6.5, 7.40, -6.0),
+				Vector3(6.5, 7.40, 6.0)
+			])
+		"house_bunker_pillbox":
+			local_pts["entrances"].append(Vector3(1.5, 0.20, 5.2)) # За противоосколочным экраном
+			local_pts["windows"].append_array([
+				Vector3(-2.6, 0.90, -4.0), Vector3(2.6, 0.90, -4.0), # Фронтальные амбразуры
+				Vector3(-5.0, 0.90, -1.0), Vector3(5.0, 0.90, -1.0)  # Боковые амбразуры
+			])
+			local_pts["snipers"].append(Vector3(0.0, 3.50, 0.0)) # Перископ на крыше
 
 	var rad := deg_to_rad(rot_deg)
 	var cos_a := cos(rad)
@@ -215,6 +340,9 @@ static func create_building_node(type_name: String) -> Node3D:
 	body.name = "BuildingCollisions"
 	root.add_child(body)
 
+	# Кэшируем материалы по цвету для оптимизации GPU draw calls и памяти
+	var mat_cache: Dictionary = {}
+
 	for b in boxes:
 		var pos: Vector3 = b.pos
 		var size: Vector3 = b.size
@@ -233,9 +361,12 @@ static func create_building_node(type_name: String) -> Node3D:
 		var box_mesh := BoxMesh.new()
 		box_mesh.size = size
 		mesh_instance.mesh = box_mesh
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = color
-		mat.roughness = 0.85
+		var mat: StandardMaterial3D = mat_cache.get(color)
+		if mat == null:
+			mat = StandardMaterial3D.new()
+			mat.albedo_color = color
+			mat.roughness = 0.85
+			mat_cache[color] = mat
 		mesh_instance.material_override = mat
 		mesh_instance.position = pos
 		if not bool(b.get("cast_shadow", true)):
@@ -254,58 +385,22 @@ static func _build_1story(out: Array[Dictionary]) -> void:
 	var hw := w * 0.5
 	var hl := l * 0.5
 
-	# Цоколь и пол
 	_push(out, Vector3(0.0, 0.10, 0.0), Vector3(w + 0.4, 0.20, l + 0.4), COLOR_BRICK_BASE, true, "building_base")
 	_push(out, Vector3(0.0, 0.22, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor")
 
-	# Фасад (Z = -hl): дверь по центру + 2 окна по бокам
-	_build_wall_with_doors_and_windows(out,
-		Vector3(0.0, 0.20, -hl), w, h, true,
-		[0.0], # Дверь по центру (x=0)
-		[-3.2, 3.2] # 2 фасадных окна (подоконник 0.88м)
-	)
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, -hl), w, h, true, [0.0], [-3.2, 3.2])
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, hl), w, h, true, [0.0], [-3.2, 3.2])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.20, 0.0), l, h, false, [], [0.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.20, 0.0), l, h, false, [], [0.0])
 
-	# Задняя стена (Z = hl): запасной выход + 2 окна
-	_build_wall_with_doors_and_windows(out,
-		Vector3(0.0, 0.20, hl), w, h, true,
-		[0.0], # Задняя дверь
-		[-3.2, 3.2] # 2 тыльных окна
-	)
+	_build_wall_with_doors_and_windows(out, Vector3(-1.20, 0.20, 0.0), l - 1.0, h, false, [-1.5, 1.5], [])
+	_build_wall_with_doors_and_windows(out, Vector3(1.20, 0.20, 0.0), l - 1.0, h, false, [-1.5, 1.5], [])
 
-	# Левая боковая стена (X = -hw): с 1 окном для флангового огня
-	_build_wall_with_doors_and_windows(out,
-		Vector3(-hw, 0.20, 0.0), l, h, false,
-		[], # дверей нет
-		[0.0] # 1 центральное окно
-	)
-
-	# Правая боковая стена (X = hw): с 1 окном
-	_build_wall_with_doors_and_windows(out,
-		Vector3(hw, 0.20, 0.0), l, h, false,
-		[],
-		[0.0]
-	)
-
-	# Внутренние перегородки (2 боевые комнаты и центральный коридор шириной 2.4 м)
-	_build_wall_with_doors_and_windows(out,
-		Vector3(-1.20, 0.20, 0.0), l - 1.0, h, false,
-		[-1.5, 1.5], # 2 двери в левые комнаты
-		[]
-	)
-	_build_wall_with_doors_and_windows(out,
-		Vector3(1.20, 0.20, 0.0), l - 1.0, h, false,
-		[-1.5, 1.5], # 2 двери в правые комнаты
-		[]
-	)
-
-	# Эксплуатируемая крыша с парапетом 0.98 м для снайперской круговой обороны
 	var y_roof := h + 0.20
 	_push(out, Vector3(0.0, y_roof + 0.12, 0.0), Vector3(w + 0.6, 0.24, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
 	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.24, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT)
 
-	# Внешняя тактическая лестница на крышу с западной стороны (X = -hw - 0.55 м)
 	_build_stair_flight(out, Vector3(-hw - 0.65, 0.20, -1.8), 1.10, h, 1)
-	# Площадка выхода на крышу
 	_push(out, Vector3(-hw - 0.65, y_roof + 0.12, 0.5), Vector3(1.2, 0.24, 1.4), COLOR_SLAB_FLOOR, true, "stair_landing")
 
 # ==============================================================================
@@ -318,48 +413,29 @@ static func _build_2story(out: Array[Dictionary]) -> void:
 	var hw := w * 0.5
 	var hl := l * 0.5
 
-	# Цоколь и пол 1-го этажа
 	_push(out, Vector3(0.0, 0.10, 0.0), Vector3(w + 0.4, 0.20, l + 0.4), COLOR_BRICK_BASE, true, "building_base")
 	_push(out, Vector3(0.0, 0.22, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor_1")
 
-	# --- 1 ЭТАЖ (Y = 0.20..3.40) ---
-	# Фасад: парадный вход + 2 окна
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, -hl), w, h, true, [-2.5], [2.2, -4.8])
-	# Задняя стена: выход во двор + 2 окна
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, hl), w, h, true, [2.5], [-2.2, 4.8])
-	# Боковые стены
 	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.20, 0.0), l, h, false, [], [-2.4, 2.4])
 	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.20, 0.0), l, h, false, [], [-2.4, 2.4])
-	# Внутренний коридор 1-го этажа
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, 0.0), w - 1.0, h, true, [-1.8, 2.5], [])
 
-	# Лестничный пролёт с 1-го на 2-й этаж (16 ступеней по 0.20 м, длина 3.52 м, без застревания)
 	var stair_x := -hw + 1.30
 	var stair_z := hl - 2.80
 	_build_stair_flight(out, Vector3(stair_x, 0.20, stair_z), 1.30, h, 1)
-
-	# Перекрытие 2-го этажа (с вырезом под лестничный марш)
 	_build_floor_slab_with_stair_opening(out, 0.20 + h, w, l, Vector3(stair_x, 0.20 + h, stair_z), Vector3(1.6, 0.28, 3.8))
 
-	# --- 2 ЭТАЖ (Y = 3.60..6.80) ---
 	var y2 := 0.20 + h + 0.20
-	# Фасад 2-го этажа: дверь на балкон + 2 окна
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, -hl), w, h, true, [0.0], [-3.8, 3.8])
-	# Балкон на фасаде 2-го этажа: консольная плита 3.8м х 1.4м + парапет 0.98м (направлен вперед на Север)
 	_build_balcony(out, Vector3(0.0, y2, -hl - 0.70), 3.80, 1.40, PARAPET_HEIGHT, Vector3(0, 0, -1))
-
-	# Задняя стена 2-го этажа: 3 окна
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, hl), w, h, true, [], [-3.6, 0.0, 3.6])
-	# Боковые стены 2-го этажа
 	_build_wall_with_doors_and_windows(out, Vector3(-hw, y2, 0.0), l, h, false, [], [-2.4, 2.4])
 	_build_wall_with_doors_and_windows(out, Vector3(hw, y2, 0.0), l, h, false, [], [-2.4, 2.4])
-	# Внутренние перегородки 2-го этажа (холл и 2 комнаты)
 	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, 0.0), w - 1.0, h, true, [-2.2, 2.2], [])
 
-	# Лестница с 2-го этажа на крышу
 	_build_stair_flight(out, Vector3(stair_x, y2, stair_z), 1.30, h, 1)
-
-	# Эксплуатируемая крыша с пентхаусом и выходом
 	var y_roof := y2 + h
 	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z))
 
@@ -373,7 +449,6 @@ static func _build_3story(out: Array[Dictionary]) -> void:
 	var hw := w * 0.5
 	var hl := l * 0.5
 
-	# Фундамент
 	_push(out, Vector3(0.0, 0.12, 0.0), Vector3(w + 0.5, 0.24, l + 0.5), COLOR_BRICK_BASE, true, "building_base")
 
 	var stair_x := 0.0
@@ -384,42 +459,33 @@ static func _build_3story(out: Array[Dictionary]) -> void:
 		var y_floor := 0.24 + floor_idx * (h + 0.22)
 		var is_ground := (floor_idx == 0)
 
-		# Пол этажа (кроме первого, который на цоколе)
 		if not is_ground:
 			_build_floor_slab_with_stair_opening(out, y_floor - 0.22, w, l, Vector3(stair_x, y_floor - 0.22, stair_z), Vector3(stair_w + 0.4, 0.24, 3.8))
 
-		# Наружные стены
 		if is_ground:
-			# Двойной парадный портал на 1-м этаже (ширина 2.0 м)
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, -hl), w, h, true, [0.0], [-4.2, 4.2])
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, hl), w, h, true, [0.0], [-4.2, 4.2])
 		elif floor_idx == 1:
-			# 2-й этаж: боковой балкон на восточном фасаде (X = +hw)
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, -hl), w, h, true, [-3.2], [0.0, 3.2])
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, hl), w, h, true, [], [-4.2, 0.0, 4.2])
 			_build_balcony(out, Vector3(hw + 0.70, y_floor, 0.0), 3.60, 1.40, PARAPET_HEIGHT, Vector3(1, 0, 0))
 			_build_wall_with_doors_and_windows(out, Vector3(hw, y_floor, 0.0), l, h, false, [0.0], [-3.2, 3.2])
 		else:
-			# 3-й этаж: фронтальный балкон с панорамным обзором
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, -hl), w, h, true, [0.0], [-4.2, 4.2])
 			_build_balcony(out, Vector3(0.0, y_floor, -hl - 0.70), 4.20, 1.40, PARAPET_HEIGHT, Vector3(0, 0, -1))
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, hl), w, h, true, [], [-4.2, 0.0, 4.2])
 			_build_wall_with_doors_and_windows(out, Vector3(hw, y_floor, 0.0), l, h, false, [], [-3.2, 0.0, 3.2])
 
-		# Западная стена
 		if floor_idx != 1:
 			_build_wall_with_doors_and_windows(out, Vector3(-hw, y_floor, 0.0), l, h, false, [], [-3.2, 0.0, 3.2])
 		else:
 			_build_wall_with_doors_and_windows(out, Vector3(-hw, y_floor, 0.0), l, h, false, [], [-3.2, 3.2])
 
-		# Внутренние тактические перегородки (4 изолированные комнаты на каждом этаже)
 		_build_wall_with_doors_and_windows(out, Vector3(-2.8, y_floor, -1.0), w * 0.45, h, true, [-1.2], [])
 		_build_wall_with_doors_and_windows(out, Vector3(2.8, y_floor, -1.0), w * 0.45, h, true, [1.2], [])
 
-		# Лестничный марш на следующий этаж
 		_build_stair_flight(out, Vector3(stair_x, y_floor, stair_z), stair_w, h, -1)
 
-	# Крыша 3-го этажа с пентхаусом
 	var y_roof := 0.24 + 3 * (h + 0.22)
 	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z))
 
@@ -433,28 +499,23 @@ static func _build_5story(out: Array[Dictionary]) -> void:
 	var hw := w * 0.5
 	var hl := l * 0.5
 
-	# Массивный железобетонный цоколь
 	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 0.6, 0.30, l + 0.6), COLOR_BRICK_BASE, true, "building_base")
 
 	var stair_x := 0.0
-	var stair_z := 0.0 # Центральная двухмаршевая лестничная клетка
+	var stair_z := 0.0
 	var stair_w := 1.40
 
 	for floor_idx in range(5):
 		var y_floor := 0.30 + floor_idx * (h + 0.24)
 		var is_ground := (floor_idx == 0)
 
-		# Плита перекрытия (с проёмом для лестничных маршей)
 		if not is_ground:
 			_build_floor_slab_with_stair_opening(out, y_floor - 0.24, w, l, Vector3(stair_x, y_floor - 0.24, stair_z), Vector3(3.2, 0.26, 4.4))
 
-		# Наружные фасадные стены (Z = -hl и Z = hl)
 		if is_ground:
-			# 1-й этаж: парадный подъезд по центру + окна
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, -hl), w, h, true, [0.0], [-5.2, -2.6, 2.6, 5.2])
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, hl), w, h, true, [0.0], [-5.2, -2.6, 2.6, 5.2])
 		else:
-			# 2, 3, 4, 5 этажи: чередующиеся тактические балконы с парапетом
 			var has_balcony_left: bool = (floor_idx % 2 == 1)
 			var has_balcony_right: bool = (floor_idx % 2 == 0)
 
@@ -476,7 +537,6 @@ static func _build_5story(out: Array[Dictionary]) -> void:
 			windows_f.append_array([-6.0, 0.0, 6.0])
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, -hl), w, h, true, doors_f, windows_f)
 
-			# Задняя стена с балконами на противоположной стороне
 			var doors_b: Array = []
 			var windows_b: Array = []
 			if not has_balcony_left:
@@ -492,43 +552,301 @@ static func _build_5story(out: Array[Dictionary]) -> void:
 			windows_b.append_array([-6.0, 0.0, 6.0])
 			_build_wall_with_doors_and_windows(out, Vector3(0.0, y_floor, hl), w, h, true, doors_b, windows_b)
 
-		# Торцевые боковые стены здания (X = -hw и X = hw) с окнами
 		_build_wall_with_doors_and_windows(out, Vector3(-hw, y_floor, 0.0), l, h, false, [], [-3.6, 3.6])
 		_build_wall_with_doors_and_windows(out, Vector3(hw, y_floor, 0.0), l, h, false, [], [-3.6, 3.6])
 
-		# Внутренние стены: центральная лестничная шахта и изолированные квартиры
 		_build_wall_with_doors_and_windows(out, Vector3(-1.8, y_floor, 0.0), l - 1.2, h, false, [-3.2, 3.2], [])
 		_build_wall_with_doors_and_windows(out, Vector3(1.8, y_floor, 0.0), l - 1.2, h, false, [-3.2, 3.2], [])
 
-		# Поперечные перегородки квартир
-		# На 3-м и 4-м этажах добавляем тактические проломы в стенах для фланговых манёвров!
 		var door_left := [-1.2]
 		var door_right := [1.2]
 		if floor_idx == 2:
-			door_left.append(1.6) # Пролом в левой квартире (Floor 3)
+			door_left.append(1.6)
 			_push(out, Vector3(-4.8, y_floor + 0.25, 1.6), Vector3(1.4, 0.45, 0.8), COLOR_RUBBLE, true, "rubble")
 		elif floor_idx == 3:
-			door_right.append(-1.6) # Пролом в правой квартире (Floor 4)
+			door_right.append(-1.6)
 			_push(out, Vector3(4.8, y_floor + 0.25, -1.6), Vector3(1.4, 0.45, 0.8), COLOR_RUBBLE, true, "rubble")
 
 		_build_wall_with_doors_and_windows(out, Vector3(-4.8, y_floor, 0.0), hw - 2.0, h, true, door_left, [])
 		_build_wall_with_doors_and_windows(out, Vector3(4.8, y_floor, 0.0), hw - 2.0, h, true, door_right, [])
 
-		# Двухмаршевая лестничная клетка с промежуточной площадкой:
-		# Марш 1 (левый): с y_floor до y_floor + h * 0.5 в сторону +Z
 		_build_stair_flight(out, Vector3(stair_x - 0.75, y_floor, stair_z - 0.3), stair_w * 0.95, h * 0.5, 1)
-		# Промежуточная площадка лестничной клетки на середине этажа
 		_push(out, Vector3(stair_x, y_floor + h * 0.5 - 0.10, stair_z + 1.65), Vector3(3.0, 0.20, 1.4), COLOR_SLAB_FLOOR, true, "stair_landing")
-		# Марш 2 (правый): с y_floor + h * 0.5 до y_floor + h в сторону -Z
 		_build_stair_flight(out, Vector3(stair_x + 0.75, y_floor + h * 0.5, stair_z - 0.3), stair_w * 0.95, h * 0.5, -1)
 
-	# 6. Эксплуатируемая крыша 5-этажки (боевая арена на высоте 18 метров)
 	var y_roof := 0.30 + 5 * (h + 0.24)
 	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z))
 
-	# Укрытия вентиляции и шахты лифта на крыше
 	_push(out, Vector3(-4.5, y_roof + 0.70, 2.5), Vector3(2.2, 1.4, 2.2), COLOR_CONCRETE_WALL, true, "vent_shaft")
 	_push(out, Vector3(4.5, y_roof + 0.70, -2.5), Vector3(2.2, 1.4, 2.2), COLOR_CONCRETE_WALL, true, "vent_shaft")
+
+# ==============================================================================
+# 5. ПРОМЫШЛЕННЫЙ АНГАР / АМБАР-ДЕПО (18м х 14м х 7.6м)
+# ==============================================================================
+static func _build_barn_hangar(out: Array[Dictionary]) -> void:
+	var w := 18.0
+	var l := 14.0
+	var h := 7.20
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Цоколь и пол
+	_push(out, Vector3(0.0, 0.10, 0.0), Vector3(w + 0.6, 0.20, l + 0.6), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.22, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor")
+
+	# Фасадные ворота для техники (Z = -hl, ширина 4.2м, высота 3.8м) + пешеходная дверь
+	# Левый простенок
+	_push_wall_segment(out, Vector3(0.0, 0.20, -hl), -5.85, h * 0.5, 6.30, h, WALL_THICKNESS, true, COLOR_CONCRETE_WALL)
+	# Ворота в центре: перемычка над воротами (от 3.8м до 7.2м)
+	_push_wall_segment(out, Vector3(0.0, 0.20, -hl), 0.0, 3.8 + (h - 3.8) * 0.5, 4.40, h - 3.8, WALL_THICKNESS, true, COLOR_LINTEL)
+	# Правый простенок
+	_push_wall_segment(out, Vector3(0.0, 0.20, -hl), 5.85, h * 0.5, 6.30, h, WALL_THICKNESS, true, COLOR_CONCRETE_WALL)
+
+	# Задняя стена с симметричными воротами (сквозной проезд техники)
+	_push_wall_segment(out, Vector3(0.0, 0.20, hl), -5.85, h * 0.5, 6.30, h, WALL_THICKNESS, true, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(0.0, 0.20, hl), 0.0, 3.8 + (h - 3.8) * 0.5, 4.40, h - 3.8, WALL_THICKNESS, true, COLOR_LINTEL)
+	_push_wall_segment(out, Vector3(0.0, 0.20, hl), 5.85, h * 0.5, 6.30, h, WALL_THICKNESS, true, COLOR_CONCRETE_WALL)
+
+	# Боковые стены с пешеходными дверями и верхними окнами
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.20, 0.0), l, h, false, [0.0], [-3.8, 3.8])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.20, 0.0), l, h, false, [0.0], [-3.8, 3.8])
+
+	# Подвесные боевые мостки / галереи на высоте 3.6м:
+	var y_catwalk := 3.60
+	# Западная галерея
+	_push(out, Vector3(-hw + 1.0, y_catwalk, 0.0), Vector3(2.0, 0.22, l - 0.4), COLOR_SLAB_FLOOR, true, "catwalk")
+	_push(out, Vector3(-hw + 2.0, y_catwalk + PARAPET_HEIGHT * 0.5, 0.0), Vector3(0.14, PARAPET_HEIGHT, l - 0.4), COLOR_PARAPET, true, "balcony_parapet")
+
+	# Восточная галерея
+	_push(out, Vector3(hw - 1.0, y_catwalk, 0.0), Vector3(2.0, 0.22, l - 0.4), COLOR_SLAB_FLOOR, true, "catwalk")
+	_push(out, Vector3(hw - 2.0, y_catwalk + PARAPET_HEIGHT * 0.5, 0.0), Vector3(0.14, PARAPET_HEIGHT, l - 0.4), COLOR_PARAPET, true, "balcony_parapet")
+
+	# Мостик-переход между галереями над техникой (в центре Z = 0)
+	_push(out, Vector3(0.0, y_catwalk, 0.0), Vector3(w - 4.0, 0.22, 1.40), COLOR_SLAB_FLOOR, true, "catwalk_bridge")
+	_push(out, Vector3(0.0, y_catwalk + PARAPET_HEIGHT * 0.5, -0.70), Vector3(w - 4.0, PARAPET_HEIGHT, 0.14), COLOR_PARAPET, true, "balcony_parapet")
+	_push(out, Vector3(0.0, y_catwalk + PARAPET_HEIGHT * 0.5, 0.70), Vector3(w - 4.0, PARAPET_HEIGHT, 0.14), COLOR_PARAPET, true, "balcony_parapet")
+
+	# Стальная лестница на мостки (вдоль западной стены)
+	_build_stair_flight(out, Vector3(-hw + 1.0, 0.20, -2.4), 1.20, y_catwalk - 0.20, 1)
+
+	# Кровля с фермами и выходом
+	var y_roof := h + 0.20
+	_push(out, Vector3(0.0, y_roof, 0.0), Vector3(w + 0.6, 0.28, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.14, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT)
+
+# ==============================================================================
+# 6. РАЗРУШЕННОЕ 3-ЭТАЖНОЕ ЗДАНИЕ / РУИНА (13м х 10м х 8.8м)
+# ==============================================================================
+static func _build_ruin_destroyed(out: Array[Dictionary]) -> void:
+	var w := 13.0
+	var l := 10.0
+	var h := STORY_HEIGHT
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Цоколь и воронка от взрыва
+	_push(out, Vector3(0.0, 0.10, 0.0), Vector3(w + 0.4, 0.20, l + 0.4), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.22, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor")
+
+	# 1 ЭТАЖ: проломы в кирпичной кладке и осыпи
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, -hl), w, h, true, [-2.0, 3.2], [-4.8])
+	_push(out, Vector3(3.2, 0.45, -hl), Vector3(1.6, 0.50, 0.9), COLOR_RUBBLE, true, "rubble")
+
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, hl), w, h, true, [0.0], [-3.8])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.20, 0.0), l, h, false, [], [-2.4, 2.4])
+	# Восточная стена частично обвалена (низкий пролом для паркура 0.88м)
+	_push_wall_segment(out, Vector3(hw, 0.20, 0.0), -2.5, h * 0.5, 5.0, h, WALL_THICKNESS, false, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(hw, 0.20, 0.0), 2.5, SILL_HEIGHT * 0.5, 5.0, SILL_HEIGHT, WALL_THICKNESS, false, COLOR_CONCRETE_WALL)
+
+	# НАКЛОННЫЙ ПАНДУС ИЗ ОБРУШИВШЕЙСЯ ПЛИТЫ С 1 НА 2 ЭТАЖ (вместо лестницы!)
+	# 16 ступеней с высотой 0.20м, образующих плавный забегаемый пандус
+	_build_stair_flight(out, Vector3(-1.8, 0.20, 0.0), 2.20, h, 1)
+	_push(out, Vector3(-1.8, 0.35, -2.2), Vector3(2.6, 0.40, 1.2), COLOR_RUBBLE, true, "rubble")
+
+	# 2 ЭТАЖ: частично уцелевшие плиты
+	var y2 := 0.20 + h + 0.20
+	_push(out, Vector3(-hw + 3.4, y2 - 0.22, 0.0), Vector3(6.8, 0.24, l - 0.4), COLOR_SLAB_FLOOR, true, "floor_slab")
+	_build_wall_with_doors_and_windows(out, Vector3(-hw + 3.4, y2, -hl), 6.8, h, true, [-1.5], [1.5])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, y2, 0.0), l, h, false, [], [0.0])
+
+	# Обвалившийся балкон на 2 этаже
+	_build_balcony(out, Vector3(-2.5, y2, -hl - 0.70), 3.0, 1.40, PARAPET_HEIGHT, Vector3(0, 0, -1))
+
+	# НАКЛОННЫЙ ПАНДУС С 2 НА 3 ЭТАЖ
+	_build_stair_flight(out, Vector3(-hw + 1.8, y2, 1.2), 1.80, h, -1)
+
+	# 3 ЭТАЖ: Снайперское гнездо в уцелевшем углу здания
+	var y3 := y2 + h
+	_push(out, Vector3(-hw + 2.5, y3, -hl + 2.5), Vector3(5.0, 0.28, 5.0), COLOR_SLAB_FLOOR, true, "floor_slab")
+	# Угловые стены снайперского гнезда с парапетом
+	_push(out, Vector3(-hw + 2.5, y3 + PARAPET_HEIGHT * 0.5, -hl + 0.15), Vector3(5.0, PARAPET_HEIGHT, 0.30), COLOR_PARAPET, true, "balcony_parapet")
+	_push(out, Vector3(-hw + 0.15, y3 + PARAPET_HEIGHT * 0.5, -hl + 2.5), Vector3(0.30, PARAPET_HEIGHT, 5.0), COLOR_PARAPET, true, "balcony_parapet")
+	_push(out, Vector3(-hw + 2.5, y3 + PARAPET_HEIGHT * 0.5, -hl + 5.0), Vector3(5.0, PARAPET_HEIGHT, 0.30), COLOR_PARAPET, true, "balcony_parapet")
+
+# ==============================================================================
+# 7. 3-ЯРУСНАЯ УКРЕПЛЁННАЯ ВЫШКА / КПП (7м х 7м х 11.6м)
+# ==============================================================================
+static func _build_checkpoint_tower(out: Array[Dictionary]) -> void:
+	var w := 7.0
+	var l := 7.0
+	var h := STORY_HEIGHT
+	var hw := w * 0.5
+	var hl := l * 0.5
+
+	# Цоколь
+	_push(out, Vector3(0.0, 0.12, 0.0), Vector3(w + 0.4, 0.24, l + 0.4), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.24, 0.0), Vector3(w - 0.2, 0.04, l - 0.2), COLOR_SLAB_FLOOR, false, "floor")
+
+	# 1 ЯРУС: Караульное помещение КПП
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.24, -hl), w, h, true, [0.0], [])
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.24, hl), w, h, true, [0.0], [])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, 0.24, 0.0), l, h, false, [], [0.0])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, 0.24, 0.0), l, h, false, [], [0.0])
+
+	# Лестница на 2 ярус
+	_build_stair_flight(out, Vector3(-hw + 1.10, 0.24, 0.0), 1.10, h, 1)
+
+	# 2 ЯРУС: Наблюдательный пост (Y = 3.68..6.88)
+	var y2 := 0.24 + h + 0.20
+	_build_floor_slab_with_stair_opening(out, y2 - 0.20, w, l, Vector3(-hw + 1.10, y2 - 0.20, 0.0), Vector3(1.3, 0.24, 3.8))
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, -hl), w, h, true, [], [0.0])
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, hl), w, h, true, [], [0.0])
+	_build_wall_with_doors_and_windows(out, Vector3(-hw, y2, 0.0), l, h, false, [], [])
+	_build_wall_with_doors_and_windows(out, Vector3(hw, y2, 0.0), l, h, false, [], [0.0])
+
+	# Лестница на 3 ярус (вдоль восточной стены)
+	_build_stair_flight(out, Vector3(hw - 1.10, y2, 0.0), 1.10, h, -1)
+
+	# 3 ЯРУС: Круговая 360° боевая площадка (Y = 7.32..10.52)
+	var y3 := y2 + h + 0.20
+	_build_floor_slab_with_stair_opening(out, y3 - 0.20, w, l, Vector3(hw - 1.10, y3 - 0.20, 0.0), Vector3(1.3, 0.24, 3.8))
+	# Круговой парапет высотой 1.0м
+	_build_parapet_ring(out, Vector3(0.0, y3, 0.0), w, l, PARAPET_HEIGHT)
+
+	# 4 угловые несущие колонны навеса
+	var col_h := 3.0
+	_push(out, Vector3(-hw + 0.3, y3 + col_h * 0.5, -hl + 0.3), Vector3(0.4, col_h, 0.4), COLOR_CONCRETE_WALL, true, "column")
+	_push(out, Vector3(hw - 0.3, y3 + col_h * 0.5, -hl + 0.3), Vector3(0.4, col_h, 0.4), COLOR_CONCRETE_WALL, true, "column")
+	_push(out, Vector3(-hw + 0.3, y3 + col_h * 0.5, hl - 0.3), Vector3(0.4, col_h, 0.4), COLOR_CONCRETE_WALL, true, "column")
+	_push(out, Vector3(hw - 0.3, y3 + col_h * 0.5, hl - 0.3), Vector3(0.4, col_h, 0.4), COLOR_CONCRETE_WALL, true, "column")
+
+	# Навес крыши над наблюдателями
+	_push(out, Vector3(0.0, y3 + col_h + 0.12, 0.0), Vector3(w + 0.6, 0.24, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+
+# ==============================================================================
+# 8. 2-ЭТАЖНАЯ Г-ОБРАЗНАЯ УСАДЬБА / ВИЛЛА (15м х 14м х 7.8м)
+# ==============================================================================
+static func _build_l_shaped_villa(out: Array[Dictionary]) -> void:
+	var h := STORY_HEIGHT
+	# Основное крыло: X от -7.5 до +7.5 (15м), Z от -7.0 до 0.0 (7м)
+	# Боковое крыло: X от +0.5 до +7.5 (7м), Z от 0.0 до +7.0 (7м)
+	# Внутренний двор: X от -7.5 до +0.5 (8м), Z от 0.0 до +7.0 (7м)
+
+	# Цоколь обоих крыльев
+	_push(out, Vector3(0.0, 0.10, -3.5), Vector3(15.4, 0.20, 7.4), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(4.0, 0.10, 3.5), Vector3(7.4, 0.20, 7.4), COLOR_BRICK_BASE, true, "building_base")
+
+	# Пол 1 этажа
+	_push(out, Vector3(0.0, 0.22, -3.5), Vector3(15.0, 0.04, 7.0), COLOR_SLAB_FLOOR, false, "floor")
+	_push(out, Vector3(4.0, 0.22, 3.5), Vector3(7.0, 0.04, 7.0), COLOR_SLAB_FLOOR, false, "floor")
+
+	# Внешние фасадные стены (Север Z = -7.0, Восток X = +7.5, Юг Z = +7.0, Запад X = -7.5)
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.20, -7.0), 15.0, h, true, [-2.0], [-5.5, 4.5])
+	_build_wall_with_doors_and_windows(out, Vector3(7.5, 0.20, 0.0), 14.0, h, false, [], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(4.0, 0.20, 7.0), 7.0, h, true, [0.0], [-2.0, 2.0])
+	_build_wall_with_doors_and_windows(out, Vector3(-7.5, 0.20, -3.5), 7.0, h, false, [], [-1.8, 1.8])
+
+	# Внутренние стены, выходящие в дворик (перекрёстный огонь!)
+	_build_wall_with_doors_and_windows(out, Vector3(-3.5, 0.20, 0.0), 8.0, h, true, [-1.5], [1.8])
+	_build_wall_with_doors_and_windows(out, Vector3(0.5, 0.20, 3.5), 7.0, h, false, [0.0], [-2.0, 2.0])
+
+	# Лестничный марш на 2 этаж
+	_build_stair_flight(out, Vector3(-5.8, 0.20, -3.5), 1.30, h, 1)
+
+	# 2 ЭТАЖ (Y = 3.60..6.80)
+	var y2 := 0.20 + h + 0.20
+	# Плиты перекрытия
+	_push(out, Vector3(0.0, y2 - 0.22, -3.5), Vector3(15.0, 0.24, 7.0), COLOR_SLAB_FLOOR, true, "floor_slab")
+	_push(out, Vector3(4.0, y2 - 0.22, 3.5), Vector3(7.0, 0.24, 7.0), COLOR_SLAB_FLOOR, true, "floor_slab")
+
+	# Стены 2 этажа
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, y2, -7.0), 15.0, h, true, [], [-5.0, 0.0, 5.0])
+	_build_wall_with_doors_and_windows(out, Vector3(7.5, y2, 0.0), 14.0, h, false, [], [-4.0, 4.0])
+	_build_wall_with_doors_and_windows(out, Vector3(4.0, y2, 7.0), 7.0, h, true, [], [-2.0, 2.0])
+	_build_wall_with_doors_and_windows(out, Vector3(-7.5, y2, -3.5), 7.0, h, false, [], [0.0])
+
+	# Выход на угловой балкон
+	_build_wall_with_doors_and_windows(out, Vector3(-3.5, y2, 0.0), 8.0, h, true, [-1.5], [2.0])
+	_build_wall_with_doors_and_windows(out, Vector3(0.5, y2, 3.5), 7.0, h, false, [0.0], [2.0])
+
+	# Угловой балкон 2 этажа над двориком
+	_build_balcony(out, Vector3(-3.5, y2, 0.70), 8.0, 1.40, PARAPET_HEIGHT, Vector3(0, 0, 1))
+	_build_balcony(out, Vector3(-0.20, y2, 3.5), 6.0, 1.40, PARAPET_HEIGHT, Vector3(-1, 0, 0))
+
+	# Лестница на крышу
+	_build_stair_flight(out, Vector3(-5.8, y2, -3.5), 1.30, h, 1)
+
+	# Крыша Г-образной виллы
+	var y_roof := y2 + h
+	_push(out, Vector3(0.0, y_roof, -3.5), Vector3(15.4, 0.28, 7.4), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_push(out, Vector3(4.0, y_roof, 3.5), Vector3(7.4, 0.28, 7.4), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_roof_with_penthouse(out, y_roof, 7.0, 7.0, Vector3(-4.5, y_roof, -3.5))
+
+# ==============================================================================
+# 9. ТЯЖЁЛЫЙ ЖЕЛЕЗОБЕТОННЫЙ ДОТ / БУНКЕР (10м х 8м х 3.6м)
+# ==============================================================================
+static func _build_bunker_pillbox(out: Array[Dictionary]) -> void:
+	var w := 10.0
+	var l := 8.0
+	var h := 3.20
+	var hw := w * 0.5
+	var hl := l * 0.5
+	var bth := 0.60 # Сверхтолстые противоснарядные стены ДОТа
+
+	# Массивный фундамент
+	_push(out, Vector3(0.0, 0.15, 0.0), Vector3(w + 0.8, 0.30, l + 0.8), COLOR_BRICK_BASE, true, "building_base")
+	_push(out, Vector3(0.0, 0.32, 0.0), Vector3(w - 0.4, 0.04, l - 0.4), COLOR_SLAB_FLOOR, false, "floor")
+
+	# Фронтальная стена (Z = -hl) с 2 узкими амбразурами
+	# Левый глухой сектор
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), -3.8, h * 0.5, 2.4, h, bth, true, COLOR_CONCRETE_WALL)
+	# Амбразура 1 (X = -2.6): подоконник 0.90м, узкая щель 0.50м, толстая перемычка 1.80м
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), -2.6, SILL_HEIGHT * 0.5, 1.2, SILL_HEIGHT, bth, true, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), -2.6, SILL_HEIGHT + 0.50 + (h - SILL_HEIGHT - 0.50) * 0.5, 1.2, h - SILL_HEIGHT - 0.50, bth, true, COLOR_LINTEL)
+	# Центральный пилон
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), 0.0, h * 0.5, 4.0, h, bth, true, COLOR_CONCRETE_WALL)
+	# Амбразура 2 (X = +2.6)
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), 2.6, SILL_HEIGHT * 0.5, 1.2, SILL_HEIGHT, bth, true, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), 2.6, SILL_HEIGHT + 0.50 + (h - SILL_HEIGHT - 0.50) * 0.5, 1.2, h - SILL_HEIGHT - 0.50, bth, true, COLOR_LINTEL)
+	# Правый глухой сектор
+	_push_wall_segment(out, Vector3(0.0, 0.30, -hl), 3.8, h * 0.5, 2.4, h, bth, true, COLOR_CONCRETE_WALL)
+
+	# Боковые стены с фланговыми амбразурами
+	_push_wall_segment(out, Vector3(-hw, 0.30, 0.0), -2.0, h * 0.5, 4.0, h, bth, false, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(-hw, 0.30, 0.0), 0.5, SILL_HEIGHT * 0.5, 1.2, SILL_HEIGHT, bth, false, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(-hw, 0.30, 0.0), 0.5, SILL_HEIGHT + 0.50 + (h - SILL_HEIGHT - 0.50) * 0.5, 1.2, h - SILL_HEIGHT - 0.50, bth, false, COLOR_LINTEL)
+	_push_wall_segment(out, Vector3(-hw, 0.30, 0.0), 2.5, h * 0.5, 3.0, h, bth, false, COLOR_CONCRETE_WALL)
+
+	_push_wall_segment(out, Vector3(hw, 0.30, 0.0), -2.0, h * 0.5, 4.0, h, bth, false, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(hw, 0.30, 0.0), 0.5, SILL_HEIGHT * 0.5, 1.2, SILL_HEIGHT, bth, false, COLOR_CONCRETE_WALL)
+	_push_wall_segment(out, Vector3(hw, 0.30, 0.0), 0.5, SILL_HEIGHT + 0.50 + (h - SILL_HEIGHT - 0.50) * 0.5, 1.2, h - SILL_HEIGHT - 0.50, bth, false, COLOR_LINTEL)
+	_push_wall_segment(out, Vector3(hw, 0.30, 0.0), 2.5, h * 0.5, 3.0, h, bth, false, COLOR_CONCRETE_WALL)
+
+	# Задняя стена с дверью в зигзаг-тамбур
+	_build_wall_with_doors_and_windows(out, Vector3(0.0, 0.30, hl), w, h, true, [1.5], [])
+
+	# ПРОТИВООСКОЛОЧНЫЙ ЗИГЗАГ-ТАМБУР (защита входа от прямых ракет и гранат)
+	# Внешняя защитная стенка
+	_push(out, Vector3(1.5, 0.30 + h * 0.5, hl + 1.4), Vector3(3.2, h, 0.45), COLOR_CONCRETE_WALL, true, "wall")
+	# Боковой возвратный экран
+	_push(out, Vector3(3.1, 0.30 + h * 0.5, hl + 0.7), Vector3(0.45, h, 1.4), COLOR_CONCRETE_WALL, true, "wall")
+
+	# Тяжёлая монолитная крыша ДОТа
+	var y_roof := 0.30 + h
+	_push(out, Vector3(0.0, y_roof + 0.25, 0.0), Vector3(w + 1.2, 0.50, l + 1.2), COLOR_ROOF_GRAVEL, true, "roof_slab")
+
+	# Бронированный перископ / башенка на крыше
+	_push(out, Vector3(0.0, y_roof + 0.90, 0.0), Vector3(1.8, 0.80, 1.8), COLOR_STEEL, true, "bunker_cupola")
 
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ АРХИТЕКТУРНЫЕ КОМПОНЕНТЫ
@@ -553,7 +871,6 @@ static func _build_wall_with_doors_and_windows(
 	var door_h := DOOR_HEIGHT
 	var door_w := DOOR_WIDTH
 
-	# Сортируем все проёмы вдоль длины стены
 	var cuts: Array[Dictionary] = []
 	for d in door_offsets:
 		cuts.append({"type": "door", "center": float(d), "width": door_w})
@@ -569,24 +886,18 @@ static func _build_wall_with_doors_and_windows(
 		var cut_start := cut_c - cut_w * 0.5
 		var cut_end := cut_c + cut_w * 0.5
 
-		# Глухой простенок перед проёмом
 		if cut_start > cur_pos + 0.05:
 			var segment_len := cut_start - cur_pos
 			var seg_c := cur_pos + segment_len * 0.5
 			_push_wall_segment(out, center, seg_c, height * 0.5, segment_len, height, th, axis_x, COLOR_CONCRETE_WALL)
 
-		# Обработка самого проёма
 		if cut.type == "door":
-			# Перемычка над дверью
 			var lintel_h := height - door_h
 			if lintel_h > 0.05:
 				_push_wall_segment(out, center, cut_c, door_h + lintel_h * 0.5, cut_w, lintel_h, th, axis_x, COLOR_LINTEL)
 		elif cut.type == "window":
-			# Подоконная стенка (укрытие для стрельбы с колена и опора для паркура/перемаха)
 			_push_wall_segment(out, center, cut_c, sill_h * 0.5, cut_w, sill_h, th, axis_x, COLOR_CONCRETE_WALL)
-			# Подоконная доска (декоративный отлив, без теней)
 			_push_wall_segment(out, center, cut_c, sill_h, cut_w + 0.15, 0.06, th + 0.10, axis_x, COLOR_LINTEL, false)
-			# Перемычка над окном
 			var lintel_bottom := sill_h + win_h
 			var lintel_h := height - lintel_bottom
 			if lintel_h > 0.05:
@@ -594,7 +905,6 @@ static func _build_wall_with_doors_and_windows(
 
 		cur_pos = cut_end
 
-	# Завершающий глухой простенок до конца стены
 	var end_pos := length * 0.5
 	if end_pos > cur_pos + 0.05:
 		var segment_len := end_pos - cur_pos
@@ -620,23 +930,18 @@ static func _build_floor_slab_with_stair_opening(out: Array[Dictionary], y: floa
 	var shw := stair_size.x * 0.5
 	var shl := stair_size.z * 0.5
 
-	# Разбиваем плиту на 4 сегмента вокруг лестничного проёма
-	# 1. Передняя часть
 	var front_len := (stair_pos.z - shl) - (-hl)
 	if front_len > 0.2:
 		_push(out, Vector3(0.0, y, -hl + front_len * 0.5), Vector3(w, th, front_len), COLOR_SLAB_FLOOR, true, "floor_slab")
 
-	# 2. Задняя часть
 	var back_len := hl - (stair_pos.z + shl)
 	if back_len > 0.2:
 		_push(out, Vector3(0.0, y, hl - back_len * 0.5), Vector3(w, th, back_len), COLOR_SLAB_FLOOR, true, "floor_slab")
 
-	# 3. Левая часть от проёма
 	var left_w := (stair_pos.x - shw) - (-hw)
 	if left_w > 0.2:
 		_push(out, Vector3(-hw + left_w * 0.5, y, stair_pos.z), Vector3(left_w, th, stair_size.z), COLOR_SLAB_FLOOR, true, "floor_slab")
 
-	# 4. Правая часть от проёма
 	var right_w := hw - (stair_pos.x + shw)
 	if right_w > 0.2:
 		_push(out, Vector3(hw - right_w * 0.5, y, stair_pos.z), Vector3(right_w, th, stair_size.z), COLOR_SLAB_FLOOR, true, "floor_slab")
@@ -649,7 +954,6 @@ static func _build_stair_flight(out: Array[Dictionary], center: Vector3, width: 
 	var step_len := flight_len / float(steps)
 	var z_sign := float(dir_z)
 
-	# Ступени (визуальные + коллизия, без отбрасывания теней для мобильной оптимизации)
 	for i in range(steps):
 		var y := center.y + (float(i) + 0.5) * step_h
 		var z := center.z - z_sign * (flight_len * 0.5) + z_sign * (float(i) + 0.5) * step_len
@@ -663,44 +967,32 @@ static func _build_balcony(out: Array[Dictionary], center: Vector3, width: float
 	var py := center.y + parapet_h * 0.5
 
 	if absf(facing.z) >= 0.5:
-		# Балкон направлен вдоль оси Z (Север или Юг)
 		_push(out, Vector3(center.x, center.y - slab_th * 0.5, center.z), Vector3(width, slab_th, depth), COLOR_BALCONY_SLAB, true, "balcony_slab")
 		var outer_z := center.z + facing.z * (depth * 0.5 - pt * 0.5)
-		# Главный наружный парапет (фронтальное укрытие)
 		_push(out, Vector3(center.x, py, outer_z), Vector3(width, parapet_h, pt), COLOR_PARAPET, true, "balcony_parapet")
-		# Боковые парапеты
 		_push(out, Vector3(center.x - width * 0.5 + pt * 0.5, py, center.z), Vector3(pt, parapet_h, depth - pt), COLOR_PARAPET, true, "balcony_parapet")
 		_push(out, Vector3(center.x + width * 0.5 - pt * 0.5, py, center.z), Vector3(pt, parapet_h, depth - pt), COLOR_PARAPET, true, "balcony_parapet")
 	else:
-		# Балкон направлен вдоль оси X (Восток или Запад)
 		_push(out, Vector3(center.x, center.y - slab_th * 0.5, center.z), Vector3(depth, slab_th, width), COLOR_BALCONY_SLAB, true, "balcony_slab")
 		var outer_x := center.x + facing.x * (depth * 0.5 - pt * 0.5)
-		# Главный наружный парапет
 		_push(out, Vector3(outer_x, py, center.z), Vector3(pt, parapet_h, width), COLOR_PARAPET, true, "balcony_parapet")
-		# Боковые парапеты
 		_push(out, Vector3(center.x, py, center.z - width * 0.5 + pt * 0.5), Vector3(depth - pt, parapet_h, pt), COLOR_PARAPET, true, "balcony_parapet")
 		_push(out, Vector3(center.x, py, center.z + width * 0.5 - pt * 0.5), Vector3(depth - pt, parapet_h, pt), COLOR_PARAPET, true, "balcony_parapet")
 
 ## Эксплуатируемая плоская крыша с надстройкой выхода (пентхаус) и периметральным парапетом.
 static func _build_roof_with_penthouse(out: Array[Dictionary], y: float, w: float, l: float, stair_pos: Vector3) -> void:
 	var slab_th := 0.28
-	# Основная плита крыши
 	_push(out, Vector3(0.0, y, 0.0), Vector3(w + 0.6, slab_th, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
-
-	# Парапет по всему внешнему периметру крыши (высота 1.05 м)
 	_build_parapet_ring(out, Vector3(0.0, y + slab_th * 0.5, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT + 0.07)
 
-	# Надстройка выхода с лестницы (пентхаус 2.4м высотой с дверным выходом на крышу)
 	var ph_w := 2.80
 	var ph_l := 3.40
 	var ph_h := 2.40
 	var py := y + slab_th * 0.5
-	# Стены надстройки с дверным проёмом
 	_build_wall_with_doors_and_windows(out, Vector3(stair_pos.x, py, stair_pos.z - ph_l * 0.5), ph_w, ph_h, true, [0.0], [])
 	_build_wall_with_doors_and_windows(out, Vector3(stair_pos.x, py, stair_pos.z + ph_l * 0.5), ph_w, ph_h, true, [], [])
 	_build_wall_with_doors_and_windows(out, Vector3(stair_pos.x - ph_w * 0.5, py, stair_pos.z), ph_l, ph_h, false, [], [])
 	_build_wall_with_doors_and_windows(out, Vector3(stair_pos.x + ph_w * 0.5, py, stair_pos.z), ph_l, ph_h, false, [], [])
-	# Крыша надстройки
 	_push(out, Vector3(stair_pos.x, py + ph_h + 0.10, stair_pos.z), Vector3(ph_w + 0.3, 0.20, ph_l + 0.3), COLOR_CONCRETE_WALL, true, "penthouse_roof")
 
 ## Защитное кольцо парапета по периметру прямоугольника.
@@ -709,13 +1001,9 @@ static func _build_parapet_ring(out: Array[Dictionary], base: Vector3, w: float,
 	var py := base.y + height * 0.5
 	var hw := w * 0.5
 	var hl := l * 0.5
-	# Север
 	_push(out, Vector3(base.x, py, base.z - hl + pt * 0.5), Vector3(w, height, pt), COLOR_PARAPET, true, "roof_parapet")
-	# Юг
 	_push(out, Vector3(base.x, py, base.z + hl - pt * 0.5), Vector3(w, height, pt), COLOR_PARAPET, true, "roof_parapet")
-	# Запад
 	_push(out, Vector3(base.x - hw + pt * 0.5, py, base.z), Vector3(pt, height, l - pt * 2.0), COLOR_PARAPET, true, "roof_parapet")
-	# Восток
 	_push(out, Vector3(base.x + hw - pt * 0.5, py, base.z), Vector3(pt, height, l - pt * 2.0), COLOR_PARAPET, true, "roof_parapet")
 
 static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Color, coll: bool, tag: String, cast_shadow: Variant = null) -> void:
@@ -724,8 +1012,7 @@ static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Co
 		shadow_val = bool(cast_shadow)
 	else:
 		# Оптимизация теней для мобильных GPU (GL Compatibility):
-		# Ступени лестниц, декоративные отливы подоконников, мелкие полы и обломки не отбрасывают тени!
-		if tag in ["stair_step", "window_sill_board", "floor", "floor_1", "building_base", "rubble"]:
+		if tag in ["stair_step", "window_sill_board", "floor", "floor_1", "building_base", "rubble", "catwalk", "catwalk_bridge"]:
 			shadow_val = false
 	arr.append({
 		"pos": pos,
