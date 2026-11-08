@@ -487,7 +487,7 @@ static func _build_3story(out: Array[Dictionary]) -> void:
 		_build_stair_flight(out, Vector3(stair_x, y_floor, stair_z), stair_w, h, -1)
 
 	var y_roof := 0.24 + 3 * (h + 0.22)
-	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z))
+	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z), Vector3(stair_w + 0.4, 0.28, 3.8))
 
 # ==============================================================================
 # 5-ЭТАЖНЫЙ МНОГОКВАРТИРНЫЙ ДОМ (16м х 13м х 18.8м)
@@ -575,7 +575,7 @@ static func _build_5story(out: Array[Dictionary]) -> void:
 		_build_stair_flight(out, Vector3(stair_x + 0.75, y_floor + h * 0.5, stair_z - 0.3), stair_w * 0.95, h * 0.5, -1)
 
 	var y_roof := 0.30 + 5 * (h + 0.24)
-	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z))
+	_build_roof_with_penthouse(out, y_roof, w, l, Vector3(stair_x, y_roof, stair_z), Vector3(3.2, 0.28, 4.4))
 
 	_push(out, Vector3(-4.5, y_roof + 0.70, 2.5), Vector3(2.2, 1.4, 2.2), COLOR_CONCRETE_WALL, true, "vent_shaft")
 	_push(out, Vector3(4.5, y_roof + 0.70, -2.5), Vector3(2.2, 1.4, 2.2), COLOR_CONCRETE_WALL, true, "vent_shaft")
@@ -765,8 +765,8 @@ static func _build_l_shaped_villa(out: Array[Dictionary]) -> void:
 
 	# 2 ЭТАЖ (Y = 3.60..6.80)
 	var y2 := 0.20 + h + 0.20
-	# Плиты перекрытия
-	_push(out, Vector3(0.0, y2 - 0.22, -3.5), Vector3(15.0, 0.24, 7.0), COLOR_SLAB_FLOOR, true, "floor_slab")
+	# Плиты перекрытия (с вырезом под лестничный марш)
+	_build_floor_slab_with_stair_opening(out, y2 - 0.22, 15.0, 7.0, Vector3(-5.8, y2 - 0.22, -3.5), Vector3(1.6, 0.24, 3.8))
 	_push(out, Vector3(4.0, y2 - 0.22, 3.5), Vector3(7.0, 0.24, 7.0), COLOR_SLAB_FLOOR, true, "floor_slab")
 
 	# Стены 2 этажа
@@ -786,11 +786,24 @@ static func _build_l_shaped_villa(out: Array[Dictionary]) -> void:
 	# Лестница на крышу
 	_build_stair_flight(out, Vector3(-5.8, y2, -3.5), 1.30, h, 1)
 
-	# Крыша Г-образной виллы
+	# Крыша Г-образной виллы (с вырезом под выход лестницы в пентхаус)
 	var y_roof := y2 + h
-	_push(out, Vector3(0.0, y_roof, -3.5), Vector3(15.4, 0.28, 7.4), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	_build_floor_slab_with_stair_opening(out, y_roof, 15.4, 7.4, Vector3(-5.8, y_roof, -3.5), Vector3(1.6, 0.28, 3.8), COLOR_ROOF_GRAVEL, "roof_slab")
 	_push(out, Vector3(4.0, y_roof, 3.5), Vector3(7.4, 0.28, 7.4), COLOR_ROOF_GRAVEL, true, "roof_slab")
-	_build_roof_with_penthouse(out, y_roof, 7.0, 7.0, Vector3(-4.5, y_roof, -3.5))
+
+	var ph_w := 2.80
+	var ph_l := 3.40
+	var ph_h := 2.40
+	var py := y_roof + 0.14
+	var ph_pos := Vector3(-5.8, py, -3.5)
+	_build_wall_with_doors_and_windows(out, Vector3(ph_pos.x, py, ph_pos.z - ph_l * 0.5), ph_w, ph_h, true, [0.0], [])
+	_build_wall_with_doors_and_windows(out, Vector3(ph_pos.x, py, ph_pos.z + ph_l * 0.5), ph_w, ph_h, true, [], [])
+	_build_wall_with_doors_and_windows(out, Vector3(ph_pos.x - ph_w * 0.5, py, ph_pos.z), ph_l, ph_h, false, [], [])
+	_build_wall_with_doors_and_windows(out, Vector3(ph_pos.x + ph_w * 0.5, py, ph_pos.z), ph_l, ph_h, false, [], [])
+	_push(out, Vector3(ph_pos.x, py + ph_h + 0.10, ph_pos.z), Vector3(ph_w + 0.3, 0.20, ph_l + 0.3), COLOR_CONCRETE_WALL, true, "penthouse_roof")
+
+	_build_parapet_ring(out, Vector3(0.0, y_roof + 0.14, -3.5), 15.4, 7.4, PARAPET_HEIGHT)
+	_build_parapet_ring(out, Vector3(4.0, y_roof + 0.14, 3.5), 7.4, 7.4, PARAPET_HEIGHT)
 
 # ==============================================================================
 # 9. ТЯЖЁЛЫЙ ЖЕЛЕЗОБЕТОННЫЙ ДОТ / БУНКЕР (10м х 8м х 3.6м)
@@ -923,7 +936,7 @@ static func _push_wall_segment(out: Array[Dictionary], origin: Vector3, offset_l
 	_push(out, p, s, color, true, "wall", cast_shadow)
 
 ## Плита межэтажного перекрытия с вырезом под лестничный марш.
-static func _build_floor_slab_with_stair_opening(out: Array[Dictionary], y: float, w: float, l: float, stair_pos: Vector3, stair_size: Vector3) -> void:
+static func _build_floor_slab_with_stair_opening(out: Array[Dictionary], y: float, w: float, l: float, stair_pos: Vector3, stair_size: Vector3, slab_color: Color = COLOR_SLAB_FLOOR, slab_tag: String = "floor_slab") -> void:
 	var th := 0.24
 	var hw := w * 0.5
 	var hl := l * 0.5
@@ -932,19 +945,19 @@ static func _build_floor_slab_with_stair_opening(out: Array[Dictionary], y: floa
 
 	var front_len := (stair_pos.z - shl) - (-hl)
 	if front_len > 0.2:
-		_push(out, Vector3(0.0, y, -hl + front_len * 0.5), Vector3(w, th, front_len), COLOR_SLAB_FLOOR, true, "floor_slab")
+		_push(out, Vector3(0.0, y, -hl + front_len * 0.5), Vector3(w, th, front_len), slab_color, true, slab_tag)
 
 	var back_len := hl - (stair_pos.z + shl)
 	if back_len > 0.2:
-		_push(out, Vector3(0.0, y, hl - back_len * 0.5), Vector3(w, th, back_len), COLOR_SLAB_FLOOR, true, "floor_slab")
+		_push(out, Vector3(0.0, y, hl - back_len * 0.5), Vector3(w, th, back_len), slab_color, true, slab_tag)
 
 	var left_w := (stair_pos.x - shw) - (-hw)
 	if left_w > 0.2:
-		_push(out, Vector3(-hw + left_w * 0.5, y, stair_pos.z), Vector3(left_w, th, stair_size.z), COLOR_SLAB_FLOOR, true, "floor_slab")
+		_push(out, Vector3(-hw + left_w * 0.5, y, stair_pos.z), Vector3(left_w, th, stair_size.z), slab_color, true, slab_tag)
 
 	var right_w := hw - (stair_pos.x + shw)
 	if right_w > 0.2:
-		_push(out, Vector3(hw - right_w * 0.5, y, stair_pos.z), Vector3(right_w, th, stair_size.z), COLOR_SLAB_FLOOR, true, "floor_slab")
+		_push(out, Vector3(hw - right_w * 0.5, y, stair_pos.z), Vector3(right_w, th, stair_size.z), slab_color, true, slab_tag)
 
 ## Лестничный марш со ступенями высотой <= 0.20 м (идеальный подъем без застреваний персонажа).
 static func _build_stair_flight(out: Array[Dictionary], center: Vector3, width: float, height: float, dir_z: int) -> void:
@@ -980,9 +993,10 @@ static func _build_balcony(out: Array[Dictionary], center: Vector3, width: float
 		_push(out, Vector3(center.x, py, center.z + width * 0.5 - pt * 0.5), Vector3(depth - pt, parapet_h, pt), COLOR_PARAPET, true, "balcony_parapet")
 
 ## Эксплуатируемая плоская крыша с надстройкой выхода (пентхаус) и периметральным парапетом.
-static func _build_roof_with_penthouse(out: Array[Dictionary], y: float, w: float, l: float, stair_pos: Vector3) -> void:
+static func _build_roof_with_penthouse(out: Array[Dictionary], y: float, w: float, l: float, stair_pos: Vector3, stair_size: Vector3 = Vector3(2.0, 0.28, 4.0)) -> void:
 	var slab_th := 0.28
-	_push(out, Vector3(0.0, y, 0.0), Vector3(w + 0.6, slab_th, l + 0.6), COLOR_ROOF_GRAVEL, true, "roof_slab")
+	# Основная плита крыши с вырезом под лестничный марш выхода на крышу
+	_build_floor_slab_with_stair_opening(out, y, w + 0.6, l + 0.6, stair_pos, stair_size, COLOR_ROOF_GRAVEL, "roof_slab")
 	_build_parapet_ring(out, Vector3(0.0, y + slab_th * 0.5, 0.0), w + 0.6, l + 0.6, PARAPET_HEIGHT + 0.07)
 
 	var ph_w := 2.80
@@ -996,14 +1010,29 @@ static func _build_roof_with_penthouse(out: Array[Dictionary], y: float, w: floa
 	_push(out, Vector3(stair_pos.x, py + ph_h + 0.10, stair_pos.z), Vector3(ph_w + 0.3, 0.20, ph_l + 0.3), COLOR_CONCRETE_WALL, true, "penthouse_roof")
 
 ## Защитное кольцо парапета по периметру прямоугольника.
-static func _build_parapet_ring(out: Array[Dictionary], base: Vector3, w: float, l: float, height: float) -> void:
+## Поддерживает опциональный разрыв (gap) на одной из сторон для удобного выхода с наружных лестниц.
+static func _build_parapet_ring(out: Array[Dictionary], base: Vector3, w: float, l: float, height: float, gap_side: String = "", gap_c: float = 0.0, gap_w: float = 0.0) -> void:
 	var pt := 0.20
 	var py := base.y + height * 0.5
 	var hw := w * 0.5
 	var hl := l * 0.5
 	_push(out, Vector3(base.x, py, base.z - hl + pt * 0.5), Vector3(w, height, pt), COLOR_PARAPET, true, "roof_parapet")
 	_push(out, Vector3(base.x, py, base.z + hl - pt * 0.5), Vector3(w, height, pt), COLOR_PARAPET, true, "roof_parapet")
-	_push(out, Vector3(base.x - hw + pt * 0.5, py, base.z), Vector3(pt, height, l - pt * 2.0), COLOR_PARAPET, true, "roof_parapet")
+
+	if gap_side == "west" and gap_w > 0.1:
+		var z_start := -hl + pt
+		var z_end := hl - pt
+		var cut_start := gap_c - gap_w * 0.5
+		var cut_end := gap_c + gap_w * 0.5
+		if cut_start > z_start + 0.1:
+			var seg_len := cut_start - z_start
+			_push(out, Vector3(base.x - hw + pt * 0.5, py, z_start + seg_len * 0.5), Vector3(pt, height, seg_len), COLOR_PARAPET, true, "roof_parapet")
+		if z_end > cut_end + 0.1:
+			var seg_len := z_end - cut_end
+			_push(out, Vector3(base.x - hw + pt * 0.5, py, cut_end + seg_len * 0.5), Vector3(pt, height, seg_len), COLOR_PARAPET, true, "roof_parapet")
+	else:
+		_push(out, Vector3(base.x - hw + pt * 0.5, py, base.z), Vector3(pt, height, l - pt * 2.0), COLOR_PARAPET, true, "roof_parapet")
+
 	_push(out, Vector3(base.x + hw - pt * 0.5, py, base.z), Vector3(pt, height, l - pt * 2.0), COLOR_PARAPET, true, "roof_parapet")
 
 static func _push(arr: Array[Dictionary], pos: Vector3, size: Vector3, color: Color, coll: bool, tag: String, cast_shadow: Variant = null) -> void:

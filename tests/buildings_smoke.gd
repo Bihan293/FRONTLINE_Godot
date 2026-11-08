@@ -9,6 +9,7 @@ extends Node3D
 ## 5. Architectural fidelity of specialized tactical structures (tower height, bunker armor, barn clearance, ruin traversability).
 
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
+const TACTICAL_FURNITURE = preload("res://scripts/tactical_furniture.gd")
 
 const BASE_TYPES: Array[String] = [
 	"house_1story",
@@ -48,6 +49,7 @@ func _ready() -> void:
 	await _test_stairs_continuity_and_floor_access()
 	await _test_multistory_5story_vertical_traversal()
 	await _test_expanded_tactical_building_types()
+	await _test_furniture_pack()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -247,6 +249,15 @@ func _test_stairs_continuity_and_floor_access() -> void:
 	var hit := space_state.intersect_ray(query)
 	_check(hit.is_empty(), "Stairwell ceiling opening is blocked by floor slab! Hit: %s" % (hit.get("position", Vector3.ZERO) if not hit.is_empty() else ""))
 
+	# Физический тест: Проверка проёма в крыше для выхода лестницы в пентхаус (Y = 7.1м -> 6.6м)
+	# НЕ ДОЛЖЕН упираться в крышу (игрок свободно выходит из лестницы на крышу через пентхаус)
+	var roof_stair_ray_start := Vector3(-4.70, 7.3, 2.20)
+	var roof_stair_ray_end := Vector3(-4.70, 6.7, 2.20)
+	var roof_query := PhysicsRayQueryParameters3D.create(roof_stair_ray_start, roof_stair_ray_end)
+	roof_query.collide_with_bodies = true
+	var roof_hit := space_state.intersect_ray(roof_query)
+	_check(roof_hit.is_empty(), "Roof stairwell opening is blocked by roof slab! Hit: %s" % (roof_hit.get("position", Vector3.ZERO) if not roof_hit.is_empty() else ""))
+
 	# В жилой комнате (x = 0, z = -2.0) на той же высоте перекрытие ДОЛЖНО быть сплошным
 	var floor_ray_start := Vector3(0.0, 4.2, -2.0)
 	var floor_ray_end := Vector3(0.0, 3.0, -2.0)
@@ -339,6 +350,29 @@ func _test_expanded_tactical_building_types() -> void:
 			"house_bunker_pillbox":
 				_check(kinds.has("wall"), "Bunker missing reinforced walls")
 				_check(kinds.has("roof_slab") or kinds.has("building_base") or kinds.has("floor"), "Bunker missing heavy slab/base")
+
+## 8. Проверка процедурного пака мебели (16 типов)
+func _test_furniture_pack() -> void:
+	var types: Array[String] = TACTICAL_FURNITURE.get_available_types()
+	_check(types.size() == 16, "Expected 16 furniture types, got %d" % types.size())
+
+	for f_type in types:
+		var info: Dictionary = TACTICAL_FURNITURE.get_furniture_info(f_type)
+		_check(not info.is_empty(), "Empty info for furniture %s" % f_type)
+		_check(info.has("size") and info["size"] is Vector3, "Invalid size for furniture %s" % f_type)
+
+		var boxes: Array[Dictionary] = TACTICAL_FURNITURE.get_furniture_boxes(f_type, Vector3(10, 0, 10), 90.0)
+		_check(boxes.size() > 0, "No boxes generated for furniture %s" % f_type)
+
+		var node: Node3D = TACTICAL_FURNITURE.create_furniture_node(f_type)
+		_check(node != null, "create_furniture_node returned null for %s" % f_type)
+		if node != null:
+			add_child(node)
+			var sb: StaticBody3D = node.get_node_or_null("FurnitureCollision") as StaticBody3D
+			_check(sb != null, "FurnitureCollision missing for %s" % f_type)
+			node.queue_free()
+
+	await get_tree().physics_frame
 
 func _report() -> void:
 	if _failures.is_empty():

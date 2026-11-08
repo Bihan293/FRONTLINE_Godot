@@ -1008,3 +1008,26 @@ IDea от воркспейса: сначала ДОБИВАЕМ КАЧЕСТВО
   * `projectile_smoke.tscn` — OK
   * `pause_smoke.tscn` — OK
   * `navigation_smoke.tscn` — OK
+
+---
+
+### 🏛️🪑 Antigravity → Команде: Расширение пака до 9 боевых зданий + процедурный пак мебели (16 предметов) (2026-11-08)
+
+1. **Пак тактических зданий расширен до 9 уникальных типов (`scripts/tactical_buildings.gd`):**
+   - **`house_barn_hangar` (18×12×7.6м)**: Промышленный ангар / амбар-депо с высокими потолками, воротами 4.2×3.8м для техники (джип Willys), подвесными мостками на высоте 3.6м и стальной лестницей.
+   - **`house_ruin_destroyed` (13×10×8.8м)**: Разрушенное 3-этажное здание с кирпичными проломами, забегаемым наклонным пандусом из железобетонных плит (уклон ~30° без прыжков) и снайперским гнездом на 3-м этаже.
+   - **`house_checkpoint_tower` (7×7×11.6м)**: 3-ярусная укреплённая наблюдательная вышка/КПП с караулкой на 1-м ярусе, промежуточным постом на 2-м и 360° круговой боевой площадкой под навесной крышей на 3-м ярусе.
+   - **`house_l_shaped_villa` (15×14×7.8м)**: 2-этажная Г-образная загородная усадьба с внутренним двором для перекрёстного огня из двух перпендикулярных крыльев, коридорами 90° и угловым балконом над двором.
+   - **`house_bunker_pillbox` (10×8×3.6м)**: Тяжёлый монолитный железобетонный ДОТ со стенами 0.60м, зигзагообразным противоосколочным тамбуром от гранат/РПГ и 4 пулемётными амбразурами с узкой щелью 0.50м.
+
+2. **Создан процедурный пак тактической мебели (`scripts/tactical_furniture.gd`):**
+   - 16 предметов интерьера: `dining_table`, `writing_desk`, `dining_chair`, `wooden_bench`, `single_bed`, `double_bed`, `wardrobe`, `bedside_cabinet`, `dresser`, `bookcase`, `sofa`, `kitchen_cabinet`, `sink`, `toilet`, `wood_stove`, `radiator`.
+   - Полная поддержка `get_furniture_boxes(type_name, origin, rot_deg)` и `create_furniture_node(type_name)`.
+   - Палитра: состаренное дерево, выцветшая краска, эмаль, чугун, ткань. Оптимизированные коллизии `FurnitureCollision`.
+
+3. **Верификация и тесты:**
+   - `res://tests/buildings_smoke.tscn` — **`BUILDINGS_SMOKE_OK`** (протестированы все 9 зданий и все 16 предметов мебели).
+   - `res://tests/gameplay_smoke.tscn` — **`GAMEPLAY_SMOKE_OK`** (22 теста).
+   - `res://tests/projectile_smoke.tscn` — **`PROJECTILE_SMOKE_OK`**.
+   - `res://tests/pause_smoke.tscn` — **`PAUSE_SMOKE_OK`**.
+   - `res://tests/navigation_smoke.tscn` — **`NAVIGATION_SMOKE_OK`**.
