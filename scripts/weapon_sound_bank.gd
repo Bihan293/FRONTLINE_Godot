@@ -1,22 +1,23 @@
 extends RefCounted
 class_name FRONTLINEWeaponSoundBank
 
-## Синтезированные выстрелы для каждого оружия. Один и тот же washed-out
-## sample на все стволы звучал «игрушечно», поэтому здесь есть низкий удар,
-## шумовой хлопок и отдельный треск для каждого профиля.
+## QA-fix TASK-0022: реалистичные выстрелы на основе записанного сэмпла
+## assets/audio/shot.wav. Раньше каждый ствол был процедурным синтезом и
+## звучал как «пиу» из 8-битной игры. Теперь: реальная запись + низкочастотный
+## удар для веса + ресемплинг под характер оружия (глубокий бас у винтовок,
+## звонкий треск у пистолета).
 
-const SAMPLE_RATE := 22050
-const MAX_AMP := 0.92
+const BASE_SHOT = preload("res://assets/audio/shot.wav")
 
 const PROFILES := {
-	"ak47": {"length": 0.34, "body_hz": 92.0, "body_decay": 17.0, "noise_decay": 32.0, "crack": 0.55, "drive": 1.0},
-	"mp40": {"length": 0.24, "body_hz": 118.0, "body_decay": 24.0, "noise_decay": 40.0, "crack": 0.45, "drive": 0.85},
-	"mosin": {"length": 0.62, "body_hz": 68.0, "body_decay": 9.0, "noise_decay": 22.0, "crack": 0.85, "drive": 1.15},
-	"m1911": {"length": 0.20, "body_hz": 150.0, "body_decay": 30.0, "noise_decay": 50.0, "crack": 0.40, "drive": 0.75},
-	"shotgun": {"length": 0.46, "body_hz": 62.0, "body_decay": 13.0, "noise_decay": 25.0, "crack": 0.70, "drive": 1.10},
-	"ppsh41": {"length": 0.22, "body_hz": 128.0, "body_decay": 25.0, "noise_decay": 42.0, "crack": 0.42, "drive": 0.82},
-	"kar98k": {"length": 0.58, "body_hz": 72.0, "body_decay": 10.0, "noise_decay": 23.0, "crack": 0.80, "drive": 1.12},
-	"panzerfaust": {"length": 0.75, "body_hz": 48.0, "body_decay": 7.0, "noise_decay": 16.0, "crack": 0.95, "drive": 1.25},
+	"ak47":       {"ratio": 1.00, "length": 0.34, "body_hz": 95.0,  "body_decay": 15.0, "body_gain": 0.34, "gain": 1.00},
+	"mp40":       {"ratio": 1.14, "length": 0.27, "body_hz": 120.0, "body_decay": 22.0, "body_gain": 0.28, "gain": 0.92},
+	"mosin":      {"ratio": 0.84, "length": 0.58, "body_hz": 66.0,  "body_decay": 8.0,  "body_gain": 0.46, "gain": 1.05},
+	"m1911":      {"ratio": 1.30, "length": 0.22, "body_hz": 155.0, "body_decay": 28.0, "body_gain": 0.22, "gain": 0.88},
+	"shotgun":    {"ratio": 0.78, "length": 0.48, "body_hz": 60.0,  "body_decay": 11.0, "body_gain": 0.52, "gain": 1.05},
+	"ppsh41":     {"ratio": 1.18, "length": 0.24, "body_hz": 126.0, "body_decay": 24.0, "body_gain": 0.26, "gain": 0.90},
+	"kar98k":     {"ratio": 0.86, "length": 0.62, "body_hz": 70.0,  "body_decay": 9.0,  "body_gain": 0.44, "gain": 1.05},
+	"panzerfaust": {"ratio": 0.70, "length": 0.75, "body_hz": 46.0, "body_decay": 6.0,  "body_gain": 0.60, "gain": 1.10},
 }
 
 static var _cache: Dictionary = {}
@@ -25,50 +26,79 @@ static func get_shot(weapon_id: String) -> AudioStreamWAV:
 	var key := weapon_id if PROFILES.has(weapon_id) else "ak47"
 	if _cache.has(key):
 		return _cache[key]
-	var stream := _synthesize(key, PROFILES[key])
+	var base: AudioStreamWAV = BASE_SHOT
+	var stream := _build_variant(base, PROFILES[key])
+	if stream == null:
+		stream = base
 	_cache[key] = stream
 	return stream
 
-static func _synthesize(weapon_id: String, profile: Dictionary) -> AudioStreamWAV:
+static func _build_variant(base: AudioStreamWAV, profile: Dictionary) -> AudioStreamWAV:
+	if base == null or base.format != AudioStreamWAV.FORMAT_16_BITS or base.data.is_empty():
+		return null
+	var ratio := float(profile["ratio"])
 	var length := float(profile["length"])
-	var count := int(SAMPLE_RATE * length)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(weapon_id)
 	var body_hz := float(profile["body_hz"])
 	var body_decay := float(profile["body_decay"])
-	var noise_decay := float(profile["noise_decay"])
-	var crack := float(profile["crack"])
-	var drive := float(profile["drive"])
-	var peak := 0.0
-	var samples := PackedFloat32Array()
-	samples.resize(count)
+	var body_gain := float(profile["body_gain"])
+	var gain := float(profile["gain"])
+	var rate := base.mix_rate
+	var stereo := base.stereo
+	var bytes_per_frame := 4 if stereo else 2
+	var in_frames := base.data.size() / bytes_per_frame
+	var out_frames := mini(int(rate * length), int(float(in_frames) / ratio))
+	if out_frames <= 16:
+		return null
 
-	for i in range(count):
-		var t := float(i) / float(SAMPLE_RATE)
-		var body_env := exp(-t * body_decay)
-		var noise_env := exp(-t * noise_decay)
-		var body := sin(TAU * body_hz * t) * body_env
-		var sub := sin(TAU * body_hz * 0.53 * t + 0.4) * exp(-t * body_decay * 0.55) * 0.45
-		var noise := rng.randf_range(-1.0, 1.0) * noise_env
-		var transient := rng.randf_range(-1.0, 1.0) * exp(-t * 140.0) * crack
-		var sample := (body * 0.72 + sub + noise * 0.62 + transient) * drive
-		# Лёгкое мягкое ограничение вместо жёсткого клиппинга.
-		sample = tanh(sample * 1.25)
-		samples[i] = sample
-		peak = maxf(peak, absf(sample))
-
-	var gain := MAX_AMP / maxf(peak, 0.001)
-	for i in range(count):
-		var value := int(clampf(samples[i] * gain, -1.0, 1.0) * 32767.0)
-		data[i * 2] = value & 0xFF
-		data[i * 2 + 1] = (value >> 8) & 0xFF
+	var out := PackedByteArray()
+	out.resize(out_frames * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(str(profile))
+	for i in range(out_frames):
+		var t := float(i) / float(rate)
+		var pos := float(i) * ratio
+		var i0 := int(pos)
+		var frac := pos - float(i0)
+		var i1 := mini(i0 + 1, in_frames - 1)
+		var sample := 0.0
+		if stereo:
+			var l0 := _read_i16(base.data, i0 * 4)
+			var l1 := _read_i16(base.data, i1 * 4)
+			var r0 := _read_i16(base.data, i0 * 4 + 2)
+			var r1 := _read_i16(base.data, i1 * 4 + 2)
+			var left := lerpf(float(l0), float(l1), frac)
+			var right := lerpf(float(r0), float(r1), frac)
+			sample = (left + right) * 0.5 / 32768.0
+		else:
+			var s0 := _read_i16(base.data, i0 * 2)
+			var s1 := _read_i16(base.data, i1 * 2)
+			sample = lerpf(float(s0), float(s1), frac) / 32768.0
+		# Низкочастотный «удар» для веса и объёма.
+		var thump := sin(TAU * body_hz * t) * exp(-t * body_decay) * body_gain
+		# Короткий шумовой транзиент, чтобы атака читалась резче.
+		var transient := rng.randf_range(-1.0, 1.0) * exp(-t * 120.0) * 0.10
+		var value := (sample + thump + transient) * gain
+		# Мягкий лимитер вместо клиппинга.
+		value = tanh(value * 1.15)
+		# Плавное затухание в конце фрагмента (без щелчка).
+		var fade := clampf((length - t) / (length * 0.18), 0.0, 1.0)
+		value *= fade
+		var out_i := int(clampf(value, -1.0, 1.0) * 32767.0)
+		out[i * 2] = out_i & 0xFF
+		out[i * 2 + 1] = (out_i >> 8) & 0xFF
 
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = SAMPLE_RATE
+	stream.mix_rate = rate
 	stream.stereo = false
 	stream.loop_mode = AudioStreamWAV.LOOP_DISABLED
-	stream.data = data
+	stream.data = out
 	return stream
+
+static func _read_i16(data: PackedByteArray, offset: int) -> int:
+	if offset < 0 or offset + 1 >= data.size():
+		return 0
+	var value := int(data[offset]) | (int(data[offset + 1]) << 8)
+	if value >= 32768:
+		value -= 65536
+	return value

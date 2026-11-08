@@ -29,6 +29,8 @@ var _look_yaw: float = 0.0
 var _look_pitch: float = 0.0
 var _t_pose_arms := false
 var _prone := false
+var _prone_amount: float = 0.0
+var _prone_amount_target: float = 0.0
 var _hide_head := false
 var _pose: Dictionary = {}
 
@@ -143,6 +145,7 @@ func set_t_pose_arms(enabled: bool) -> void:
 
 func set_prone(enabled: bool) -> void:
 	_prone = enabled
+	_prone_amount_target = 1.0 if enabled else 0.0
 
 func set_hide_head(enabled: bool) -> void:
 	_hide_head = enabled
@@ -450,33 +453,36 @@ func _process(delta: float) -> void:
 	var breath := sin(_idle_time * 1.55) * (1.0 - _move_amount) * (1.0 - _fire_amount)
 	var run_scale := 1.0 + 0.35 * _run_amount
 	var aim := _aim_amount
+	_prone_amount = lerpf(_prone_amount, _prone_amount_target, clampf(delta * 6.0, 0.0, 1.0))
 	var crouch := _crouch_amount
 	var sit := _sit_amount
+	var prone := _prone_amount
 	var fire := _fire_amount
 	var reload := _reload_amount
 	var flinch := _flinch_amount
 
 	# Опускаем таз, чтобы присед/сидение читались, а ступни оставались у пола.
-	var target_hip_drop := crouch * 0.26 + sit * 0.48
+	var target_hip_drop := crouch * 0.34 + sit * 0.48 + prone * 0.52
 	_hip_drop = lerpf(_hip_drop, target_hip_drop, blend)
 	if _hips_id >= 0:
 		var body_bob := bounce * 0.035 + breath * 0.008
 		_skeleton.set_bone_pose_position(_hips_id, _hips_rest + Vector3(0, -_hip_drop + body_bob, 0))
 
 	# Ноги
-	_set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.50), blend)
-	_set_pose("RightUpperLeg", _q(Vector3.RIGHT, opposite_stride * 0.48 * run_scale - crouch * 0.28 - sit * 1.50), blend)
-	_set_pose("LeftLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -stride) * 0.72 + crouch * 0.62 + sit * 1.50), blend)
-	_set_pose("RightLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -opposite_stride) * 0.72 + crouch * 0.62 + sit * 1.50), blend)
+	_set_pose("LeftUpperLeg", _q(Vector3.RIGHT, stride * 0.48 * run_scale - crouch * 0.62 - sit * 1.50 - prone * 1.00), blend)
+	_set_pose("RightUpperLeg", _q(Vector3.RIGHT, opposite_stride * 0.48 * run_scale - crouch * 0.62 - sit * 1.50 - prone * 1.00), blend)
+	_set_pose("LeftLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -stride) * 0.72 + crouch * 1.05 + sit * 1.50 + prone * 1.30), blend)
+	_set_pose("RightLowerLeg", _q(Vector3.RIGHT, maxf(0.0, -opposite_stride) * 0.72 + crouch * 1.05 + sit * 1.50 + prone * 1.30), blend)
 	_set_pose("LeftFoot", _q(Vector3.RIGHT, -maxf(0.0, stride) * 0.20 - sit * 0.20), blend)
 	_set_pose("RightFoot", _q(Vector3.RIGHT, -maxf(0.0, opposite_stride) * 0.20 - sit * 0.20), blend)
 
 	# Корпус и голова
-	_set_pose("Hips", _q(Vector3.UP, sin(_phase) * 0.035 * _move_amount), blend)
-	_set_pose("Spine", _q(Vector3.RIGHT, -0.06 * _run_amount - 0.16 * crouch + 0.16 * sit - 0.10 * reload + breath * 0.012), blend)
-	_set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.055 * _move_amount) * _q(Vector3.RIGHT, -0.10 * aim - 0.12 * reload - 0.14 * flinch + breath * 0.018) * _q(Vector3.FORWARD, 0.10 * flinch * _flinch_side), blend)
-	_set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.30 + 0.10 * flinch), blend)
-	_set_pose("Head", _q(Vector3.UP, _look_yaw * 0.72) * _q(Vector3.RIGHT, _look_pitch * 0.70 + 0.12 * flinch), blend)
+	_set_pose("Hips", _q(Vector3.UP, sin(_phase) * 0.075 * _move_amount) * _q(Vector3.RIGHT, -0.04 * _run_amount), blend)
+	_set_pose("Spine", _q(Vector3.RIGHT, -0.10 * _run_amount - 0.20 * crouch + 0.16 * sit + 0.42 * prone - 0.10 * reload + breath * 0.012) * _q(Vector3.FORWARD, sin(_phase) * 0.045 * _move_amount), blend)
+	_set_pose("Chest", _q(Vector3.UP, -sin(_phase) * 0.105 * _move_amount) * _q(Vector3.RIGHT, -0.12 * aim - 0.12 * reload - 0.14 * flinch + breath * 0.018) * _q(Vector3.FORWARD, 0.10 * flinch * _flinch_side), blend)
+	var scan_yaw := sin(_idle_time * 0.8) * 0.14 * (1.0 - aim) + sin(_phase * 0.5) * 0.03 * _move_amount
+	_set_pose("Neck", _q(Vector3.RIGHT, _look_pitch * 0.30 + 0.10 * flinch - 0.30 * prone), blend)
+	_set_pose("Head", _q(Vector3.UP, _look_yaw * 0.72 + scan_yaw) * _q(Vector3.RIGHT, _look_pitch * 0.70 + 0.12 * flinch + 0.35 * prone), blend)
 
 	# Руки
 	var arm_swing := 0.26 * run_scale
