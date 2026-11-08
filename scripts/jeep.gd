@@ -17,7 +17,10 @@ const ACCEL := 8.5
 const BRAKE_DECEL := 15.0
 const DRAG_DECEL := 3.5
 const TURN_RATE := 1.35
-const WHEEL_RADIUS := 0.34
+## Масштаб визуала Antigravity. Отзыв QA (2026-11-08): джип был «игрушечным».
+## 1.45 даёт Willys ~4.9 м длиной — чанки-аркада, как ощущается в Dummy War.
+const MODEL_SCALE := 1.45
+const WHEEL_RADIUS := 0.34 * MODEL_SCALE
 const GRAVITY := 18.0
 
 const MAX_HEALTH := 260.0
@@ -83,11 +86,12 @@ func seat_position() -> Vector3:
 
 func exit_position() -> Vector3:
 	if _driver_marker == null:
-		return global_position + global_transform.basis.x * -1.35
-	return global_position - global_transform.basis.x * 1.35 + Vector3.UP * 0.2
+		return global_position + global_transform.basis.x * -1.35 * MODEL_SCALE
+	return global_position - global_transform.basis.x * 1.35 * MODEL_SCALE + Vector3.UP * 0.2
 
 func driver_eye_height() -> float:
-	return 1.06
+	# Eye above the taller (scaled) cowl.
+	return 1.06 * MODEL_SCALE
 
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Unknown") -> int:
 	if destroyed:
@@ -150,9 +154,9 @@ func _apply_lod(root: Node3D) -> void:
 func _build_collision() -> void:
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(1.62, 0.85, 3.72)
+	box.size = Vector3(1.62, 0.85, 3.72) * MODEL_SCALE
 	shape.shape = box
-	shape.position = Vector3(0, 0.52, 0)
+	shape.position = Vector3(0, 0.52 * MODEL_SCALE, 0)
 	add_child(shape)
 
 func _build_visuals() -> void:
@@ -160,6 +164,8 @@ func _build_visuals() -> void:
 	# с динамическими колёсами WheelFL..RR и турельной стойкой TurretMount.
 	# Физика владения и вход/выход остаются в этом скрипте.
 	_model_root = VEHICLE_MESHES.build_jeep()
+	# QA-зачистка: увеличенный масштаб под Dummy War-ощущение техники.
+	_model_root.scale = Vector3.ONE * MODEL_SCALE
 	add_child(_model_root)
 	_apply_lod(_model_root)
 	for wheel_name in ["WheelFL", "WheelFR", "WheelRL", "WheelRR"]:

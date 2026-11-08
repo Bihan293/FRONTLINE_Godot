@@ -488,6 +488,16 @@ func _test_vehicles() -> void:
 	await get_tree().physics_frame
 	var bullets_after := get_tree().get_nodes_in_group("ballistic_bullets").size()
 	_check(bullets_after > bullets_before, "turret fire did not spawn a ballistic bullet")
+	# QA-sweep regression: yaw обязан крутиться и ПРИМЕНЯТЬСЯ к камере в mounted-режиме
+	# (единый путь _on_look_delta — мобильный тач/джойстик; headless-инвариантно).
+	var yaw_before: float = player.get("yaw")
+	player.call("_on_look_delta", Vector2(160.0, 0.0))
+	var yaw_after: float = player.get("yaw")
+	_check(absf(wrapf(yaw_after - yaw_before, -PI, PI)) > 0.08, "camera yaw did not change while mounted (look input ignored)")
+	player.call("_physics_process", 0.016)
+	var mounted_yaw_applied: bool = absf(wrapf(yaw_after - player.global_rotation.y, -PI, PI)) < 0.05
+	_check(mounted_yaw_applied, "camera rotation was not applied while mounted")
+
 	player.call("_exit_vehicle")
 	_check(player.get("mounted_vehicle") == null, "player stayed mounted after exit")
 	_check(is_instance_valid(turret.occupant) == false or turret.occupant == null, "turret kept occupant after exit")
@@ -496,6 +506,13 @@ func _test_vehicles() -> void:
 	var jeep = jeep_script.new()
 	jeep.position = Vector3(6.0, 0.3, 0.0)
 	add_child(jeep)
+	# QA-sweep regression: джип не «игрушечный» — длина коллизии больше 4.5 м.
+	var jeep_col: CollisionShape3D = null
+	for child in jeep.get_children():
+		if child is CollisionShape3D:
+			jeep_col = child
+			break
+	_check(jeep_col != null and (jeep_col.shape as BoxShape3D).size.z > 4.5, "jeep collision too small (toy-sized jeep)")
 	var floor_body := StaticBody3D.new()
 	floor_body.collision_layer = 1
 	floor_body.collision_mask = 0
