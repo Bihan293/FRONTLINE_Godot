@@ -12,11 +12,19 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var map_name := "BATTLEFIELD"
 	var squad := 14
+	var quality := -1
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("map="):
 			map_name = arg.substr(4)
 		elif arg.begins_with("squad="):
 			squad = clampi(int(arg.substr(6)), 4, 14)
+		elif arg.begins_with("quality="):
+			quality = clampi(int(arg.substr(8)), 0, 2)
+	# QA: замер на конкретном пресете графики (0 = low mobile).
+	if quality >= 0 and "quality" in GameSettings:
+		GameSettings.quality = quality
+		GameSettings.apply_video()
+		GameSettings.apply_frame_limit()
 	get_tree().set_meta("selected_map", map_name)
 	get_tree().set_meta("selected_mode", "CONQUEST")
 	get_tree().set_meta("selected_team", "IRON LEGION")
