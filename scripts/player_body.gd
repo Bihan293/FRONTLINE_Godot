@@ -6,6 +6,7 @@ extends Node3D
 
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
+const TACTICAL_GEAR = preload("res://scripts/tactical_gear.gd")
 
 const GERMAN_MODEL := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const SOVIET_MODEL := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -70,6 +71,7 @@ func setup(is_red: bool, left_wrist: Node3D, right_wrist: Node3D) -> void:
     _build_cuffs()
 
 func _add_equipment(root: Node3D) -> void:
+    TACTICAL_GEAR.add_tactical_loadout(root, _red, false)
     var helmet_path := SOVIET_HELMET if _red else GERMAN_HELMET
     var vest_path := SOVIET_VEST if _red else GERMAN_VEST
     var helmet = load(helmet_path)

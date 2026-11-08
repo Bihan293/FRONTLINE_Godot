@@ -10,6 +10,7 @@ signal soldier_fired(pos: Vector3)
 
 const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
 const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
+const TACTICAL_GEAR = preload("res://scripts/tactical_gear.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
@@ -175,11 +176,14 @@ func _build_visuals() -> void:
 		push_error("FRONTLINE: cannot load soldier GLB " + path)
 		return
 	var model = packed.instantiate()
+	var is_red: bool = team_name.to_upper().contains("RED")
+	TACTICAL_GEAR.add_tactical_loadout(model, is_red, true)
 	_visual.add_child(model)
 
 	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
 	var has_rig := skeleton is Skeleton3D
 	if has_rig:
+		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
 		# Attach the procedural script before entering the tree so its _ready()
 		# can bind the skeleton built above. Setting the script after adding the
 		# visual to the live pivot leaves _skeleton null and disables animation/ragdoll.
@@ -783,8 +787,14 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		return 0
 	health -= damage
 	suppression = minf(1.0, suppression + 0.45)
+
+	# Физический кинетический импульс пули (Dummy War / Bodycam)
+	var hit_dir := (global_position - attacker_pos).normalized()
+	hit_dir.y = 0.0
+	velocity += hit_dir * clampf(float(damage) * 0.14, 1.4, 5.5)
+
 	if _proc != null and health > 0.0:
-		_proc.add_flinch(0.55 if region == "chest" else 0.75)
+		_proc.add_flinch(clampf(float(damage) * 0.035, 0.75, 2.0))
 	if health > 0.0 and randf() < 0.45:
 		_shout("РАНЕН!" if team_name.contains("RED") else "GETROFFEN!", Color(0.95, 0.25, 0.25))
 
@@ -801,7 +811,9 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	is_dead = true
 	health = 0.0
-	velocity = Vector3.ZERO
+	var hit_dir := (global_position - attacker_pos).normalized()
+	hit_dir.y = 0.0
+	velocity = hit_dir * 3.2 + Vector3.UP * 1.0
 	# Труп продолжает держаться на земле, но не блокирует живых бойцов невидимой капсулой.
 	collision_layer = 0
 	collision_mask = WORLD_LAYER_MASK
@@ -836,7 +848,6 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 		_label.modulate = Color(0.9, 0.2, 0.2, 0.8)
 
 	# Запускаем физический рэгдолл скелета
-	var hit_dir := (global_position - attacker_pos).normalized()
 	if _proc != null:
 		_proc.set_ragdoll(true, hit_dir, region == "head")
 

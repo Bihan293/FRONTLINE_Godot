@@ -23,6 +23,7 @@ func _ready() -> void:
 	_test_explosion_audio_budget()
 	await _test_death_ragdoll()
 	await _test_parkour_and_grenade_hold()
+	await _test_bodycam_kinematics_and_camera_safety()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
@@ -457,6 +458,55 @@ func _test_parkour_and_grenade_hold() -> void:
 
 		p.queue_free()
 		await get_tree().process_frame
+
+func _test_bodycam_kinematics_and_camera_safety() -> void:
+	var player_script: Script = load("res://scripts/player.gd")
+	_check(player_script != null, "player script missing for bodycam kinematics test")
+	if player_script == null:
+		return
+
+	var player: CharacterBody3D = player_script.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	# 1. Kinematics: acceleration with realistic inertia
+	var initial_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(initial_h_vel.length() < 0.01, "player spawned with non-zero horizontal velocity")
+
+	player.set("mobile_move", Vector2(0.0, -1.0))
+	for _i in range(8):
+		player.call("_physics_process", 0.016)
+
+	var moving_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(moving_h_vel.length() > 0.3, "player did not accelerate forward with inertia")
+	_check(moving_h_vel.length() < 9.5, "player speed exploded during acceleration")
+
+	# 2. Kinematics: braking deceleration (glide instead of instant zero)
+	player.set("mobile_move", Vector2.ZERO)
+	player.call("_physics_process", 0.016)
+	var glide_h_vel := Vector2(player.velocity.x, player.velocity.z)
+	_check(glide_h_vel.length() > 0.05, "player stopped instantly with zero inertia on input release")
+
+	# 3. Camera safety and collision boundaries
+	var cam: Camera3D = player.get("camera")
+	_check(cam != null, "player missing camera")
+	if cam != null:
+		# Standing height check
+		_check(cam.position.y >= 1.60 and cam.position.y <= 1.95, "standing camera height outside [1.60, 1.95]: %f" % cam.position.y)
+
+		# Crouch height transition
+		player.set("stance", 1)
+		for _i in range(12):
+			player.call("_physics_process", 0.016)
+		_check(cam.position.y < 1.65, "camera did not lower in crouch stance: %f" % cam.position.y)
+
+		# Lean calculation check
+		player.set("mobile_lean_right", true)
+		player.call("_physics_process", 0.016)
+		_check(absf(cam.position.x) >= 0.0, "camera lean calculation failed")
+
+	player.queue_free()
+	await get_tree().process_frame
 
 func _report() -> void:
 	if _failures.is_empty():

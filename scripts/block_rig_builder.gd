@@ -155,7 +155,14 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [],
 					var nv: Vector3 = n[vi]
 					normals.append((part_xf.basis * nv).normalized())
 					var col: Color = c[vi] if c != null and c.size() == v.size() else base_color
-					var fabric := attachment.bone_name in [
+					var is_gear := (
+						part.name.find("Camera") >= 0 or part.name.find("LED") >= 0 or
+						part.name.find("Lens") >= 0 or part.name.find("Radio") >= 0 or
+						part.name.find("Buckle") >= 0 or part.name.find("Holster") >= 0 or
+						part.name.find("Helmet") >= 0 or part.name.find("Canteen") >= 0 or
+						part.name.find("Mag_Top") >= 0 or part.name.find("Cross") >= 0
+					)
+					var fabric := not is_gear and attachment.bone_name in [
 						"Hips", "Chest",
 						"LeftUpperLeg", "LeftLowerLeg", "RightUpperLeg", "RightLowerLeg",
 						"LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm",
@@ -318,8 +325,10 @@ static func _ensure_normals(parts: Array[MeshInstance3D]) -> void:
 static func _part_bone(part_name: String) -> String:
 	if part_name.find("Helmet") >= 0:
 		return "Head"
-	if part_name.find("Body_Armor") >= 0:
+	if part_name.find("Body_Armor") >= 0 or part_name.find("Chest_") >= 0 or part_name.find("Body_Camera") >= 0 or part_name.find("Tactical_Radio") >= 0:
 		return "Chest"
+	if part_name.find("Duty_Belt") >= 0 or part_name.find("Side_Holster") >= 0 or part_name.find("Grenade_Pouch") >= 0 or part_name.find("Tactical_IFAK") >= 0 or part_name.find("Canteen") >= 0 or part_name.find("Belt_") >= 0:
+		return "Hips"
 	match part_name:
 		"Pelvis_Torso_Block": return "Hips"
 		"Chest_Torso_Block": return "Chest"
