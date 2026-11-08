@@ -15,6 +15,7 @@ const TACTICAL_DEPLOY = preload("res://scripts/tactical_deploy.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
+const STREET_PROPS_SCRIPT = preload("res://scripts/tactical_street_props.gd")
 
 var _failures: Array[String] = []
 
@@ -42,6 +43,7 @@ func _ready() -> void:
 	await _test_field_pickup_weapon_swap_and_ammo()
 	await _test_hud_customizer_input()
 	await _test_tactical_buildings_pack()
+	await _test_tactical_street_props_pack()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -980,6 +982,36 @@ func _test_tactical_buildings_pack() -> void:
 
 			var meshes := node.find_children("*", "MeshInstance3D", true, false)
 			_check(meshes.size() > 0, "no MeshInstance3D children in %s" % type_name)
+			node.queue_free()
+
+	await get_tree().process_frame
+
+func _test_tactical_street_props_pack() -> void:
+	_check(STREET_PROPS_SCRIPT != null, "tactical_street_props.gd missing")
+	if STREET_PROPS_SCRIPT == null:
+		return
+
+	var types: Array[String] = STREET_PROPS_SCRIPT.get_available_types()
+	_check(types.size() >= 22, "expected at least 22 tactical street props, got %d" % types.size())
+
+	var low_cover_checks := ["sandbag_wall_straight", "concrete_jersey_barrier", "oil_barrel_single"]
+	for lcp in low_cover_checks:
+		var info: Dictionary = STREET_PROPS_SCRIPT.get_prop_info(lcp)
+		var h: float = float(info.get("cover_height", 0.0))
+		_check(h >= 0.90 and h <= 1.05, "street prop %s cover_height %f outside [0.90, 1.05]m" % [lcp, h])
+
+	for t in ["burnt_car_sedan", "sandbag_wall_straight", "concrete_jersey_barrier", "bus_stop_shelter", "concrete_pipe_segment"]:
+		var boxes: Array[Dictionary] = STREET_PROPS_SCRIPT.get_prop_boxes(t, Vector3(10, 0, 10), 90.0)
+		_check(boxes.size() > 0, "no boxes generated for street prop %s" % t)
+
+		var node: Node3D = STREET_PROPS_SCRIPT.create_prop_node(t)
+		_check(node != null, "create_prop_node returned null for %s" % t)
+		if node != null:
+			add_child(node)
+			var sb: StaticBody3D = node.get_node_or_null("PropCollision") as StaticBody3D
+			_check(sb != null, "missing PropCollision for %s" % t)
+			if sb != null:
+				_check(sb.collision_layer == 1, "wrong collision layer for %s" % t)
 			node.queue_free()
 
 	await get_tree().process_frame

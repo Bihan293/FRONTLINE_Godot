@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bvstk87prop1"]
+
+[ext_resource type="Script" path="res://tests/street_props_smoke.gd" id="1_street_props"]
+
+[node name="StreetPropsSmoke" type="Node3D"]
+script = ExtResource("1_street_props")
