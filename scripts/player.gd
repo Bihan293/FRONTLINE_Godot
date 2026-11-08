@@ -2020,7 +2020,7 @@ func _build_grenade_view() -> void:
 		return
 	grenade_view_root.name = "GrenadeView"
 	grenade_view_root.position = Vector3(0.18, -0.16, -0.38)
-	grenade_view_root.scale = Vector3.ONE * 0.52
+	grenade_view_root.scale = Vector3.ONE * 0.60
 	grenade_view_root.visible = false
 	camera.add_child(grenade_view_root)
 
@@ -2053,16 +2053,16 @@ func _start_grenade_hold() -> void:
 			if grenade_safety_lever != null:
 				grenade_safety_lever.rotation = Vector3.ZERO
 				grenade_safety_lever.visible = true
+			# Гранату держит ОДНА рука — вторая не дублируется на экране.
 			if grenade_hand_left != null:
-				grenade_hand_left.position = Vector3(-0.075, 0.065, 0.0)
-				grenade_hand_left.visible = true
+				grenade_hand_left.visible = false
 		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -8.0, 1.35)
 
 func _release_grenade_throw() -> void:
 	is_grenade_held = false
 	if grenade_anim_state == GrenadeActionState.HOLD_AIM:
 		grenade_anim_state = GrenadeActionState.THROW_SWING
-		grenade_anim_timer = 0.18
+		grenade_anim_timer = 0.26
 		_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.45)
 	elif grenade_anim_state == GrenadeActionState.PULL_PIN or grenade_anim_state == GrenadeActionState.EQUIP:
 		pass
@@ -2079,10 +2079,12 @@ func _spawn_thrown_grenade() -> void:
 		g.position = global_position + Vector3(0.0, 0.45, 0.0)
 		g.linear_velocity = Vector3(randf_range(-0.6, 0.6), 1.2, randf_range(-0.6, 0.6))
 	else:
-		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.20 - camera.global_transform.basis.y * 0.10 - camera.global_transform.basis.z * 0.45
-		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+		# QA-fix TASK-0022: граната вылетает из кисти (ниже и правее камеры),
+		# а не «из головы», и бросается с весом — медленнее и ниже.
+		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
 		g.position = spawn_pos
-		g.linear_velocity = throw_dir.normalized() * 20.5 + velocity * 0.45
+		g.linear_velocity = throw_dir.normalized() * 14.5 + velocity * 0.45
 	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	g.thrower_name = "Player"
 	g.team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -2095,7 +2097,15 @@ func _update_grenade_animation(delta: float) -> void:
 	if grenade_anim_state == GrenadeActionState.IDLE:
 		if grenade_view_root != null and grenade_view_root.visible:
 			grenade_view_root.visible = false
+		# QA-fix TASK-0022: оружие возвращается в руки после броска.
+		if weapon_root != null and not weapon_root.visible and not is_dead and not is_shovel_equipped:
+			weapon_root.visible = true
 		return
+
+	# QA-fix TASK-0022: на время работы с гранатой оружие полностью убирается —
+	# раньше автомат оставался на экране вместе с руками гранаты («каша»).
+	if weapon_root != null:
+		weapon_root.visible = false
 
 	if weapon_root != null:
 		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.28, delta * 14.0)
@@ -2127,7 +2137,7 @@ func _update_grenade_animation(delta: float) -> void:
 					grenade_anim_state = GrenadeActionState.HOLD_AIM
 				else:
 					grenade_anim_state = GrenadeActionState.THROW_SWING
-					grenade_anim_timer = 0.18
+					grenade_anim_timer = 0.26
 
 		GrenadeActionState.HOLD_AIM:
 			if grenade_view_root != null:
@@ -2140,7 +2150,7 @@ func _update_grenade_animation(delta: float) -> void:
 				grenade_anim_timer = 0.18
 
 		GrenadeActionState.THROW_SWING:
-			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.18, 0.0, 1.0)
+			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.26, 0.0, 1.0)
 			if grenade_view_root != null:
 				var throw_target_pos := Vector3(0.06, -0.12, -0.62)
 				var throw_target_rot := Vector3(deg_to_rad(-38.0), deg_to_rad(10.0), deg_to_rad(-14.0))
@@ -2321,10 +2331,11 @@ func _throw_smoke() -> void:
 	smoke_grenades -= 1
 	_refresh_equipment()
 	var s := SMOKE_SCRIPT.new()
-	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.5
-	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+	# QA-fix TASK-0022: дымовая вылетает из кисти, а не из головы персонажа.
+	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
 	s.position = spawn_pos
-	s.linear_velocity = throw_dir.normalized() * 19.5 + velocity * 0.4
+	s.linear_velocity = throw_dir.normalized() * 13.5 + velocity * 0.4
 	s.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	s.thrower_name = "Player"
 	get_parent().add_child(s)
