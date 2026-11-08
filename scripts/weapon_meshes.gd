@@ -32,62 +32,178 @@ static func make_weapon(weapon_id: String) -> Node3D:
 		root.free()
 		return null
 
-	var dark := _weapon_material("dark", Color(0.105, 0.12, 0.125), 0.58, 0.32)
-	var steel := _weapon_material("steel", Color(0.28, 0.31, 0.32), 0.48, 0.62)
-	var wood := _weapon_material("wood", Color(0.32, 0.20, 0.105), 0.78, 0.0)
+	var dark := _weapon_material("dark", Color(0.12, 0.13, 0.14), 0.52, 0.55)
+	var steel := _weapon_material("steel", Color(0.24, 0.26, 0.28), 0.44, 0.70)
+	var bright := _weapon_material("bright_steel", Color(0.55, 0.56, 0.58), 0.28, 0.85)
+	var wood := _weapon_material("wood", Color(0.38, 0.22, 0.11), 0.72, 0.0)
+	var wood_birch := _weapon_material("wood_birch", Color(0.44, 0.26, 0.13), 0.70, 0.0)
+	var bakelite := _weapon_material("bakelite", Color(0.26, 0.15, 0.10), 0.50, 0.08)
+	var brass := _weapon_material("brass", Color(0.85, 0.72, 0.25), 0.35, 0.85)
+	var olive := _weapon_material("olive", Color(0.32, 0.36, 0.22), 0.68, 0.20)
+	var parkerized := _weapon_material("parkerized", Color(0.20, 0.22, 0.23), 0.50, 0.60)
+
 	var muzzle_z := -0.58
+	var muzzle_y := 0.035
+
 	match weapon_id:
 		"mp40":
-			_add_box(root, "Receiver", Vector3(0.0, 0.015, -0.08), Vector3(0.17, 0.17, 0.34), dark)
-			_add_cylinder(root, "Barrel", Vector3(0.0, 0.045, -0.38), 0.032, 0.48, steel)
-			_add_box(root, "Stock", Vector3(0.0, -0.015, 0.26), Vector3(0.10, 0.09, 0.28), steel)
-			_add_box(root, "Magazine", Vector3(0.0, -0.17, -0.015), Vector3(0.085, 0.25, 0.09), steel)
-			_add_box(root, "Grip", Vector3(0.0, -0.14, 0.10), Vector3(0.075, 0.18, 0.10), dark)
-			muzzle_z = -0.64
+			# MP-40: Ствольная коробка - стальная трубка диаметром 3.8 см, а не гигантский блок 17 см!
+			_add_cylinder_ex(root, "ReceiverTube", Vector3(0.0, 0.040, -0.06), 0.019, 0.019, 0.28, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "ReceiverEndCap", Vector3(0.0, 0.040, 0.08), 0.020, 0.020, 0.020, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_box(root, "LowerFrame", Vector3(0.0, 0.012, -0.02), Vector3(0.034, 0.036, 0.22), bakelite)
+
+			# Тонкий ступенчатый ствол 9мм и прилив упора
+			_add_cylinder_ex(root, "Barrel", Vector3(0.0, 0.040, -0.31), 0.010, 0.011, 0.24, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "MuzzleNut", Vector3(0.0, 0.040, -0.42), 0.013, 0.013, 0.022, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_box(root, "BarrelLug", Vector3(0.0, 0.020, -0.28), Vector3(0.009, 0.016, 0.14), dark)
+
+			# Шахта и узкий коробчатый магазин на 32 патрона
+			_add_box(root, "MagWell", Vector3(0.0, -0.018, -0.15), Vector3(0.032, 0.060, 0.048), steel)
+			_add_box(root, "Magazine", Vector3(0.0, -0.145, -0.15), Vector3(0.024, 0.210, 0.040), dark)
+
+			# Анатомическая бакелитовая рукоять и спусковая скоба
+			_add_box(root, "PistolGrip", Vector3(0.0, -0.085, 0.050), Vector3(0.026, 0.120, 0.048), bakelite)
+			_add_box(root, "TriggerGuard", Vector3(0.0, -0.042, -0.005), Vector3(0.020, 0.040, 0.055), steel)
+			_add_box(root, "Trigger", Vector3(0.0, -0.038, 0.002), Vector3(0.006, 0.022, 0.010), bright)
+
+			# Складной металлический плечевой упор
+			_add_box(root, "StockStrutL", Vector3(-0.020, 0.015, 0.12), Vector3(0.005, 0.008, 0.22), steel)
+			_add_box(root, "StockStrutR", Vector3(0.020, 0.015, 0.12), Vector3(0.005, 0.008, 0.22), steel)
+			_add_box(root, "StockButt", Vector3(0.0, 0.015, 0.23), Vector3(0.044, 0.040, 0.010), steel)
+			_add_cylinder_ex(root, "BoltHandle", Vector3(-0.024, 0.045, -0.04), 0.005, 0.005, 0.026, bright, Vector3(0.0, 0.0, PI * 0.5))
+
+			# Реалистичные мушка и целик (Iron Sights, выравнивание строго на sight_y = 0.075)
+			_add_iron_sights(root, -0.04, -0.40, 0.075, 0.0035, 0.0028, 0.010, true, steel)
+			muzzle_y = 0.040
+			muzzle_z = -0.44
+
 		"mosin":
-			_add_box(root, "WoodStock", Vector3(0.0, -0.015, 0.055), Vector3(0.14, 0.16, 0.73), wood)
-			_add_box(root, "Receiver", Vector3(0.0, 0.055, -0.17), Vector3(0.105, 0.10, 0.24), steel)
-			_add_cylinder(root, "Barrel", Vector3(0.0, 0.07, -0.48), 0.022, 0.62, steel)
-			_add_box(root, "Bolt", Vector3(0.075, 0.12, -0.15), Vector3(0.10, 0.035, 0.12), dark)
-			_add_box(root, "Sight", Vector3(0.0, 0.13, -0.30), Vector3(0.035, 0.09, 0.04), dark)
-			muzzle_z = -0.80
+			# Винтовка Мосина: цельная берёзовая ложа с изящным прикладом
+			_add_box(root, "Buttstock", Vector3(0.0, -0.025, 0.22), Vector3(0.034, 0.095, 0.30), wood_birch)
+			_add_box(root, "Buttplate", Vector3(0.0, -0.025, 0.37), Vector3(0.036, 0.100, 0.010), steel)
+			_add_box(root, "Wrist", Vector3(0.0, -0.008, 0.04), Vector3(0.030, 0.055, 0.16), wood_birch)
+			_add_box(root, "Forend", Vector3(0.0, 0.005, -0.28), Vector3(0.032, 0.042, 0.48), wood_birch)
+			_add_box(root, "Handguard", Vector3(0.0, 0.032, -0.28), Vector3(0.026, 0.018, 0.42), wood_birch)
+			_add_box(root, "BandRear", Vector3(0.0, 0.020, -0.16), Vector3(0.034, 0.046, 0.015), steel)
+			_add_box(root, "BandFront", Vector3(0.0, 0.020, -0.46), Vector3(0.034, 0.046, 0.015), steel)
+
+			# Гранёная/круглая ствольная коробка, длинный ствол и шомпол
+			_add_cylinder_ex(root, "Receiver", Vector3(0.0, 0.025, -0.06), 0.017, 0.017, 0.16, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "Barrel", Vector3(0.0, 0.025, -0.46), 0.008, 0.009, 0.54, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "CleaningRod", Vector3(0.0, -0.005, -0.46), 0.0025, 0.0025, 0.50, bright, Vector3(PI * 0.5, 0.0, 0.0))
+
+			# Магазинная коробка, скоба и затвор с рукоятью
+			_add_box(root, "MagazineBox", Vector3(0.0, -0.055, -0.06), Vector3(0.020, 0.070, 0.080), steel)
+			_add_box(root, "TriggerGuard", Vector3(0.0, -0.048, 0.01), Vector3(0.018, 0.040, 0.055), steel)
+			_add_cylinder_ex(root, "BoltHandle", Vector3(0.040, 0.025, -0.02), 0.005, 0.005, 0.055, bright, Vector3(0.0, 0.0, PI * 0.5))
+			_add_box(root, "BoltKnob", Vector3(0.065, 0.025, -0.02), Vector3(0.014, 0.014, 0.014), bright)
+			_add_cylinder_ex(root, "CockingPiece", Vector3(0.0, 0.025, 0.03), 0.012, 0.012, 0.025, bright, Vector3(PI * 0.5, 0.0, 0.0))
+
+			# Планка Коновалова и цилиндрический намушник (sight_y = 0.060)
+			_add_iron_sights(root, -0.16, -0.70, 0.060, 0.0035, 0.0026, 0.010, true, steel)
+			muzzle_y = 0.025
+			muzzle_z = -0.74
+
 		"m1911":
-			_add_box(root, "Slide", Vector3(0.0, 0.04, -0.10), Vector3(0.105, 0.105, 0.31), steel)
-			_add_cylinder(root, "Barrel", Vector3(0.0, 0.05, -0.30), 0.021, 0.20, dark)
-			_add_box(root, "Grip", Vector3(0.0, -0.105, 0.065), Vector3(0.09, 0.20, 0.12), wood)
-			_add_box(root, "TriggerGuard", Vector3(0.0, -0.055, -0.005), Vector3(0.11, 0.055, 0.10), dark)
-			muzzle_z = -0.43
+			# Colt M1911A1: фрезерованный затвор, рамка и рифлёные накладки рукояти
+			_add_box(root, "Slide", Vector3(0.0, 0.020, -0.08), Vector3(0.028, 0.036, 0.20), parkerized)
+			_add_cylinder_ex(root, "Bushing", Vector3(0.0, 0.020, -0.18), 0.009, 0.009, 0.015, bright, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "Plug", Vector3(0.0, 0.008, -0.18), 0.006, 0.006, 0.015, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_box(root, "Frame", Vector3(0.0, -0.006, -0.06), Vector3(0.024, 0.030, 0.17), steel)
+
+			# Рукоять под углом 17 градусов и деревянные щёчки
+			_add_box(root, "GripFrame", Vector3(0.0, -0.085, 0.012), Vector3(0.026, 0.125, 0.052), dark)
+			_add_box(root, "GripL", Vector3(-0.015, -0.085, 0.012), Vector3(0.005, 0.110, 0.046), wood)
+			_add_box(root, "GripR", Vector3(0.015, -0.085, 0.012), Vector3(0.005, 0.110, 0.046), wood)
+			_add_box(root, "TriggerGuard", Vector3(0.0, -0.035, -0.03), Vector3(0.018, 0.035, 0.045), steel)
+			_add_box(root, "Hammer", Vector3(0.0, 0.022, 0.025), Vector3(0.008, 0.018, 0.012), bright)
+
+			# Тактические мушка и целик пистолета (sight_y = 0.048)
+			_add_iron_sights(root, -0.01, -0.17, 0.048, 0.0032, 0.0025, 0.007, false, dark)
+			muzzle_y = 0.020
+			muzzle_z = -0.19
+
 		"shotgun":
-			_add_box(root, "WoodStock", Vector3(0.0, -0.02, 0.17), Vector3(0.14, 0.16, 0.42), wood)
-			_add_box(root, "Receiver", Vector3(0.0, 0.02, -0.12), Vector3(0.16, 0.15, 0.29), steel)
-			_add_cylinder(root, "Barrel", Vector3(0.0, 0.065, -0.42), 0.035, 0.48, steel)
-			_add_cylinder(root, "MagazineTube", Vector3(0.0, -0.055, -0.40), 0.027, 0.43, dark)
-			_add_box(root, "Foregrip", Vector3(0.0, -0.06, -0.31), Vector3(0.12, 0.10, 0.20), wood)
-			muzzle_z = -0.69
-		"ppsh41":
-			_add_box(root, "WoodStock", Vector3(0.0, -0.02, 0.16), Vector3(0.12, 0.15, 0.44), wood)
-			_add_box(root, "Receiver", Vector3(0.0, 0.04, -0.10), Vector3(0.13, 0.13, 0.28), dark)
-			_add_cylinder(root, "ShroudBarrel", Vector3(0.0, 0.05, -0.40), 0.038, 0.44, steel)
-			_add_cylinder_ex(root, "DrumMag", Vector3(0.0, -0.12, -0.07), 0.11, 0.11, 0.075, dark, Vector3(0.0, 0.0, PI * 0.5))
-			_add_box(root, "MuzzleBrake", Vector3(0.0, 0.05, -0.63), Vector3(0.045, 0.05, 0.06), steel)
-			muzzle_z = -0.66
-		"kar98k":
-			_add_box(root, "WoodStock", Vector3(0.0, -0.015, 0.06), Vector3(0.13, 0.15, 0.76), wood)
-			_add_box(root, "Receiver", Vector3(0.0, 0.055, -0.17), Vector3(0.105, 0.10, 0.24), steel)
-			_add_cylinder(root, "Barrel", Vector3(0.0, 0.07, -0.50), 0.022, 0.65, steel)
-			_add_box(root, "Bolt", Vector3(0.07, 0.08, -0.13), Vector3(0.09, 0.035, 0.08), dark)
-			_add_cylinder(root, "Scope", Vector3(0.0, 0.135, -0.18), 0.026, 0.28, dark)
-			_add_box(root, "ScopeRingFront", Vector3(0.0, 0.095, -0.26), Vector3(0.045, 0.06, 0.03), steel)
-			_add_box(root, "ScopeRingRear", Vector3(0.0, 0.095, -0.10), Vector3(0.045, 0.06, 0.03), steel)
-			muzzle_z = -0.84
+			# Окопный помповый дробовик: ореховый приклад, стальная коробка и подвижное цевьё
+			_add_box(root, "Buttstock", Vector3(0.0, -0.025, 0.20), Vector3(0.034, 0.095, 0.28), wood)
+			_add_box(root, "Receiver", Vector3(0.0, 0.015, -0.04), Vector3(0.036, 0.062, 0.20), steel)
+			_add_box(root, "TriggerGuard", Vector3(0.0, -0.042, 0.02), Vector3(0.018, 0.038, 0.050), steel)
+
+			# 12-калиберный ствол, магазин под стволом и рифлёное цевьё помпы
+			_add_cylinder_ex(root, "Barrel", Vector3(0.0, 0.025, -0.36), 0.011, 0.011, 0.48, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "MagTube", Vector3(0.0, -0.005, -0.34), 0.010, 0.010, 0.44, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "PumpForend", Vector3(0.0, -0.005, -0.28), 0.018, 0.018, 0.15, wood, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_box(root, "HeatShield", Vector3(0.0, 0.028, -0.28), Vector3(0.026, 0.020, 0.28), dark)
+
+			# Прицельная канавка и латунная мушка (sight_y = 0.054)
+			_add_box(root, "SightGrooveL", Vector3(-0.006, 0.050, -0.04), Vector3(0.004, 0.008, 0.18), steel)
+			_add_box(root, "SightGrooveR", Vector3(0.006, 0.050, -0.04), Vector3(0.004, 0.008, 0.18), steel)
+			_add_cylinder_ex(root, "BrassBead", Vector3(0.0, 0.054, -0.58), 0.004, 0.004, 0.008, brass, Vector3.ZERO)
+			muzzle_y = 0.025
+			muzzle_z = -0.61
+
+		"ppsh", "ppsh41":
+			# ППШ-41: цельная деревянная ложа, перфорированный кожух и барабанный магазин
+			_add_box(root, "Buttstock", Vector3(0.0, -0.025, 0.22), Vector3(0.036, 0.100, 0.30), wood_birch)
+			_add_box(root, "Buttplate", Vector3(0.0, -0.025, 0.37), Vector3(0.038, 0.105, 0.010), steel)
+			_add_box(root, "Wrist", Vector3(0.0, -0.008, 0.04), Vector3(0.032, 0.060, 0.16), wood_birch)
+			_add_box(root, "Receiver", Vector3(0.0, 0.020, -0.06), Vector3(0.036, 0.046, 0.20), dark)
+
+			# Перфорированный кожух ствола со скошенным компенсатором
+			_add_box(root, "Shroud", Vector3(0.0, 0.022, -0.32), Vector3(0.032, 0.040, 0.36), steel)
+			_add_box(root, "MuzzleBrake", Vector3(0.0, 0.022, -0.51), Vector3(0.034, 0.042, 0.025), steel)
+			_add_cylinder_ex(root, "BoltHandle", Vector3(0.024, 0.024, -0.04), 0.005, 0.005, 0.026, bright, Vector3(0.0, 0.0, PI * 0.5))
+
+			# 71-зарядный круглый барабан
+			_add_cylinder_ex(root, "DrumMag", Vector3(0.0, -0.082, -0.08), 0.076, 0.076, 0.044, dark, Vector3(0.0, 0.0, PI * 0.5))
+			_add_box(root, "DrumLatch", Vector3(0.0, -0.020, -0.10), Vector3(0.028, 0.035, 0.030), steel)
+
+			# Перекидной целик и мушка с ушами (sight_y = 0.052)
+			_add_iron_sights(root, -0.12, -0.49, 0.052, 0.0035, 0.0028, 0.009, true, steel)
+			muzzle_y = 0.022
+			muzzle_z = -0.53
+
+		"kar98", "kar98k":
+			# Mauser 98k: ореховая ложа, отогнутый вниз затвор и оптический снайперский прицел ZF-39
+			_add_box(root, "Buttstock", Vector3(0.0, -0.025, 0.22), Vector3(0.034, 0.095, 0.30), wood)
+			_add_box(root, "Buttplate", Vector3(0.0, -0.025, 0.37), Vector3(0.036, 0.100, 0.010), steel)
+			_add_box(root, "Wrist", Vector3(0.0, -0.008, 0.04), Vector3(0.030, 0.055, 0.16), wood)
+			_add_box(root, "Forend", Vector3(0.0, 0.005, -0.28), Vector3(0.032, 0.042, 0.48), wood)
+			_add_box(root, "Handguard", Vector3(0.0, 0.032, -0.28), Vector3(0.026, 0.018, 0.42), wood)
+			_add_box(root, "BandRear", Vector3(0.0, 0.020, -0.16), Vector3(0.034, 0.046, 0.015), steel)
+			_add_box(root, "BandFront", Vector3(0.0, 0.020, -0.46), Vector3(0.034, 0.046, 0.015), steel)
+
+			# Ствольная коробка, ствол и отогнутая затворная рукоять
+			_add_cylinder_ex(root, "Receiver", Vector3(0.0, 0.025, -0.06), 0.017, 0.017, 0.16, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "Barrel", Vector3(0.0, 0.025, -0.46), 0.008, 0.009, 0.54, steel, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "BoltStem", Vector3(0.022, 0.025, -0.02), 0.005, 0.005, 0.025, bright, Vector3(0.0, 0.0, PI * 0.5))
+			_add_cylinder_ex(root, "BoltDrop", Vector3(0.034, 0.005, -0.02), 0.005, 0.005, 0.040, bright, Vector3.ZERO)
+			_add_box(root, "BoltKnob", Vector3(0.034, -0.015, -0.02), Vector3(0.014, 0.014, 0.014), bright)
+
+			# Оптический прицел ZF-39 (оптическая ось ровно по центру X = 0.0, Y = 0.075)
+			_add_box(root, "ScopeRingF", Vector3(0.0, 0.050, -0.15), Vector3(0.022, 0.035, 0.018), steel)
+			_add_box(root, "ScopeRingR", Vector3(0.0, 0.050, -0.01), Vector3(0.022, 0.035, 0.018), steel)
+			_add_cylinder_ex(root, "ScopeTube", Vector3(0.0, 0.075, -0.08), 0.013, 0.013, 0.24, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "ScopeObjective", Vector3(0.0, 0.075, -0.21), 0.018, 0.014, 0.04, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "ScopeEyepiece", Vector3(0.0, 0.075, 0.05), 0.016, 0.014, 0.03, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "ScopeTurretTop", Vector3(0.0, 0.092, -0.08), 0.007, 0.007, 0.015, dark, Vector3.ZERO)
+			muzzle_y = 0.025
+			muzzle_z = -0.74
+
 		"panzerfaust":
-			var olive := _weapon_material("olive", Color(0.30, 0.35, 0.22), 0.68, 0.18)
-			_add_cylinder(root, "Tube", Vector3(0.0, 0.0, -0.12), 0.042, 0.82, olive)
-			_add_cylinder(root, "WarheadStem", Vector3(0.0, 0.0, -0.56), 0.032, 0.12, dark)
-			_add_cylinder_ex(root, "WarheadHead", Vector3(0.0, 0.0, -0.68), 0.02, 0.095, 0.18, olive)
-			_add_box(root, "SightLeaf", Vector3(0.0, 0.075, -0.36), Vector3(0.02, 0.09, 0.02), dark)
-			_add_box(root, "TriggerBox", Vector3(0.0, 0.06, -0.16), Vector3(0.035, 0.05, 0.12), dark)
-			muzzle_z = -0.78
+			# Panzerfaust 60: пусковая труба, кумулятивная граната и откидная прицельная планка
+			_add_cylinder_ex(root, "LaunchTube", Vector3(0.0, 0.0, -0.08), 0.025, 0.025, 0.82, olive, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "WarheadStem", Vector3(0.0, 0.0, -0.52), 0.016, 0.016, 0.14, dark, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "WarheadCone", Vector3(0.0, 0.0, -0.66), 0.024, 0.072, 0.16, olive, Vector3(PI * 0.5, 0.0, 0.0))
+			_add_cylinder_ex(root, "WarheadNose", Vector3(0.0, 0.0, -0.76), 0.072, 0.072, 0.06, olive, Vector3(PI * 0.5, 0.0, 0.0))
+
+			# Прицельная стойка с прорезью (sight_y = 0.088) и клавиша спуска
+			_add_box(root, "SightLeaf", Vector3(0.0, 0.055, -0.28), Vector3(0.018, 0.075, 0.006), dark)
+			_add_box(root, "SightNotchL", Vector3(-0.005, 0.088, -0.28), Vector3(0.004, 0.012, 0.008), dark)
+			_add_box(root, "SightNotchR", Vector3(0.005, 0.088, -0.28), Vector3(0.004, 0.012, 0.008), dark)
+			_add_box(root, "TriggerLever", Vector3(0.0, 0.038, -0.15), Vector3(0.022, 0.035, 0.090), dark)
+			muzzle_y = 0.0
+			muzzle_z = -0.80
 		"drone_controller":
 			# Handheld FPV terminal with screen and dual joysticks
 			_add_box(root, "ConsoleBody", Vector3(0.0, -0.05, -0.22), Vector3(0.28, 0.05, 0.18), dark)
@@ -125,7 +241,7 @@ static func make_weapon(weapon_id: String) -> Node3D:
 		return root
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
-	muzzle.position = Vector3(0.0, 0.05, muzzle_z)
+	muzzle.position = Vector3(0.0, muzzle_y, muzzle_z)
 	root.add_child(muzzle)
 	return root
 
@@ -451,6 +567,23 @@ static func _add_box(parent: Node3D, node_name: String, pos: Vector3, dimensions
 	mesh_instance.position = pos
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mesh_instance)
+
+## Добавляет реалистичные мушку и целик, выровненные строго по оси X = 0 на высоте sight_y.
+static func _add_iron_sights(parent: Node3D, rear_z: float, front_z: float, sight_y: float, notch_w := 0.0035, post_w := 0.0028, post_h := 0.010, hood := false, steel_mat: Material = null) -> void:
+	# 1. Целик (Rear Sight Notch) на Z = rear_z
+	_add_box(parent, "SightRearBase", Vector3(0.0, sight_y - post_h * 0.70, rear_z), Vector3(0.022, 0.006, 0.016), steel_mat)
+	_add_box(parent, "SightRearL", Vector3(-notch_w - 0.004, sight_y - post_h * 0.45, rear_z), Vector3(0.008, post_h * 0.90, 0.006), steel_mat)
+	_add_box(parent, "SightRearR", Vector3(notch_w + 0.004, sight_y - post_h * 0.45, rear_z), Vector3(0.008, post_h * 0.90, 0.006), steel_mat)
+
+	# 2. Мушка (Front Sight Post) на Z = front_z (вершина строго на высоте sight_y)
+	_add_box(parent, "SightFrontPost", Vector3(0.0, sight_y - post_h * 0.48, front_z), Vector3(post_w, post_h * 0.96, 0.005), steel_mat)
+	_add_box(parent, "SightFrontBase", Vector3(0.0, sight_y - post_h * 0.90, front_z), Vector3(0.016, 0.006, 0.014), steel_mat)
+
+	# 3. Круглый защитный намушник (hood)
+	if hood:
+		_add_box(parent, "SightHoodL", Vector3(-0.010, sight_y - post_h * 0.15, front_z), Vector3(0.0025, post_h * 1.5, 0.014), steel_mat)
+		_add_box(parent, "SightHoodR", Vector3(0.010, sight_y - post_h * 0.15, front_z), Vector3(0.0025, post_h * 1.5, 0.014), steel_mat)
+		_add_box(parent, "SightHoodTop", Vector3(0.0, sight_y + post_h * 0.55, front_z), Vector3(0.022, 0.0025, 0.014), steel_mat)
 
 static func _add_cylinder(parent: Node3D, node_name: String, pos: Vector3, radius: float, length: float, material: Material) -> void:
 	_add_cylinder_ex(parent, node_name, pos, radius, radius, length, material, Vector3(PI * 0.5, 0.0, 0.0))

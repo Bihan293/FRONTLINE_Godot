@@ -17,6 +17,7 @@ const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const DIGGABLE_GROUND_SCRIPT = preload("res://scripts/diggable_ground.gd")
 const TURRET_SCRIPT = preload("res://scripts/static_turret.gd")
 const JEEP_SCRIPT = preload("res://scripts/jeep.gd")
+const TACTICAL_DEPLOY_SCRIPT = preload("res://scripts/tactical_deploy.gd")
 
 const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
@@ -99,8 +100,14 @@ func _ready() -> void:
 	_build_sectors()
 	_build_hud()
 	_spawn_initial_squads()
-	if bool(get_tree().get_meta("deploy_intro", false)):
+	if bool(get_tree().get_meta("open_tactical_deploy_at_start", false)):
+		get_tree().set_meta("open_tactical_deploy_at_start", false)
+		get_tree().set_meta("deploy_intro", false)
+		open_tactical_deploy()
+	elif bool(get_tree().get_meta("deploy_intro", false)):
 		_play_deploy_intro()
+	elif not OS.has_feature("dedicated_server") and not bool(get_tree().get_meta("skip_deploy_screen", false)) and DisplayServer.get_name() != "headless":
+		open_tactical_deploy()
 
 func _make_detail_texture() -> Texture2D:
 	var noise := FastNoiseLite.new()
@@ -402,6 +409,91 @@ func _play_deploy_intro() -> void:
 			player.call("set_input_locked", false)
 		if player_hud is CanvasLayer:
 			(player_hud as CanvasLayer).visible = true
+	)
+
+## Открывает интерактивный тактический вид сверху карты для выбора точки деплоя и класса.
+func open_tactical_deploy() -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var player_camera := player.get("camera") as Camera3D
+	if player_camera == null:
+		return
+
+	player.call("set_input_locked", true)
+	var player_hud = player.get("hud")
+	if player_hud is CanvasLayer:
+		(player_hud as CanvasLayer).visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+	# Создаем тактическую камеру с видом сверху на поле боя
+	var overhead_cam := Camera3D.new()
+	overhead_cam.name = "TacticalOverheadCamera"
+	overhead_cam.fov = 65.0
+	overhead_cam.far = 600.0
+	add_child(overhead_cam)
+
+	var center_look := Vector3(0.0, 0.0, -10.0)
+	var cam_pos := Vector3(0.0, 52.0, 38.0)
+	if team_name.contains("RED"):
+		cam_pos = Vector3(0.0, 52.0, -38.0)
+		center_look = Vector3(0.0, 0.0, 10.0)
+	overhead_cam.look_at_from_position(cam_pos, center_look, Vector3.UP)
+	overhead_cam.current = true
+
+	# Создаем тактический интерфейс спавна и выбора экипировки
+	var deploy_ui = TACTICAL_DEPLOY_SCRIPT.new()
+	add_child(deploy_ui)
+	var base_spawns: Array = _layout().spawns_red() if team_name.contains("RED") else _layout().spawns_iron()
+	deploy_ui.setup(team_name, sector_data, base_spawns)
+
+	deploy_ui.deployed.connect(func(spawn_pos: Vector3, role_name: String, primary_idx: int):
+		_on_player_tactical_deployed(spawn_pos, role_name, primary_idx, overhead_cam)
+	)
+
+func _on_player_tactical_deployed(spawn_pos: Vector3, role_name: String, primary_idx: int, overhead_cam: Camera3D) -> void:
+	if player == null or not is_instance_valid(player):
+		if is_instance_valid(overhead_cam):
+			overhead_cam.queue_free()
+		return
+
+	player.set("player_role", role_name)
+	player.set("respawn_position", spawn_pos)
+	player.set("current_weapon_index", primary_idx)
+	if player.get("is_dead"):
+		player.call("respawn")
+	else:
+		player.global_position = spawn_pos
+		player.call("respawn")
+
+	var player_camera := player.get("camera") as Camera3D
+	if player_camera == null or not is_instance_valid(overhead_cam):
+		if is_instance_valid(overhead_cam):
+			overhead_cam.queue_free()
+		player.call("set_input_locked", false)
+		if not OS.has_feature("mobile"):
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		return
+
+	# Плавная кинематографичная анимация спуска камеры в бой к телу бойца (1.7 секунды)
+	var final_pos := player_camera.global_position
+	var final_rot := player_camera.global_rotation
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(overhead_cam, "global_position", final_pos, 1.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(overhead_cam, "global_rotation", final_rot, 1.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.chain().tween_callback(func():
+		if is_instance_valid(overhead_cam):
+			overhead_cam.queue_free()
+		if is_instance_valid(player):
+			var pc := player.get("camera") as Camera3D
+			if pc != null:
+				pc.current = true
+			player.call("set_input_locked", false)
+			var ph = player.get("hud")
+			if ph is CanvasLayer:
+				(ph as CanvasLayer).visible = true
+			if not OS.has_feature("mobile"):
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	)
 
 func _build_sectors() -> void:

@@ -10,6 +10,8 @@ const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const SOLDIER_BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
+const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
+const TACTICAL_DEPLOY = preload("res://scripts/tactical_deploy.gd")
 
 var _failures: Array[String] = []
 
@@ -28,6 +30,11 @@ func _ready() -> void:
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
 	await _test_vehicles()
+	await _test_tactical_bot_ai()
+	await _test_ballistic_bullet_tracers()
+	await _test_toggle_lean()
+	await _test_tactical_deployment_screen()
+	await _test_first_person_hands()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -307,6 +314,7 @@ func _test_minimap_alignment() -> void:
 func _test_pause_freezes_bots() -> void:
 	get_tree().set_meta("selected_map", "BATTLEFIELD")
 	get_tree().set_meta("selected_mode", "CONQUEST")
+	get_tree().set_meta("skip_deploy_screen", true)
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
 	_check(scene != null, "battlefield scene missing")
 	if scene == null:
@@ -369,6 +377,7 @@ func _run_loadout_case(role_id: String, preset_id: String, expected_grenades: in
 	get_tree().set_meta("selected_map", "BATTLEFIELD")
 	get_tree().set_meta("selected_mode", "CONQUEST")
 	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("skip_deploy_screen", true)
 	get_tree().set_meta("selected_role", role_id)
 	get_tree().set_meta("selected_loadout", preset_id)
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
@@ -393,6 +402,7 @@ func _test_role_weapon_restrictions() -> void:
 	get_tree().set_meta("selected_map", "BATTLEFIELD")
 	get_tree().set_meta("selected_mode", "CONQUEST")
 	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("skip_deploy_screen", true)
 	get_tree().set_meta("selected_role", "ASSAULT")
 	get_tree().set_meta("selected_loadout", "BALANCED")
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
@@ -604,6 +614,233 @@ func _test_bodycam_kinematics_and_camera_safety() -> void:
 		player.set("mobile_lean_right", true)
 		player.call("_physics_process", 0.016)
 		_check(absf(cam.position.x) >= 0.0, "camera lean calculation failed")
+
+	player.queue_free()
+	await get_tree().process_frame
+
+func _test_tactical_bot_ai() -> void:
+	var bot: FRONTLINESoldierBot = SOLDIER_BOT_SCRIPT.new()
+	bot.bot_weapon_index = 0 # AK-47
+	bot.position = Vector3(0.0, 0.0, 0.0)
+	add_child(bot)
+	await get_tree().process_frame
+
+	_check("target_acquisition_timer" in bot, "bot missing target_acquisition_timer")
+	_check("combat_strafe_timer" in bot, "bot missing combat_strafe_timer")
+	_check(bot.has_method("_avoid_obstacles"), "bot missing _avoid_obstacles method")
+
+	# 1. Target acquisition windup delay: bot does not fire instantly on acquiring target
+	var dummy_enemy := CharacterBody3D.new()
+	dummy_enemy.position = Vector3(0.0, 0.0, 12.0)
+	dummy_enemy.set_meta("selected_team", "RED FRONT" if bot.team_name.contains("IRON") else "IRON LEGION")
+	add_child(dummy_enemy)
+	await get_tree().process_frame
+
+	bot.current_target = dummy_enemy
+	bot.fire_cooldown = 0.0
+	bot.target_acquisition_timer = 0.45
+	var ammo_before := int(bot.ammo)
+	bot.call("_combat_behavior", 0.016)
+	_check(int(bot.ammo) == ammo_before, "bot fired instantly during target acquisition windup")
+	_check(float(bot.target_acquisition_timer) < 0.45, "target_acquisition_timer did not decrement")
+
+	# 2. Suppression reaction: taking fire raises suppression and forces crouch stance in combat
+	bot.set("suppression", 0.0)
+	bot.receive_hit(25, bot.global_position + Vector3(0.0, 1.0, 5.0), "chest", "Player")
+	_check(float(bot.get("suppression")) >= 0.40, "bot suppression did not increase upon taking fire")
+	bot.target_acquisition_timer = 0.0
+	bot.call("_combat_behavior", 0.016)
+	_check(int(bot.stance) == 1, "bot did not duck into crouch stance when heavily suppressed")
+
+	# 3. Obstacle avoidance: detects obstacle in front and deflects
+	var obstacle := StaticBody3D.new()
+	obstacle.collision_layer = 1
+	obstacle.collision_mask = 0
+	var col_shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 3.0, 0.3)
+	col_shape.shape = box
+	obstacle.add_child(col_shape)
+	obstacle.position = bot.global_position + Vector3(0.0, 0.8, -1.0)
+	add_child(obstacle)
+	await get_tree().physics_frame
+
+	var desired := Vector3(0.0, 0.0, -1.0)
+	var avoided: Vector3 = bot.call("_avoid_obstacles", desired)
+	_check(avoided.distance_to(desired) > 0.1, "obstacle avoidance did not deflect away from blocking wall")
+	_check(avoided.length() > 0.5, "avoidance vector is too small")
+
+	obstacle.queue_free()
+	dummy_enemy.queue_free()
+	bot.queue_free()
+	await get_tree().process_frame
+
+func _test_ballistic_bullet_tracers() -> void:
+	_check(BULLET_SCRIPT != null, "bullet_projectile.gd missing")
+	if BULLET_SCRIPT == null:
+		return
+
+	var dummy_bullet = BULLET_SCRIPT.new()
+	# Material tests for factions
+	var mat_red: StandardMaterial3D = dummy_bullet.call("_get_tracer_material", "RED FRONT")
+	_check(mat_red != null, "failed to get tracer material for RED FRONT")
+	if mat_red != null:
+		_check(mat_red.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED, "RED tracer material is not unshaded")
+		_check(mat_red.emission_enabled, "RED tracer emission is disabled")
+		_check(mat_red.emission_energy_multiplier >= 3.0, "RED tracer emission multiplier < 3.0: %f" % mat_red.emission_energy_multiplier)
+		_check(mat_red.albedo_color.g > mat_red.albedo_color.r, "RED faction tracer is not green-dominant")
+
+	var mat_iron: StandardMaterial3D = dummy_bullet.call("_get_tracer_material", "IRON LEGION")
+	_check(mat_iron != null, "failed to get tracer material for IRON LEGION")
+	if mat_iron != null:
+		_check(mat_iron.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED, "IRON tracer material is not unshaded")
+		_check(mat_iron.emission_enabled, "IRON tracer emission is disabled")
+		_check(mat_iron.emission_energy_multiplier >= 3.0, "IRON tracer emission multiplier < 3.0: %f" % mat_iron.emission_energy_multiplier)
+		_check(mat_iron.albedo_color.r > mat_iron.albedo_color.b, "IRON faction tracer is not amber/orange-dominant")
+	dummy_bullet.free()
+
+	# Bullet visual mesh dimensions
+	var dummy_shooter := Node3D.new()
+	add_child(dummy_shooter)
+	var bullet = BULLET_SCRIPT.new()
+	bullet.configure(Vector3(0, 2, 0), Vector3.FORWARD, 100.0, 25, 60.0, "Shooter", "IRON LEGION", dummy_shooter)
+	add_child(bullet)
+	await get_tree().process_frame
+
+	var visual := bullet.get_node_or_null("VisibleBullet") as MeshInstance3D
+	_check(visual != null, "bullet missing VisibleBullet mesh instance")
+	if visual != null:
+		var mesh := visual.mesh as BoxMesh
+		_check(mesh != null, "VisibleBullet mesh is not a BoxMesh")
+		if mesh != null:
+			_check(mesh.size.z >= 0.8, "tracer mesh length < 0.8m: %f" % mesh.size.z)
+			_check(mesh.size.x >= 0.03, "tracer mesh thickness < 0.03m: %f" % mesh.size.x)
+		_check(visual.material_override != null, "VisibleBullet missing material_override")
+
+	bullet.queue_free()
+	dummy_shooter.queue_free()
+	await get_tree().process_frame
+
+func _test_toggle_lean() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	_check("lean_toggle" in player, "player missing lean_toggle variable")
+	_check(int(player.get("lean_toggle")) == 0, "initial lean_toggle is not 0")
+
+	# 1. First peek right -> lean_toggle becomes 1
+	player.call("_on_mobile_peek_right", true)
+	_check(int(player.get("lean_toggle")) == 1, "first peek_right did not set lean_toggle to 1")
+
+	# 2. Second peek right -> toggles back to 0 (center)
+	player.call("_on_mobile_peek_right", true)
+	_check(int(player.get("lean_toggle")) == 0, "second peek_right did not toggle lean_toggle back to 0")
+
+	# 3. Peek left -> lean_toggle becomes -1
+	player.call("_on_mobile_peek_left", true)
+	_check(int(player.get("lean_toggle")) == -1, "peek_left did not set lean_toggle to -1")
+
+	# 4. Direct switch to right -> lean_toggle becomes 1
+	player.call("_on_mobile_peek_right", true)
+	_check(int(player.get("lean_toggle")) == 1, "switching peek_right did not override lean_toggle to 1")
+
+	# 5. Sprint or vault automatically resets lean
+	player.velocity = Vector3(0.0, 0.0, -8.0)
+	player.set("mobile_move", Vector2(0.0, -1.0))
+	player.call("_physics_process", 0.016)
+	_check(int(player.get("lean_toggle")) == 0, "sprinting did not auto-cancel lean_toggle")
+
+	player.queue_free()
+	await get_tree().process_frame
+
+func _test_tactical_deployment_screen() -> void:
+	# 1. Test FRONTLINETacticalDeploy standalone instantiation and API
+	_check(TACTICAL_DEPLOY != null, "tactical_deploy.gd script missing")
+	if TACTICAL_DEPLOY != null:
+		var deploy_ui = TACTICAL_DEPLOY.new()
+		add_child(deploy_ui)
+		deploy_ui.setup("IRON LEGION", [], [Vector3(0.0, 0.0, 10.0)])
+		_check(deploy_ui.has_signal("deployed"), "tactical deploy UI missing deployed signal")
+		_check(deploy_ui.CLASSES.size() >= 5, "tactical deploy classes count < 5")
+		_check(deploy_ui.selected_spawn == Vector3(0.0, 0.0, 10.0), "tactical deploy selected_spawn did not bind base spawn")
+		deploy_ui.queue_free()
+
+	# 2. Test deploy metadata propagation and layout spawn coordinates
+	var bf_layout: Script = load("res://scripts/battlefield_layout.gd")
+	_check(bf_layout != null, "battlefield_layout.gd missing")
+	if bf_layout != null:
+		var iron_spawns: Array = bf_layout.call("spawns_iron")
+		var red_spawns: Array = bf_layout.call("spawns_red")
+		_check(iron_spawns.size() >= 3, "iron legion spawns count < 3")
+		_check(red_spawns.size() >= 3, "red front spawns count < 3")
+
+	# 3. Test deploy intro camera sequence in Battlefield scene
+	get_tree().set_meta("selected_map", "BATTLEFIELD")
+	get_tree().set_meta("selected_mode", "CONQUEST")
+	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("skip_deploy_screen", true)
+	get_tree().set_meta("deploy_intro", true)
+
+	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
+	_check(scene != null, "battlefield scene missing for deploy intro test")
+	if scene == null:
+		return
+	var battlefield := scene.instantiate()
+	add_child(battlefield)
+	await get_tree().process_frame
+
+	_check(not bool(get_tree().get_meta("deploy_intro", false)), "deploy_intro metadata was not consumed by _play_deploy_intro")
+
+	var player := get_tree().get_first_node_in_group("player")
+	_check(player != null, "player not found in battlefield during deploy test")
+	if player != null:
+		_check(bool(player.get("is_input_locked")), "player input not locked during deploy fly-in")
+
+	var cameras := battlefield.find_children("*", "Camera3D", true, false)
+	var found_intro := false
+	for cam in cameras:
+		var c := cam as Camera3D
+		if c != null and c != player.get("camera") and c.current:
+			found_intro = true
+			_check(c.global_position.y > player.global_position.y + 30.0, "deploy intro camera height too low: %f" % c.global_position.y)
+			break
+	_check(found_intro, "deploy intro fly-in Camera3D not found or not active")
+
+	battlefield.queue_free()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _test_first_person_hands() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	_check(bool(player.get("SHOW_VIEW_ARMS")), "SHOW_VIEW_ARMS is not true")
+
+	var arm_l: MeshInstance3D = player.get("_view_arm_left")
+	var arm_r: MeshInstance3D = player.get("_view_arm_right")
+	_check(arm_l != null, "player missing _view_arm_left MeshInstance3D")
+	_check(arm_r != null, "player missing _view_arm_right MeshInstance3D")
+
+	if arm_l != null and arm_r != null:
+		_check(arm_l.mesh is CylinderMesh, "_view_arm_left mesh is not CylinderMesh")
+		_check(arm_r.mesh is CylinderMesh, "_view_arm_right mesh is not CylinderMesh")
+		_check(arm_l.material_override != null, "_view_arm_left missing material_override")
+
+	player.call("_update_view_arms")
+	if arm_l != null and arm_r != null:
+		_check(arm_l.visible, "_view_arm_left not visible when wielding weapon")
+		_check(arm_r.visible, "_view_arm_right not visible when wielding weapon")
+
+	# When weapon is hidden (e.g. mounted vehicle / turret), arms must also be hidden
+	var weapon_root: Node3D = player.get("weapon_root")
+	if weapon_root != null:
+		weapon_root.visible = false
+		player.call("_update_view_arms")
+		if arm_l != null and arm_r != null:
+			_check(not arm_l.visible, "_view_arm_left stayed visible when weapon_root was hidden")
+			_check(not arm_r.visible, "_view_arm_right stayed visible when weapon_root was hidden")
 
 	player.queue_free()
 	await get_tree().process_frame

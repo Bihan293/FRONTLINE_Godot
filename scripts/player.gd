@@ -14,7 +14,7 @@ const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
-const SHOW_VIEW_ARMS := false
+const SHOW_VIEW_ARMS := true
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -82,6 +82,9 @@ var aim_blend := 0.0
 var aiming := false
 var look_sway := Vector2.ZERO
 var lean_amount := 0.0
+var lean_toggle := 0 # -1: наклон влево, 0: центр, 1: наклон вправо (Toggle Lean)
+var _last_key_q := false
+var _last_key_e := false
 var mobile_lean_left := false
 var mobile_lean_right := false
 
@@ -311,37 +314,37 @@ func _equip_weapon_visual() -> void:
 			right_wrist_offset = Vector3(0.01, -0.06, 0.02)
 		"mp40":
 			hip_pos = Vector3(0.075, -0.16, -0.48)
-			aim_pos = Vector3(0.0, -0.082, -0.48)
+			aim_pos = Vector3(0.0, -0.075, -0.48)
 			left_wrist_offset = Vector3(-0.02, -0.04, -0.14) # шахта магазина
 			right_wrist_offset = Vector3(0.01, -0.06, 0.04)
 		"mosin":
 			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.118, -0.50)
+			aim_pos = Vector3(0.0, -0.060, -0.50)
 			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # длинное ложе
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"m1911":
 			hip_pos = Vector3(0.05, -0.15, -0.44) # вынесенный пистолетный хват
-			aim_pos = Vector3(0.0, -0.075, -0.40)
+			aim_pos = Vector3(0.0, -0.048, -0.38)
 			left_wrist_offset = Vector3(-0.03, -0.055, 0.02) # хват второй рукой снизу
 			right_wrist_offset = Vector3(0.01, -0.055, 0.02)
 		"shotgun":
 			hip_pos = Vector3(0.09, -0.18, -0.50)
-			aim_pos = Vector3(0.0, -0.095, -0.48)
+			aim_pos = Vector3(0.0, -0.054, -0.46)
 			left_wrist_offset = Vector3(-0.02, -0.04, -0.22) # подвижное цевьё
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"ppsh41":
 			hip_pos = Vector3(0.08, -0.17, -0.48)
-			aim_pos = Vector3(0.0, -0.088, -0.48)
+			aim_pos = Vector3(0.0, -0.052, -0.46)
 			left_wrist_offset = Vector3(-0.02, -0.035, -0.16) # хват под барабаном
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"kar98k":
 			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.136, -0.46) # приклад плотно к плечу для оптики
+			aim_pos = Vector3(0.0, -0.075, -0.44) # оптическая ось прицела ZF-39 строго по центру
 			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # ложе
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"panzerfaust":
 			hip_pos = Vector3(0.14, -0.09, -0.46) # удержание на правом плече
-			aim_pos = Vector3(0.02, -0.065, -0.42) # прицельная планка
+			aim_pos = Vector3(0.0, -0.088, -0.42) # прицельная прорезь точно по центру
 			left_wrist_offset = Vector3(-0.03, -0.02, -0.28) # поддержка трубы спереди
 			right_wrist_offset = Vector3(0.01, 0.03, -0.08) # кнопка спуска сверху
 
@@ -560,14 +563,16 @@ func _make_view_arm(arm_name: String) -> MeshInstance3D:
 	var arm := MeshInstance3D.new()
 	arm.name = arm_name
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.035
-	mesh.bottom_radius = 0.050
+	mesh.top_radius = 0.038
+	mesh.bottom_radius = 0.052
 	mesh.height = 1.0
 	mesh.radial_segments = 8
 	arm.mesh = mesh
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.10, 0.10, 0.08)
-	material.roughness = 1.0
+	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var is_red: bool = player_team.to_upper().contains("RED") or player_team.to_upper().contains("SOVIET")
+	material.albedo_color = Color(0.25, 0.29, 0.18) if is_red else Color(0.24, 0.25, 0.26)
+	material.roughness = 0.92
 	arm.material_override = material
 	arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if camera != null:
@@ -577,20 +582,21 @@ func _make_view_arm(arm_name: String) -> MeshInstance3D:
 func _update_view_arms() -> void:
 	if camera == null:
 		return
-	if not SHOW_VIEW_ARMS:
+	if not SHOW_VIEW_ARMS or (weapon_root != null and not weapon_root.visible):
 		if _view_arm_left != null:
 			_view_arm_left.visible = false
 		if _view_arm_right != null:
 			_view_arm_right.visible = false
 		return
+	var cam_xf := camera.global_transform
+	var l_shoulder := cam_xf.origin + cam_xf.basis * Vector3(-0.16, -0.15, -0.06)
+	var r_shoulder := cam_xf.origin + cam_xf.basis * Vector3(0.16, -0.15, -0.06)
 	if wrist_left_marker != null and _view_arm_left != null:
 		var l_end := wrist_left_marker.global_position
-		var l_start := l_end + camera.global_transform.basis * Vector3(-0.035, 0.055, 0.14)
-		_place_view_arm(_view_arm_left, l_start, l_end)
+		_place_view_arm(_view_arm_left, l_shoulder, l_end)
 	if wrist_right_marker != null and _view_arm_right != null:
 		var r_end := wrist_right_marker.global_position
-		var r_start := r_end + camera.global_transform.basis * Vector3(0.035, 0.055, 0.14)
-		_place_view_arm(_view_arm_right, r_start, r_end)
+		_place_view_arm(_view_arm_right, r_shoulder, r_end)
 
 func _place_view_arm(arm: MeshInstance3D, start: Vector3, end: Vector3) -> void:
 	var delta := end - start
@@ -643,8 +649,7 @@ func _add_view_hand(marker: Node3D, is_left: bool) -> void:
 	cuff.position = Vector3(0.0, -0.01, 0.07)
 	cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
 	cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Рукав пока скрыт: на низкополигональной модели он читается как чёрный блок.
-	cuff.visible = false
+	cuff.visible = true
 	marker.add_child(cuff)
 
 func _set_aiming(enabled: bool) -> void:
@@ -1036,10 +1041,18 @@ func _build_death_screen() -> void:
 	center.add_child(death_info_label)
 
 	var respawn_btn := Button.new()
-	respawn_btn.text = "ВОЗРОДИТЬСЯ (RESPAWN)"
+	respawn_btn.text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ (DEPLOY)"
 	respawn_btn.custom_minimum_size = Vector2(300, 56)
 	respawn_btn.add_theme_font_size_override("font_size", 20)
-	respawn_btn.pressed.connect(respawn)
+	respawn_btn.pressed.connect(func():
+		var world := get_parent()
+		if world != null and world.has_method("open_tactical_deploy"):
+			if death_screen != null:
+				death_screen.visible = false
+			world.call("open_tactical_deploy")
+		else:
+			respawn()
+	)
 	center.add_child(respawn_btn)
 
 	var menu_btn := Button.new()
@@ -1062,7 +1075,8 @@ func _on_look_delta(delta: Vector2) -> void:
 		active_drone.drone_pitch = clampf(active_drone.drone_pitch - delta.y * TOUCH_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
 		return
 	var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
-	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor
+	var mount_factor := 0.62 if (mounted_vehicle != null and is_instance_valid(mounted_vehicle)) else 1.0
+	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor * mount_factor
 	yaw -= delta.x * sense
 	var pitch_delta := delta.y * sense
 	if GameSettings.invert_y:
@@ -1079,10 +1093,12 @@ func _on_fire_changed(pressed: bool) -> void:
 		active_drone.detonate(active_drone.global_position)
 
 func _on_mobile_peek_left(pressed: bool) -> void:
-	mobile_lean_left = pressed
+	if pressed:
+		lean_toggle = 0 if lean_toggle == -1 else -1
 
 func _on_mobile_peek_right(pressed: bool) -> void:
-	mobile_lean_right = pressed
+	if pressed:
+		lean_toggle = 0 if lean_toggle == 1 else 1
 
 func _on_drone_vertical_changed(direction: float, pressed: bool) -> void:
 	drone_vertical_input = direction if pressed else 0.0
@@ -1484,7 +1500,17 @@ func _physics_process(delta: float) -> void:
 	var target_y := 1.70 if stance == 0 else (1.28 if stance == 1 else 0.52)
 	var cam_bob_y := absf(sin(bob_time * 2.0)) * 0.014 * run_boost * bob_factor
 	var cam_bob_x := sin(bob_time) * 0.010 * run_boost * bob_factor
-	var lean_input := float(Input.is_key_pressed(KEY_E) or mobile_lean_right) - float(Input.is_key_pressed(KEY_Q) or mobile_lean_left)
+	var key_q := Input.is_key_pressed(KEY_Q)
+	var key_e := Input.is_key_pressed(KEY_E)
+	if key_q and not _last_key_q:
+		lean_toggle = 0 if lean_toggle == -1 else -1
+	if key_e and not _last_key_e:
+		lean_toggle = 0 if lean_toggle == 1 else 1
+	_last_key_q = key_q
+	_last_key_e = key_e
+	if is_vaulting or planar_speed > SPEED + 0.4 or current_speed >= SPRINT_SPEED - 0.1:
+		lean_toggle = 0
+	var lean_input := float(lean_toggle)
 	var lean_side := lean_input * 0.42
 	if absf(lean_side) > 0.01:
 		var lean_from := global_position + Vector3.UP * target_y
@@ -1517,6 +1543,7 @@ func _process_mounted_vehicle(delta: float) -> void:
 	var firing := mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
 	if firing and mounted_vehicle.has_method("try_fire"):
 		mounted_vehicle.call("try_fire", self)
+	_apply_look(delta)
 	_refresh_pickup_prompt()
 
 func _enter_vehicle(vehicle: Node3D) -> void:
@@ -2392,6 +2419,13 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 		death_info_label.text = "Вас уничтожил: " + killer_name
 	if death_screen != null:
 		death_screen.visible = true
+		get_tree().create_timer(2.6, false).timeout.connect(func():
+			if is_dead and death_screen != null and death_screen.visible:
+				var parent_node := get_parent()
+				if parent_node != null and parent_node.has_method("open_tactical_deploy"):
+					death_screen.visible = false
+					parent_node.call("open_tactical_deploy")
+		)
 
 func respawn() -> void:
 	if active_drone != null and is_instance_valid(active_drone):

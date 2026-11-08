@@ -67,24 +67,38 @@ func _physics_process(delta: float) -> void:
 	_face_velocity()
 
 static var _SHARED_MESH: BoxMesh = null
-static var _SHARED_MAT: StandardMaterial3D = null
+static var _MAT_CACHE: Dictionary = {}
+
+static func _get_tracer_material(team: String) -> StandardMaterial3D:
+	var is_red := team.to_upper().contains("RED") or team.to_upper().contains("SOVIET")
+	var key := "tracer_red" if is_red else "tracer_iron"
+	if _MAT_CACHE.has(key):
+		return _MAT_CACHE[key]
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.emission_enabled = true
+	if is_red:
+		# Советский ярко-зеленый фосфорный трассер (Green Tracer)
+		mat.albedo_color = Color(0.35, 1.0, 0.25)
+		mat.emission = Color(0.40, 1.0, 0.30)
+	else:
+		# Трассер Железного легиона (Amber/Orange Tracer)
+		mat.albedo_color = Color(1.0, 0.55, 0.12)
+		mat.emission = Color(1.0, 0.48, 0.10)
+	mat.emission_energy_multiplier = 7.0
+	_MAT_CACHE[key] = mat
+	return mat
 
 func _build_visual() -> void:
 	if _SHARED_MESH == null:
 		_SHARED_MESH = BoxMesh.new()
-		_SHARED_MESH.size = Vector3(0.010, 0.010, 0.36)
-	if _SHARED_MAT == null:
-		_SHARED_MAT = StandardMaterial3D.new()
-		_SHARED_MAT.albedo_color = Color(1.0, 0.78, 0.30)
-		_SHARED_MAT.emission_enabled = true
-		_SHARED_MAT.emission = Color(1.0, 0.55, 0.12)
-		_SHARED_MAT.emission_energy_multiplier = 0.55
-		_SHARED_MAT.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		# Длина 1.95 м для предотвращения стробирования на 60 FPS при 730 м/с
+		_SHARED_MESH.size = Vector3(0.042, 0.042, 1.95)
 
 	_visual = MeshInstance3D.new()
 	_visual.name = "VisibleBullet"
 	_visual.mesh = _SHARED_MESH
-	_visual.material_override = _SHARED_MAT
+	_visual.material_override = _get_tracer_material(shooter_team)
 	_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_visual)
 

@@ -228,7 +228,8 @@ func _show_maps() -> void:
 
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
-	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _show_deployment, Vector2(0,58))
+	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _launch_map_tactical, Vector2(0,58))
+	var loadout_btn := _button(details, "НАСТРОИТЬ ЭКИПИРОВКУ (2D МЕНЮ)", _show_deployment, Vector2(0,44))
 
 	set_meta("map_details", details)
 	set_meta("polygon_preview", image)
@@ -285,6 +286,17 @@ func _select_polygon() -> void:
 	(get_meta("village_preview") as Control).visible = false
 	title_lbl.text = "POLYGON  /  TRAINING RANGE"
 	desc_lbl.text = "Тренировочный полигон: дистанционные мишени, укрытия, движущиеся и стреляющие бойцы с процедурными анимациями и физическим падением при попадании."
+
+func _launch_map_tactical() -> void:
+	get_tree().set_meta("selected_map", selected_map)
+	get_tree().set_meta("selected_mode", selected_mode)
+	get_tree().set_meta("selected_team", selected_team)
+	get_tree().set_meta("open_tactical_deploy_at_start", true)
+	get_tree().set_meta("deploy_intro", false)
+	if selected_map == "POLYGON":
+		get_tree().change_scene_to_file("res://scenes/Main.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
 
 func _show_teams() -> void:
 	var root := _make_shell("ВЫБОР СТОРОНЫ  (" + selected_map + ")")
@@ -814,12 +826,14 @@ func _deploy() -> void:
 		var sp: Vector3 = spawns[index % spawns.size()]
 		get_tree().set_meta("spawn_position", sp)
 		get_tree().set_meta("selected_mode", selected_mode)
+		get_tree().set_meta("open_tactical_deploy_at_start", true)
 		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
 	elif map == "BATTLEFIELD":
 		var spawns: Array = BATTLEFIELD_LAYOUT.spawns_red() if selected_team.contains("RED") else BATTLEFIELD_LAYOUT.spawns_iron()
 		var sp: Vector3 = spawns[index % spawns.size()]
 		get_tree().set_meta("spawn_position", sp)
 		get_tree().set_meta("selected_mode", selected_mode)
+		get_tree().set_meta("open_tactical_deploy_at_start", true)
 		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
 	else:
 		var spawn_positions: Array = LAYOUT.spawns()

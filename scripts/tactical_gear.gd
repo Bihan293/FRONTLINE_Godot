@@ -38,8 +38,18 @@ static func add_tactical_loadout(root: Node3D, is_red: bool, include_helmet_and_
 		if helmet_res != null:
 			var h: Node3D = helmet_res.instantiate()
 			h.name = "Helmet"
-			h.position = Vector3(0.0, 1.78, 0.0)
+			# Адаптированная посадка шлема на кубическую голову бойца (ширина головы 0.245 м, диагональ 0.173 м):
+			# Увеличенный масштаб полностью закрывает углы квадратной головы без клиппинга,
+			# а смещение по Y и Z сажает каску плотно на надбровные дуги.
+			h.position = Vector3(0.0, 1.745, -0.012)
+			h.scale = Vector3(1.22, 1.15, 1.25)
 			root.add_child(h)
+
+			# Тактический подшлемник/обод и подбородочный ремешок каски
+			var strap_color := Color(0.18, 0.16, 0.14)
+			_add_box(root, "Helmet_Liner_Rim", Vector3(0.0, 1.742, -0.010), Vector3(0.255, 0.030, 0.255), strap_color)
+			_add_box(root, "Helmet_Strap_L", Vector3(-0.126, 1.695, 0.0), Vector3(0.010, 0.095, 0.018), strap_color)
+			_add_box(root, "Helmet_Strap_R", Vector3(0.126, 1.695, 0.0), Vector3(0.010, 0.095, 0.018), strap_color)
 		var vest_res = load(vest_path)
 		if vest_res != null:
 			var v: Node3D = vest_res.instantiate()
@@ -137,16 +147,35 @@ static func _get_or_create_box_mesh(dim: Vector3, col: Color) -> ArrayMesh:
 	var key := "box_%0.3f_%0.3f_%0.3f_%0.2f_%0.2f_%0.2f" % [dim.x, dim.y, dim.z, col.r, col.g, col.b]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
-	var bm := BoxMesh.new()
-	bm.size = dim
-	var st := SurfaceTool.new()
-	st.create_from(bm, 0)
-	var arr := st.commit_to_arrays()
-	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var h := dim * 0.5
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
 	var colors := PackedColorArray()
-	colors.resize(verts.size())
-	colors.fill(col)
+	var indices := PackedInt32Array()
+
+	var faces := [
+		[Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3.BACK],
+		[Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3.FORWARD],
+		[Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3(-h.x, h.y, -h.z), Vector3.LEFT],
+		[Vector3(h.x, -h.y, h.z), Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3.RIGHT],
+		[Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3.UP],
+		[Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z), Vector3(h.x, -h.y, h.z), Vector3(-h.x, -h.y, h.z), Vector3.DOWN],
+	]
+	for f in faces:
+		var base := verts.size()
+		verts.append_array([f[0], f[1], f[2], f[3]])
+		var norm: Vector3 = f[4]
+		norms.append_array([norm, norm, norm, norm])
+		colors.append_array([col, col, col, col])
+		indices.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
 	arr[Mesh.ARRAY_COLOR] = colors
+	arr[Mesh.ARRAY_INDEX] = indices
+
 	var am := ArrayMesh.new()
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	_mesh_cache[key] = am
@@ -156,27 +185,64 @@ static func _get_or_create_cylinder_mesh(top_r: float, btm_r: float, height: flo
 	var key := "cyl_%0.3f_%0.3f_%0.3f_%0.2f_%0.2f_%0.2f_%0.2f" % [top_r, btm_r, height, col.r, col.g, col.b, rot.x]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
-	var cm := CylinderMesh.new()
-	cm.top_radius = top_r
-	cm.bottom_radius = btm_r
-	cm.height = height
-	cm.radial_segments = 8
-	var st := SurfaceTool.new()
-	st.create_from(cm, 0)
-	var arr := st.commit_to_arrays()
-	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-	if rot != Vector3.ZERO:
-		var b := Basis.from_euler(rot)
-		for i in range(verts.size()):
-			verts[i] = b * verts[i]
-			normals[i] = (b * normals[i]).normalized()
-		arr[Mesh.ARRAY_VERTEX] = verts
-		arr[Mesh.ARRAY_NORMAL] = normals
+
+	var segs := 8
+	var hh := height * 0.5
+	var b := Basis.from_euler(rot) if rot != Vector3.ZERO else Basis.IDENTITY
+
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
 	var colors := PackedColorArray()
-	colors.resize(verts.size())
-	colors.fill(col)
+	var indices := PackedInt32Array()
+
+	for i in range(segs):
+		var a0 := float(i) * TAU / float(segs)
+		var a1 := float(i + 1) * TAU / float(segs)
+		var c0 := cos(a0)
+		var s0 := sin(a0)
+		var c1 := cos(a1)
+		var s1 := sin(a1)
+
+		var v_btm0 := b * Vector3(c0 * btm_r, -hh, s0 * btm_r)
+		var v_btm1 := b * Vector3(c1 * btm_r, -hh, s1 * btm_r)
+		var v_top0 := b * Vector3(c0 * top_r, hh, s0 * top_r)
+		var v_top1 := b * Vector3(c1 * top_r, hh, s1 * top_r)
+
+		var n0 := (b * Vector3(c0, 0, s0)).normalized()
+		var n1 := (b * Vector3(c1, 0, s1)).normalized()
+
+		# Side quad
+		var base := verts.size()
+		verts.append_array([v_btm0, v_btm1, v_top1, v_top0])
+		norms.append_array([n0, n1, n1, n0])
+		colors.append_array([col, col, col, col])
+		indices.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+
+		# Top cap
+		var top_base := verts.size()
+		var v_top_c := b * Vector3(0, hh, 0)
+		var n_up := b * Vector3.UP
+		verts.append_array([v_top_c, v_top0, v_top1])
+		norms.append_array([n_up, n_up, n_up])
+		colors.append_array([col, col, col])
+		indices.append_array([top_base, top_base + 1, top_base + 2])
+
+		# Bottom cap
+		var btm_base := verts.size()
+		var v_btm_c := b * Vector3(0, -hh, 0)
+		var n_down := b * Vector3.DOWN
+		verts.append_array([v_btm_c, v_btm1, v_btm0])
+		norms.append_array([n_down, n_down, n_down])
+		colors.append_array([col, col, col])
+		indices.append_array([btm_base, btm_base + 1, btm_base + 2])
+
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
 	arr[Mesh.ARRAY_COLOR] = colors
+	arr[Mesh.ARRAY_INDEX] = indices
+
 	var am := ArrayMesh.new()
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	_mesh_cache[key] = am

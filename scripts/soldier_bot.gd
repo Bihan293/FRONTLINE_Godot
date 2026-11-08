@@ -61,6 +61,14 @@ var burst_count := 0
 var burst_timer := 0.0
 var fire_cooldown := 0.0
 
+# Тактический боевой ИИ (Dummy War Tactical Firefight)
+var target_acquisition_timer := 0.0
+var combat_strafe_timer := 0.0
+var combat_strafe_dir := Vector3.ZERO
+var last_target_id := 0
+var obstacle_avoid_timer := 0.0
+var obstacle_avoid_dir := Vector3.ZERO
+
 # Узлы модели
 var _pivot: Node3D
 var _visual: Node3D
@@ -365,14 +373,22 @@ func _update_ai(delta: float) -> void:
 			_medic_timer = randf_range(3.5, 6.0)
 			_try_heal_nearby_ally()
 
-	# Таймер перезарядки
+	# Таймер перезарядки с уходом в укрытие
 	if is_reloading:
 		reload_timer -= delta
+		stance = 1 # приседает при перезарядке
 		if reload_timer <= 0.0:
 			ammo = MAG_SIZE
 			is_reloading = false
-		velocity.x = lerpf(velocity.x, 0.0, delta * 6.0)
-		velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
+		if current_target != null and is_instance_valid(current_target):
+			var away := (global_position - current_target.global_position).normalized()
+			away.y = 0.0
+			var retreat_dir := _avoid_obstacles(away)
+			velocity.x = lerpf(velocity.x, retreat_dir.x * SPEED_CROUCH, delta * 4.0)
+			velocity.z = lerpf(velocity.z, retreat_dir.z * SPEED_CROUCH, delta * 4.0)
+		else:
+			velocity.x = lerpf(velocity.x, 0.0, delta * 6.0)
+			velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
 		return
 
 	# Проверка целей с учетом реакции на выбранной сложности и дистанции до игрока
@@ -441,7 +457,13 @@ func _find_target() -> void:
 				best_dist = dist
 				best_target = bot
 
-	current_target = best_target
+	if best_target != null and best_target != current_target:
+		current_target = best_target
+		target_acquisition_timer = randf_range(0.38, 0.65) * difficulty_reaction_mult
+		if randf() < 0.40:
+			_shout("ВИЖУ ВРАГА!" if team_name.contains("RED") else "KONTAKT!", Color(1.0, 0.85, 0.3))
+	elif best_target == null:
+		current_target = null
 
 ## Проверка прямой видимости (нет ли стен/земли или дымовой завесы между ботом и целью)
 func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
@@ -467,7 +489,7 @@ func _get_self_collision_rids() -> Array[RID]:
 			rids.append(hitbox.get_rid())
 	return rids
 
-## Тактическое поведение в бою
+## Тактическое поведение в бою (Dummy War Tactical Firefight)
 func _combat_behavior(delta: float) -> void:
 	var tpos := current_target.global_position
 	var to := tpos - global_position
@@ -484,27 +506,59 @@ func _combat_behavior(delta: float) -> void:
 		if _proc != null:
 			_proc.set_look(0.0, pitch)
 
-	# Дистанционное маневрирование
-	if dist > 32.0:
-		# Сближение
-		var move_dir := _route_direction(tpos, delta)
+	# Задержка наведения (Aim Acquisition): бот не стреляет мгновенно при первом обнаружении
+	if target_acquisition_timer > 0.0:
+		target_acquisition_timer -= delta
+		velocity.x = lerpf(velocity.x, 0.0, delta * 6.0)
+		velocity.z = lerpf(velocity.z, 0.0, delta * 6.0)
+		return
+
+	# Тактическое маневрирование в перестрелке: стрейф, укрытия, выглядывание (peeking)
+	combat_strafe_timer -= delta
+	if combat_strafe_timer <= 0.0:
+		combat_strafe_timer = randf_range(1.2, 2.5)
+		var maneuver := randf()
+		if maneuver < 0.35:
+			var right := global_transform.basis.x
+			right.y = 0.0
+			combat_strafe_dir = right.normalized()
+			stance = 0 if randf() > 0.45 else 1
+		elif maneuver < 0.70:
+			var left := -global_transform.basis.x
+			left.y = 0.0
+			combat_strafe_dir = left.normalized()
+			stance = 0 if randf() > 0.45 else 1
+		elif maneuver < 0.88:
+			combat_strafe_dir = Vector3.ZERO
+			stance = 1 # присесть за укрытие / мешки
+		else:
+			combat_strafe_dir = Vector3.ZERO
+			stance = 0 # встать для беглого огня
+
+	if dist > 34.0:
+		# Сближение с обходом препятствий
+		var move_dir := _avoid_obstacles(_route_direction(tpos, delta))
 		velocity.x = move_dir.x * SPEED_WALK
 		velocity.z = move_dir.z * SPEED_WALK
 		stance = 0
-	elif dist < 9.0:
-		# Отход назад при сильном сближении
-		var back_dir := -to.normalized()
-		velocity.x = back_dir.x * SPEED_WALK * 0.7
-		velocity.z = back_dir.z * SPEED_WALK * 0.7
-		stance = 0
+	elif dist < 8.5 or health < 45.0:
+		# Отход назад при сильном сближении или ранении
+		var back_dir := _avoid_obstacles(-to.normalized())
+		var speed_k := 0.75 if health >= 45.0 else 0.90
+		velocity.x = back_dir.x * SPEED_WALK * speed_k
+		velocity.z = back_dir.z * SPEED_WALK * speed_k
+		stance = 1 if health < 45.0 else 0
 	else:
-		# Остановка на выгодной дистанции, приседание за укрытие
-		velocity.x = lerpf(velocity.x, 0.0, delta * 5.0)
-		velocity.z = lerpf(velocity.z, 0.0, delta * 5.0)
-		if suppression > 0.4:
-			stance = 1
+		# Огневой контакт: активный стрейф и огонь из укрытия
+		if suppression > 0.35:
+			stance = 1 # огонь подавления заставляет прижаться к земле
+		if combat_strafe_dir != Vector3.ZERO:
+			var sdir := _avoid_obstacles(combat_strafe_dir)
+			velocity.x = lerpf(velocity.x, sdir.x * SPEED_CROUCH * 1.35, delta * 6.0)
+			velocity.z = lerpf(velocity.z, sdir.z * SPEED_CROUCH * 1.35, delta * 6.0)
 		else:
-			stance = 0 if randf() > 0.3 else 1
+			velocity.x = lerpf(velocity.x, 0.0, delta * 5.0)
+			velocity.z = lerpf(velocity.z, 0.0, delta * 5.0)
 
 	# Бросок гранаты при подходящей дистанции
 	if dist >= 14.0 and dist <= 32.0 and grenades > 0:
@@ -567,7 +621,7 @@ func _advance_behavior(delta: float) -> void:
 		# Штурм ключевого сектора
 		objective = target_sector
 
-	var forward_dir := _route_direction(objective, delta)
+	var forward_dir := _avoid_obstacles(_route_direction(objective, delta))
 
 	velocity.x = forward_dir.x * SPEED_SPRINT
 	velocity.z = forward_dir.z * SPEED_SPRINT
@@ -579,6 +633,42 @@ func _advance_behavior(delta: float) -> void:
 		_gun_pivot.rotation.x = 0.0
 	if _proc != null:
 		_proc.set_look(0.0, 0.0)
+
+## Процедурный обход препятствий (стен, заборов, мешков)
+func _avoid_obstacles(desired_dir: Vector3) -> Vector3:
+	if desired_dir.length_squared() < 0.01:
+		return desired_dir
+	var space := get_world_3d().direct_space_state
+	var from := global_position + Vector3(0.0, 0.70, 0.0)
+	var forward := desired_dir.normalized()
+
+	var q_front := PhysicsRayQueryParameters3D.create(from, from + forward * 1.55)
+	q_front.collision_mask = WORLD_LAYER_MASK
+	q_front.exclude = _get_self_collision_rids()
+	var hit_front := space.intersect_ray(q_front)
+	if hit_front.is_empty():
+		return desired_dir
+
+	var r_probe := forward.rotated(Vector3.UP, deg_to_rad(50.0))
+	var l_probe := forward.rotated(Vector3.UP, deg_to_rad(-50.0))
+	var q_r := PhysicsRayQueryParameters3D.create(from, from + r_probe * 1.55)
+	q_r.collision_mask = WORLD_LAYER_MASK
+	q_r.exclude = _get_self_collision_rids()
+	var hit_r := space.intersect_ray(q_r)
+
+	var q_l := PhysicsRayQueryParameters3D.create(from, from + l_probe * 1.55)
+	q_l.collision_mask = WORLD_LAYER_MASK
+	q_l.exclude = _get_self_collision_rids()
+	var hit_l := space.intersect_ray(q_l)
+
+	if hit_r.is_empty():
+		return r_probe
+	elif hit_l.is_empty():
+		return l_probe
+	else:
+		var n: Vector3 = hit_front.get("normal", -forward)
+		var tan_dir := Vector3(-n.z, 0.0, n.x)
+		return tan_dir if tan_dir.dot(desired_dir) >= 0.0 else -tan_dir
 
 func _route_direction(destination: Vector3, delta: float) -> Vector3:
 	var direct := destination - global_position
@@ -701,7 +791,15 @@ func _fire_single_shot() -> void:
 		_proc.set_firing(true)
 
 	var target_pt := current_target.global_position + Vector3(0, 1.25, 0) if current_target != null else from - global_transform.basis.z * 40.0
-	var spread: float = (0.02 + suppression * 0.05) * difficulty_spread_mult
+	# Реалистичный разброс человека (вместо лазерного 0.02)
+	var base_spread: float = 0.045 if bot_role == "SNIPER" else 0.068
+	base_spread += minf(float(burst_count) * 0.009, 0.048)
+	base_spread += suppression * 0.062
+	if Vector2(velocity.x, velocity.z).length() > 0.4:
+		base_spread += 0.028
+	if stance == 1:
+		base_spread *= 0.78
+	var spread: float = base_spread * difficulty_spread_mult
 	var shoot_dir := (target_pt - from).normalized()
 	shoot_dir = shoot_dir.rotated(Vector3.UP, randf_range(-spread, spread))
 	shoot_dir = shoot_dir.rotated(global_transform.basis.x, randf_range(-spread, spread))
@@ -728,11 +826,12 @@ func _fire_single_shot() -> void:
 
 	var bullet_speeds := [715.0, 380.0, 865.0, 253.0, 400.0, 488.0, 760.0, 48.0]
 	var bullet_speed: float = bullet_speeds[clampi(bot_weapon_index, 0, bullet_speeds.size() - 1)]
-	var damage_to_target := 24
-	var damage_to_player := 22
+	var damage_to_target := 20
+	var damage_to_player := 16
 	match bot_weapon_index:
 		2, 6:
-			damage_to_target = 52
+			damage_to_target = 46
+			damage_to_player = 40
 			damage_to_player = 48
 		4:
 			damage_to_target = 35
