@@ -13,7 +13,7 @@
 | TASK-0009 | P1 | in progress | OpenCode | Build immersive positional combat audio with distance, occlusion, indoor reverberation, and grenade acoustics |
 | TASK-0010 | P2 | in progress | OpenCode | Prepare the itch.io page, screenshots and press kit |
 | TASK-0011 | P1 | done | Codex | Add a guaranteed backup M1911, a terrain-digging entrenching shovel, and black icon-only mobile controls |
-| TASK-0012 | P1 | deferred until 2026-11-08 (user request) | OpenCode (deferred until 2026-11-08) | Add vehicles, transport and static turrets |
+| TASK-0012 | P1 | in progress (unblocked 2026-11-08; branch opencode/vehicles) | OpenCode | Add vehicles, transport and static turrets |
 | TASK-0013 | P1 | queued after TASK-0012 | OpenCode | Add sandbox mode with spawn menu, slow motion and free camera |
 | TASK-0014 | P1 | planned | OpenCode (later queue) | Build a fourth battle map (factory/port) |
 | TASK-0015 | P1 | planned | OpenCode | Add a third mode and match configuration |
