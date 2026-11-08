@@ -188,59 +188,8 @@ func _build_smoke_trail() -> void:
 	add_child(_smoke_trail)
 
 func _spawn_explosion_visuals(world: Node, pos: Vector3) -> void:
-	# Огненный шар
-	var fire := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 2.2
-	sphere.height = 4.4
-	fire.mesh = sphere
-	var fmat := StandardMaterial3D.new()
-	fmat.albedo_color = Color(1.0, 0.70, 0.2)
-	fmat.emission_enabled = true
-	fmat.emission = Color(1.0, 0.50, 0.1)
-	fmat.emission_energy_multiplier = 9.0
-	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fire.material_override = fmat
-	fire.position = pos
-	world.add_child(fire)
-
-	# Вспышка света
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.75, 0.3)
-	light.light_energy = 16.0
-	light.omni_range = 32.0
-	fire.add_child(light)
-
-	# Разлёт осколков
-	var p := CPUParticles3D.new()
-	var p_mesh := BoxMesh.new()
-	p_mesh.size = Vector3(0.18, 0.18, 0.18)
-	p.mesh = p_mesh
-	p.one_shot = true
-	p.explosiveness = 1.0
-	p.lifetime = 1.2
-	p.amount = 55
-	p.direction = Vector3.UP
-	p.spread = 85.0
-	p.initial_velocity_min = 8.0
-	p.initial_velocity_max = 22.0
-	p.gravity = Vector3(0, -12.0, 0)
-	p.scale_amount_min = 0.1
-	p.scale_amount_max = 0.35
-	p.color = Color(0.22, 0.20, 0.18)
-	p.position = pos
-	world.add_child(p)
-	p.emitting = true
-	p.finished.connect(p.queue_free)
-
-	# Затухание
-	var tween := world.create_tween()
-	tween.tween_property(fire, "scale", Vector3.ONE * 2.8, 0.16)
-	tween.parallel().tween_property(fmat, "albedo_color:a", 0.0, 0.28)
-	tween.parallel().tween_property(light, "light_energy", 0.0, 0.28)
-	tween.tween_callback(fire.queue_free)
-
-	HIT_EFFECTS.spawn_bullet_hole(world, pos, Vector3.UP)
+	# QA-fix TASK-0022: объёмный взрыв ракеты.
+	HIT_EFFECTS.spawn_explosion(world, pos, 1.25)
 
 func _play_explosion_sfx(world: Node, pos: Vector3) -> void:
 	COMBAT_AUDIO.play_explosion_3d(world, pos, SFX_EXPLOSION, 36.0, 320.0, 2.5)

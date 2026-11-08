@@ -19,7 +19,7 @@ const DRAG_DECEL := 3.5
 const TURN_RATE := 1.35
 ## Масштаб визуала Antigravity. Отзыв QA (2026-11-08): джип был «игрушечным».
 ## 1.45 даёт Willys ~4.9 м длиной — чанки-аркада, как ощущается в Dummy War.
-const MODEL_SCALE := 1.70
+const MODEL_SCALE := 1.90
 const WHEEL_RADIUS := 0.34 * MODEL_SCALE
 const GRAVITY := 18.0
 

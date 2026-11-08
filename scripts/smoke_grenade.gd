@@ -126,20 +126,33 @@ func deploy_smoke() -> void:
 	smoke_mesh.material = smoke_mat
 	p.mesh = smoke_mesh
 
-	p.amount = 48
-	p.lifetime = 4.5
-	p.explosiveness = 0.1
-	p.direction = Vector3.UP
-	p.spread = 75.0
-	p.initial_velocity_min = 1.2
-	p.initial_velocity_max = 3.6
-	p.gravity = Vector3(0, 0.25, 0)
-	p.scale_amount_min = 1.8
-	p.scale_amount_max = 4.2
-	p.color = Color(0.90, 0.92, 0.94, 0.60)
-	p.position = deploy_pos + Vector3(0, 0.3, 0)
+	# QA-fix TASK-0022: дым раскрывается плавно (3-4 с), а не «блоком за секунду».
+	# Экономно: один эмиттер, fixed_fps 20, количество частиц зависит от пресета.
+	var low_quality := GameSettings.quality == 0
+	p.amount = 36 if low_quality else 60
+	p.lifetime = 7.0
+	p.explosiveness = 0.0
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 1.1
+	p.direction = Vector3(0.15, 1.0, 0.05)
+	p.spread = 65.0
+	p.initial_velocity_min = 0.5
+	p.initial_velocity_max = 1.6
+	p.gravity = Vector3(0.22, 0.10, 0.12)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.2
+	p.color = Color(0.90, 0.92, 0.94, 0.0)
+	p.fixed_fps = 20
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.position = deploy_pos + Vector3(0, 0.25, 0)
 	get_parent().add_child(p)
 	p.emitting = true
+
+	# Облако «наливается»: частицы растут и уплотняются первые ~3.5 секунды.
+	var grow_tw := p.create_tween()
+	grow_tw.tween_property(p, "scale_amount_min", 2.6, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	grow_tw.parallel().tween_property(p, "scale_amount_max", 4.8, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	grow_tw.parallel().tween_property(p, "color:a", 0.62, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 	smoke_deployed.emit(deploy_pos)
 

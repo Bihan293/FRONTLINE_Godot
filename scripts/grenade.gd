@@ -122,65 +122,10 @@ func _spawn_explosion_visuals(pos: Vector3) -> void:
 	var world := get_parent()
 	if world == null:
 		return
-
-	# Сфера огня
-	var fire := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 1.4
-	sphere.height = 2.8
-	fire.mesh = sphere
-	var fire_mat := StandardMaterial3D.new()
-	fire_mat.albedo_color = Color(1.0, 0.65, 0.15)
-	fire_mat.emission_enabled = true
-	fire_mat.emission = Color(1.0, 0.45, 0.08)
-	fire_mat.emission_energy_multiplier = 7.0
-	fire_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fire.material_override = fire_mat
-	fire.position = pos + Vector3(0, 0.5, 0)
-	world.add_child(fire)
-
-	# Динамический свет вспышки
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.7, 0.25)
-	light.light_energy = 9.0
-	light.omni_range = 22.0
-	fire.add_child(light)
-
-	# Частицы дыма и разлёта осколков
-	var p := CPUParticles3D.new()
-	var frag_mesh := SphereMesh.new()
-	frag_mesh.radius = 0.08
-	frag_mesh.height = 0.16
-	p.mesh = frag_mesh
-	p.one_shot = true
-	p.explosiveness = 1.0
-	p.lifetime = 0.8
-	p.amount = 32
-	p.direction = Vector3.UP
-	p.spread = 85.0
-	p.initial_velocity_min = 4.0
-	p.initial_velocity_max = 14.0
-	p.gravity = Vector3(0, -9.8, 0)
-	p.scale_amount_min = 0.04
-	p.scale_amount_max = 0.12
-	p.color = Color(0.28, 0.26, 0.24)
-	p.position = pos + Vector3(0, 0.3, 0)
-	world.add_child(p)
-	p.emitting = true
-	p.finished.connect(p.queue_free)
-
-	# Анимация затухания вспышки
-	var tween := world.create_tween()
-	tween.tween_property(fire, "scale", Vector3.ONE * 2.2, 0.12)
-	tween.parallel().tween_property(fire_mat, "albedo_color:a", 0.0, 0.22)
-	tween.parallel().tween_property(light, "light_energy", 0.0, 0.22)
-	tween.tween_callback(fire.queue_free)
-
-	# Подпалина на земле
-	HIT_EFFECTS.spawn_bullet_hole(world, pos, Vector3.UP)
-
+	# QA-fix TASK-0022: объёмный взрыв (огонь, ударная волна, дым, осколки, бас).
+	HIT_EFFECTS.spawn_explosion(world, pos, 1.0)
 	# Звук взрыва с пространственной окклюзией и логарифмическим спадом
-	COMBAT_AUDIO.play_explosion_3d(world, pos, SFX_EXPLOSION, 28.0, 260.0, 0.0)
+	COMBAT_AUDIO.play_explosion_3d(world, pos, SFX_EXPLOSION, 32.0, 300.0, 1.0)
 
 func _apply_blast_damage(pos: Vector3) -> void:
 	var space := get_world_3d().direct_space_state
