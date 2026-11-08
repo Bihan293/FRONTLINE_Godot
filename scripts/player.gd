@@ -2038,7 +2038,8 @@ func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _regio
 	if crosshair != null:
 		crosshair.flash_hit()
 	if was_alive and actor.is_in_group("damageable_actor") and "health" in actor and float(actor.get("health")) <= 0.0:
-		_play_sfx(sfx_kill, SFX_KILL, -2.0, 1.0)
+		# QA-fix TASK-0022: вместо «pew»-джингла — глухой звук попадания.
+		_play_sfx(sfx_kill, SFX_HIT_FLESH, -6.0, randf_range(0.72, 0.82))
 		if world != null and world.has_method("add_kill"):
 			world.call("add_kill")
 
