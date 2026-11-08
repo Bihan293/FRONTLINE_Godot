@@ -83,6 +83,7 @@ static func rig_model(model_root: Node, arms_only: bool = false) -> Skeleton3D:
 		var model_transform := _transform_to_root(part, model_root)
 		if arms_only and bone_name.begins_with("Left"):
 			model_transform.origin.x += 0.42
+		part.owner = null
 		part.get_parent().remove_child(part)
 		var bone_rest: Transform3D = rest_global[bone_name]
 		part.transform = bone_rest.affine_inverse() * model_transform

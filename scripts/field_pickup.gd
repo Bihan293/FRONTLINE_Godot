@@ -66,11 +66,11 @@ func _physics_process(delta: float) -> void:
 		rotation += angular_velocity * delta
 
 		var space := get_world_3d().direct_space_state
-		var query := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.4, 0), global_position + Vector3(0, -0.7, 0))
+		var query := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.6, 0), global_position + Vector3(0, -2.5, 0))
 		query.collision_mask = 1
 		query.collide_with_areas = false
 		var floor_hit := space.intersect_ray(query)
-		var ground_y: float = floor_hit.position.y + 0.18 if not floor_hit.is_empty() else 0.18
+		var ground_y: float = floor_hit.position.y + 0.18 if not floor_hit.is_empty() else maxf(0.18, position.y - 0.5)
 
 		if next_pos.y <= ground_y and launch_velocity.y < 0.0:
 			position.y = ground_y
@@ -89,11 +89,11 @@ func _physics_process(delta: float) -> void:
 	else:
 		rotation.y += delta * 0.18
 
-func launch(initial_velocity: Vector3) -> void:
+func launch(initial_velocity: Vector3, cooldown := 0.25) -> void:
 	launch_velocity = initial_velocity
 	angular_velocity = Vector3(randf_range(-3.0, 3.0), randf_range(-5.0, 5.0), randf_range(-3.0, 3.0))
 	settled = false
-	pickup_cooldown = 1.2
+	pickup_cooldown = cooldown
 
 func can_collect(actor: Node) -> bool:
 	if not is_instance_valid(actor) or pickup_cooldown > 0.0:

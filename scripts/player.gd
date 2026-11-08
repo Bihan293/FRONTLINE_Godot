@@ -252,8 +252,8 @@ func _build_weapon() -> void:
 	weapon_mount = Node3D.new()
 	weapon_mount.name = "WeaponMount"
 	weapon_root.add_child(weapon_mount)
-	_equip_weapon_visual()
 	_build_view_hands()
+	_equip_weapon_visual()
 	_build_grenade_view()
 
 func _equip_weapon_visual() -> void:
@@ -309,42 +309,42 @@ func _equip_weapon_visual() -> void:
 	match weapon_id:
 		"ak47":
 			hip_pos = Vector3(0.08, -0.17, -0.52)
-			aim_pos = Vector3(0.0, -0.092, -0.52)
+			aim_pos = Vector3(-0.0045, -0.070, -0.52)
 			left_wrist_offset = Vector3(-0.02, -0.03, -0.18) # цевьё
 			right_wrist_offset = Vector3(0.01, -0.06, 0.02)
 		"mp40":
 			hip_pos = Vector3(0.075, -0.16, -0.48)
-			aim_pos = Vector3(0.0, -0.075, -0.48)
+			aim_pos = Vector3(0.0, -0.0375, -0.48)
 			left_wrist_offset = Vector3(-0.02, -0.04, -0.14) # шахта магазина
 			right_wrist_offset = Vector3(0.01, -0.06, 0.04)
 		"mosin":
 			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.060, -0.50)
+			aim_pos = Vector3(0.0, -0.030, -0.50)
 			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # длинное ложе
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"m1911":
 			hip_pos = Vector3(0.05, -0.15, -0.44) # вынесенный пистолетный хват
-			aim_pos = Vector3(0.0, -0.048, -0.38)
+			aim_pos = Vector3(0.0, -0.023, -0.38)
 			left_wrist_offset = Vector3(-0.03, -0.055, 0.02) # хват второй рукой снизу
 			right_wrist_offset = Vector3(0.01, -0.055, 0.02)
 		"shotgun":
 			hip_pos = Vector3(0.09, -0.18, -0.50)
-			aim_pos = Vector3(0.0, -0.054, -0.46)
+			aim_pos = Vector3(0.0, -0.025, -0.46)
 			left_wrist_offset = Vector3(-0.02, -0.04, -0.22) # подвижное цевьё
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"ppsh41":
 			hip_pos = Vector3(0.08, -0.17, -0.48)
-			aim_pos = Vector3(0.0, -0.052, -0.46)
+			aim_pos = Vector3(0.0, -0.026, -0.46)
 			left_wrist_offset = Vector3(-0.02, -0.035, -0.16) # хват под барабаном
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"kar98k":
 			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.075, -0.44) # оптическая ось прицела ZF-39 строго по центру
+			aim_pos = Vector3(0.0, -0.0375, -0.44) # оптическая ось прицела ZF-39 строго по центру
 			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # ложе
 			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
 		"panzerfaust":
 			hip_pos = Vector3(0.14, -0.09, -0.46) # удержание на правом плече
-			aim_pos = Vector3(0.0, -0.088, -0.42) # прицельная прорезь точно по центру
+			aim_pos = Vector3(0.0, -0.044, -0.42) # прицельная прорезь точно по центру
 			left_wrist_offset = Vector3(-0.03, -0.02, -0.28) # поддержка трубы спереди
 			right_wrist_offset = Vector3(0.01, 0.03, -0.08) # кнопка спуска сверху
 
@@ -563,8 +563,8 @@ func _make_view_arm(arm_name: String) -> MeshInstance3D:
 	var arm := MeshInstance3D.new()
 	arm.name = arm_name
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.038
-	mesh.bottom_radius = 0.052
+	mesh.top_radius = 0.026
+	mesh.bottom_radius = 0.042
 	mesh.height = 1.0
 	mesh.radial_segments = 8
 	arm.mesh = mesh
@@ -582,7 +582,7 @@ func _make_view_arm(arm_name: String) -> MeshInstance3D:
 func _update_view_arms() -> void:
 	if camera == null:
 		return
-	if not SHOW_VIEW_ARMS or (weapon_root != null and not weapon_root.visible):
+	if not SHOW_VIEW_ARMS or (weapon_root != null and not weapon_root.visible) or grenade_anim_state != GrenadeActionState.IDLE:
 		if _view_arm_left != null:
 			_view_arm_left.visible = false
 		if _view_arm_right != null:
@@ -601,12 +601,19 @@ func _update_view_arms() -> void:
 func _place_view_arm(arm: MeshInstance3D, start: Vector3, end: Vector3) -> void:
 	var delta := end - start
 	var length := delta.length()
-	if length < 0.02:
+	if length < 0.05:
 		arm.visible = false
 		return
 	arm.visible = true
 	var dir := delta / length
-	arm.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, dir)).scaled(Vector3(1.0, length, 1.0)), (start + end) * 0.5)
+	var up := dir
+	var right := dir.cross(Vector3.UP)
+	if right.length_squared() < 0.0001:
+		right = dir.cross(Vector3.RIGHT)
+	right = right.normalized()
+	var forward := up.cross(right).normalized()
+	var b := Basis(right, up * length, forward)
+	arm.global_transform = Transform3D(b, (start + end) * 0.5)
 
 ## Низкополигональная кисть на оружии. Заменяет длинные IK-руки,
 ## которые вытягивались через весь экран.
@@ -2218,11 +2225,20 @@ func unregister_field_pickup(pickup: Node3D) -> void:
 
 func _nearest_field_pickup() -> Node3D:
 	var nearest: Node3D = null
-	var nearest_distance := 2.25
-	for i in range(nearby_field_pickups.size() - 1, -1, -1):
-		var pickup: Node3D = nearby_field_pickups[i]
+	var nearest_distance := 2.6
+	var candidates: Array[Node3D] = []
+	for p in nearby_field_pickups:
+		if is_instance_valid(p) and not candidates.has(p):
+			candidates.append(p)
+	for p in get_tree().get_nodes_in_group("field_weapon_pickups"):
+		if is_instance_valid(p) and not candidates.has(p):
+			candidates.append(p as Node3D)
+	for p in get_tree().get_nodes_in_group("field_supply_crates"):
+		if is_instance_valid(p) and not candidates.has(p):
+			candidates.append(p as Node3D)
+
+	for pickup in candidates:
 		if not is_instance_valid(pickup):
-			nearby_field_pickups.remove_at(i)
 			continue
 		if not pickup.has_method("can_collect") or not bool(pickup.call("can_collect", self)):
 			continue
@@ -2252,7 +2268,7 @@ func _refresh_pickup_prompt() -> void:
 		if prompt != null and prompt.has_method("prompt_text"):
 			pickup_label.text = str(prompt.call("prompt_text", OS.has_feature("mobile")))
 	if mobile_controls != null:
-		var show_interact := (mounted_vehicle != null or enterable != null or pickup != null) and OS.has_feature("mobile")
+		var show_interact := (mounted_vehicle != null or enterable != null or pickup != null)
 		mobile_controls.set_interact_visible(show_interact)
 
 func _interact_with_pickup() -> void:
@@ -2291,18 +2307,28 @@ func take_field_ammo(amount: int) -> int:
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
 		return false
-	var stored_clip := ammo if index == current_weapon_index else ammo_by_weapon[index]
-	var stored_reserve := reserve_ammo if index == current_weapon_index else reserve_by_weapon[index]
+	if index != current_weapon_index:
+		return true
+	var stored_clip := ammo
+	var stored_reserve := reserve_ammo
 	var definition: Dictionary = WEAPON_DEFS[index]
-	return index != current_weapon_index or stored_clip < mini(int(definition.mag), maxi(0, clip)) or stored_reserve < mini(int(definition.reserve), maxi(0, reserve))
+	var max_mag := int(definition.mag)
+	var max_reserve := int(definition.reserve)
+	return stored_clip < max_mag or stored_reserve < max_reserve
 
 func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if not can_take_weapon_pickup(index, clip, reserve):
 		return false
 	if index == current_weapon_index:
 		var definition: Dictionary = WEAPON_DEFS[index]
-		ammo = mini(int(definition.mag), maxi(ammo, clip))
-		reserve_ammo = mini(int(definition.reserve), maxi(reserve_ammo, reserve))
+		var max_mag := int(definition.mag)
+		var max_reserve := int(definition.reserve)
+		var needed_clip := max_mag - ammo
+		var taken_clip := mini(needed_clip, maxi(0, clip))
+		ammo += taken_clip
+		var leftover_clip := maxi(0, clip) - taken_clip
+		var add_reserve := leftover_clip + maxi(0, reserve)
+		reserve_ammo = mini(max_reserve, reserve_ammo + add_reserve)
 		_store_weapon_ammo()
 		_refresh_ammo()
 		return true
@@ -2325,8 +2351,8 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 
 	current_weapon_index = index
 	var incoming: Dictionary = WEAPON_DEFS[index]
-	ammo = mini(int(incoming.mag), maxi(ammo_by_weapon[index], clip))
-	reserve_ammo = mini(int(incoming.reserve), maxi(reserve_by_weapon[index], reserve))
+	ammo = mini(int(incoming.mag), maxi(0, clip))
+	reserve_ammo = mini(int(incoming.reserve), maxi(0, reserve))
 	is_reloading = false
 	reload_timer = 0.0
 	weapon_kick = 0.0

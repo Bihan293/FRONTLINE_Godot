@@ -12,6 +12,8 @@ const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const TACTICAL_DEPLOY = preload("res://scripts/tactical_deploy.gd")
+const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
+const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
 
 var _failures: Array[String] = []
 
@@ -35,6 +37,9 @@ func _ready() -> void:
 	await _test_toggle_lean()
 	await _test_tactical_deployment_screen()
 	await _test_first_person_hands()
+	await _test_first_person_ads_alignment()
+	await _test_field_pickup_weapon_swap_and_ammo()
+	await _test_hud_customizer_input()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -846,8 +851,84 @@ func _test_first_person_hands() -> void:
 		if arm_l != null and arm_r != null:
 			_check(not arm_l.visible, "_view_arm_left stayed visible when weapon_root was hidden")
 			_check(not arm_r.visible, "_view_arm_right stayed visible when weapon_root was hidden")
+		weapon_root.visible = true
+		player.set("grenade_anim_state", 1)
+		player.call("_update_view_arms")
+		if arm_l != null and arm_r != null:
+			_check(not arm_l.visible, "_view_arm_left stayed visible during grenade cooking")
+			_check(not arm_r.visible, "_view_arm_right stayed visible during grenade cooking")
 
 	player.queue_free()
+	await get_tree().process_frame
+
+func _test_first_person_ads_alignment() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	var weapons := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
+	for wid in weapons:
+		var target_idx := -1
+		var defs: Array = player.WEAPON_DEFS
+		for i in range(defs.size()):
+			if str(defs[i].id) == wid:
+				target_idx = i
+				break
+		if target_idx >= 0:
+			if not player.role_weapon_indices.has(target_idx):
+				player.role_weapon_indices.append(target_idx)
+			player.call("_switch_weapon", target_idx)
+			var aim_pos: Vector3 = player.get("weapon_aim_position")
+			_check(aim_pos.y <= -0.015 and aim_pos.y >= -0.080, "weapon %s aim_pos.y %f out of realistic ADS centered range" % [wid, aim_pos.y])
+			_check(absf(aim_pos.x) <= 0.006, "weapon %s aim_pos.x %f not horizontally centered" % [wid, aim_pos.x])
+
+	player.queue_free()
+	await get_tree().process_frame
+
+func _test_field_pickup_weapon_swap_and_ammo() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+
+	var current_idx: int = player.get("current_weapon_index")
+	var other_idx: int = 1 if current_idx != 1 else 0
+	_check(player.call("can_take_weapon_pickup", other_idx, 32, 64), "player cannot take different weapon pickup")
+
+	var swapped: bool = player.call("take_weapon_pickup", other_idx, 25, 50)
+	_check(swapped, "take_weapon_pickup returned false on weapon swap")
+	_check(int(player.get("current_weapon_index")) == other_idx, "current_weapon_index not updated after swap")
+	_check(int(player.get("ammo")) == 25, "ammo not set from pickup clip: %d" % int(player.get("ammo")))
+
+	player.set("ammo", 10)
+	player.set("reserve_ammo", 20)
+	_check(player.call("can_take_weapon_pickup", other_idx, 32, 64), "player cannot take ammo from same weapon pickup")
+	var ammo_absorbed: bool = player.call("take_weapon_pickup", other_idx, 20, 30)
+	_check(ammo_absorbed, "failed to absorb ammo from same weapon pickup")
+	_check(int(player.get("ammo")) == 30 or int(player.get("ammo")) == 32, "ammo was not replenished")
+
+	player.queue_free()
+	await get_tree().process_frame
+
+func _test_hud_customizer_input() -> void:
+	var HUD_CUSTOMIZER_SCRIPT = load("res://scripts/hud_customizer.gd")
+	_check(HUD_CUSTOMIZER_SCRIPT != null, "hud_customizer.gd missing")
+	if HUD_CUSTOMIZER_SCRIPT == null:
+		return
+	var customizer = HUD_CUSTOMIZER_SCRIPT.new()
+	add_child(customizer)
+	await get_tree().process_frame
+
+	var buttons: Dictionary = customizer.call("_get_button_positions")
+	var joy_pos: Vector2 = buttons.get("joy", Vector2(170, 400))
+	customizer.call("_start_drag", joy_pos, 999)
+	customizer.call("_update_drag", joy_pos + Vector2(25, 25))
+	customizer.call("_end_drag")
+
+	_check(GameSettings.hud_button_offsets.size() > 0, "HUD customizer drag did not record button offset in GameSettings")
+	GameSettings.hud_button_offsets.clear()
+	GameSettings.save_settings()
+
+	customizer.queue_free()
 	await get_tree().process_frame
 
 func _report() -> void:

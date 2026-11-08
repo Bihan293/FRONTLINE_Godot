@@ -49,7 +49,7 @@ func _build_ui() -> void:
 	var bg := ColorRect.new()
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.color = Color(0.02, 0.04, 0.03, 0.85)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 
 	# Верхняя панель управления
@@ -240,44 +240,63 @@ func _get_base_position(id: String, s: Vector2, sc: float, preset: int) -> Vecto
 	var base := _get_base_layout(s, sc, preset)
 	return base.get(id, Vector2(s.x * 0.5, s.y * 0.5))
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			var pos := event.position
-			var buttons := _get_button_positions()
-			var sc := GameSettings.hud_scale
-			for id in buttons.keys():
-				var r := 92.0 * sc if id == "joy" else (76.0 * sc if id == "fire" else 42.0 * sc)
-				if pos.distance_to(buttons[id]) <= r * 1.25:
-					_dragged_id = id
-					_drag_touch = event.index
-					_drag_touch_offset = buttons[id] - pos
-					var canvas = find_child("Canvas", true, false)
-					if canvas != null:
-						canvas.queue_redraw()
-					return
+			_start_drag(event.position, event.index)
 		else:
 			if event.index == _drag_touch:
-				_dragged_id = ""
-				_drag_touch = -1
-				var canvas = find_child("Canvas", true, false)
-				if canvas != null:
-					canvas.queue_redraw()
+				_end_drag()
 	elif event is InputEventScreenDrag:
 		if event.index == _drag_touch and not _dragged_id.is_empty():
-			var s := get_viewport().get_visible_rect().size
-			var sc := GameSettings.hud_scale
-			var r := 92.0 * sc if _dragged_id == "joy" else (76.0 * sc if _dragged_id == "fire" else 42.0 * sc)
-			var new_pos: Vector2 = event.position + _drag_touch_offset
-			new_pos.x = clampf(new_pos.x, r + 12.0, s.x - r - 12.0)
-			new_pos.y = clampf(new_pos.y, 75.0 + r * 0.5, s.y - r - 12.0)
-			var base_pos := _get_base_position(_dragged_id, s, sc, GameSettings.hud_preset)
-			var offset := new_pos - base_pos
-			GameSettings.set_hud_button_offset(_dragged_id, offset)
+			_update_drag(event.position)
+	elif event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_start_drag(event.position, 999)
+			else:
+				if _drag_touch == 999:
+					_end_drag()
+	elif event is InputEventMouseMotion:
+		if _drag_touch == 999 and not _dragged_id.is_empty():
+			_update_drag(event.position)
 
+func _start_drag(pos: Vector2, touch_id: int) -> void:
+	if pos.y < 75.0:
+		return # Не перехватываем клики по верхней панели управления
+	var buttons := _get_button_positions()
+	var sc := GameSettings.hud_scale
+	for id in buttons.keys():
+		var r := 92.0 * sc if id == "joy" else (76.0 * sc if id == "fire" else 42.0 * sc)
+		if pos.distance_to(buttons[id]) <= r * 1.25:
+			_dragged_id = id
+			_drag_touch = touch_id
+			_drag_touch_offset = buttons[id] - pos
 			var canvas = find_child("Canvas", true, false)
 			if canvas != null:
 				canvas.queue_redraw()
+			return
+
+func _update_drag(pos: Vector2) -> void:
+	var s := get_viewport().get_visible_rect().size
+	var sc := GameSettings.hud_scale
+	var r := 92.0 * sc if _dragged_id == "joy" else (76.0 * sc if _dragged_id == "fire" else 42.0 * sc)
+	var new_pos: Vector2 = pos + _drag_touch_offset
+	new_pos.x = clampf(new_pos.x, r + 12.0, s.x - r - 12.0)
+	new_pos.y = clampf(new_pos.y, 75.0 + r * 0.5, s.y - r - 12.0)
+	var base_pos := _get_base_position(_dragged_id, s, sc, GameSettings.hud_preset)
+	var offset := new_pos - base_pos
+	GameSettings.set_hud_button_offset(_dragged_id, offset)
+	var canvas = find_child("Canvas", true, false)
+	if canvas != null:
+		canvas.queue_redraw()
+
+func _end_drag() -> void:
+	_dragged_id = ""
+	_drag_touch = -1
+	var canvas = find_child("Canvas", true, false)
+	if canvas != null:
+		canvas.queue_redraw()
 
 func _draw_canvas() -> void:
 	var canvas = find_child("Canvas", true, false)
