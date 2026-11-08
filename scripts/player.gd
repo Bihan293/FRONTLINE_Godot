@@ -73,6 +73,7 @@ var weapon_aim_position := Vector3(0.0, -0.075, -0.48)
 var muzzle_flash: MeshInstance3D
 var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
+var _weapon_rot_smooth := Vector3.ZERO
 var sprint_anim := 0.0
 var landing_anim := 0.0
 var _was_on_floor := true
@@ -1284,6 +1285,16 @@ func _launch_drone() -> void:
 	drone.returned.connect(_on_drone_returned)
 	drone.detonated.connect(_on_drone_detonated)
 	active_drone = drone
+	# QA-fix TASK-0022: оператор остаётся видимым в мире, в своей позе.
+	# Раньше тело было скрыто (первый вид), и в FPV казалось, что персонаж пропал.
+	if player_body != null and is_instance_valid(player_body):
+		player_body.visible = true
+		if player_body.has_method("set_motion"):
+			player_body.call("set_motion", 0.0, false)
+		if player_body.has_method("set_stance"):
+			player_body.call("set_stance", stance)
+		if player_body.has_method("set_look_down"):
+			player_body.call("set_look_down", 0.0)
 	camera.current = false
 	if drone != null and drone.has_node("DroneCamera/DroneListener"):
 		(drone.get_node("DroneCamera/DroneListener") as AudioListener3D).make_current()
@@ -1312,6 +1323,9 @@ func _end_drone_control() -> void:
 			audio_listener.make_current()
 	if mobile_controls != null:
 		mobile_controls.set_drone_mode(false)
+	# Возврат к первому виду: тело снова скрыто, чтобы не закрывать обзор.
+	if player_body != null and is_instance_valid(player_body) and not is_dead:
+		player_body.visible = false
 	if not OS.has_feature("mobile") and not is_dead:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_refresh_equipment()
@@ -1552,11 +1566,15 @@ func _physics_process(delta: float) -> void:
 	weapon_root.position = weapon_root.position.lerp(target_weapon_pos, clampf(delta * 22.0, 0.0, 1.0))
 
 	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
-	weapon_root.rotation = Vector3(
+	# QA-fix TASK-0022: плавный spring-сглаженный поворот оружия — без рывков
+	# при движении взгляда и отдаче.
+	var target_rot := Vector3(
 		-weapon_kick * 0.22 + sway_rot.x + sprint_rot.x + landing_rot.x,
 		sway_rot.y + sprint_rot.y,
 		sway_rot.z + sprint_rot.z - strafe_roll * 0.40
 	)
+	_weapon_rot_smooth = _weapon_rot_smooth.lerp(target_rot, clampf(delta * 16.0, 0.0, 1.0))
+	weapon_root.rotation = _weapon_rot_smooth
 	_update_view_arms()
 
 	if muzzle_flash_time > 0.0:

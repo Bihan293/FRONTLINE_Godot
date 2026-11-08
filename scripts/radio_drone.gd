@@ -46,6 +46,9 @@ var _tether_mesh: MeshInstance3D
 var _immediate_mesh: ImmediateMesh
 var _osd_label: Label
 var _osd_canvas: CanvasLayer
+var _buzz: AudioStreamPlayer3D
+var health := 100.0
+var _receive_hit_flash := 0.0
 
 func launch(start_pos: Vector3, initial_yaw: float, op: CharacterBody3D, tether_len := 150.0) -> void:
 	operator = op
@@ -60,11 +63,16 @@ func launch(start_pos: Vector3, initial_yaw: float, op: CharacterBody3D, tether_
 	velocity = -transform.basis.z * 4.0 + Vector3.UP * 2.0
 	_is_launched = true
 	set_physics_process(true)
+	# QA-fix TASK-0022: явно переключаем вид на FPV-камеру дрона.
+	if camera != null:
+		camera.make_current()
 	if operator != null and operator.has_method("set_drone_controller_feed") and _feed_viewport != null:
 		operator.call("set_drone_controller_feed", _feed_viewport.get_texture())
 
 func _ready() -> void:
 	add_to_group("radio_drones")
+	add_to_group("damageable_actor")
+	set_meta("owner_actor", self)
 	collision_layer = 1 << 0
 	collision_mask = 1 | 2 | 4 # Мир, хитбоксы, боты
 	_build_model()
@@ -72,6 +80,7 @@ func _ready() -> void:
 	_build_camera()
 	_build_tether_renderer()
 	_build_osd()
+	_build_audio()
 	if not _is_launched:
 		set_physics_process(false)
 
@@ -97,6 +106,11 @@ func _physics_process(delta: float) -> void:
 	if flight_time >= battery_lifetime:
 		detonate(global_position)
 		return
+
+	# Тон жужжания зависит от скорости полёта.
+	if _buzz != null and is_instance_valid(_buzz):
+		_buzz.global_position = global_position
+		_buzz.pitch_scale = clampf(0.82 + velocity.length() / 28.0, 0.8, 1.45)
 
 	# Вращение пропеллеров
 	for r in _rotors:
@@ -150,6 +164,19 @@ func _physics_process(delta: float) -> void:
 	# Обновление отрисовки провода и OSD
 	_update_tether(op_pos)
 	_update_osd(global_position.distance_to(op_pos))
+
+## Боты и игрок могут сбить дрон: несколько попаданий — детонация.
+func receive_hit(damage: int, attacker_pos: Vector3, _region: String = "body", _attacker_name: String = "Unknown") -> int:
+	if is_exploding:
+		return 0
+	health -= float(damage)
+	if health <= 0.0:
+		detonate(global_position)
+		return damage
+	var world := get_parent()
+	if world != null:
+		HIT_EFFECTS.spawn_metal_sparks(world, global_position, attacker_pos - global_position)
+	return damage
 
 func clamp_to_tether() -> float:
 	var op_pos := _operator_anchor_position()
@@ -341,6 +368,11 @@ func _build_model() -> void:
 			light.position = offset + Vector3(0, 0.03, 0)
 			_model.add_child(light)
 
+	# QA-fix TASK-0022: корпус дрона на отдельном слое рендера — собственная
+	# FPV-камера его не видит, поэтому обзор больше не закрыт моделью.
+	for mesh_node in _model.find_children("*", "MeshInstance3D", true, false):
+		(mesh_node as MeshInstance3D).layers = 1 << 2
+
 func _build_collision() -> void:
 	_collision_shape = CollisionShape3D.new()
 	_collision_shape.name = "DroneCollision"
@@ -354,9 +386,11 @@ func _build_collision() -> void:
 func _build_camera() -> void:
 	camera = Camera3D.new()
 	camera.name = "DroneCamera"
-	camera.position = Vector3(0.0, 0.06, -0.23)
-	camera.rotation.x = deg_to_rad(-12.0) # Лёгкий наклон вниз для обзора поля боя
-	camera.fov = 85.0
+	# Камера над корпусом дрона: раньше стояла внутри модели и экран был закрыт.
+	camera.position = Vector3(0.0, 0.30, -0.04)
+	camera.rotation.x = deg_to_rad(-20.0) # Наклон вниз для обзора поля боя
+	camera.fov = 88.0
+	camera.cull_mask = 0xFFFFF & ~(1 << 2) # не рисуем собственный корпус
 	add_child(camera)
 	var drone_listener := AudioListener3D.new()
 	drone_listener.name = "DroneListener"
@@ -370,11 +404,54 @@ func _build_camera() -> void:
 	_feed_camera = Camera3D.new()
 	_feed_camera.name = "FeedCamera"
 	_feed_camera.fov = camera.fov
+	_feed_camera.cull_mask = camera.cull_mask
 	_feed_viewport.add_child(_feed_camera)
 	_feed_camera.current = true
 	_feed_camera.global_transform = camera.global_transform
 	_feed_refresh_timer = 0.0
 	_feed_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+## Жужжание дрона: слышно другим игрокам и ботам.
+func _build_audio() -> void:
+	_buzz = AudioStreamPlayer3D.new()
+	_buzz.name = "DroneBuzz"
+	_buzz.stream = _make_buzz_stream()
+	_buzz.unit_size = 7.0
+	_buzz.max_distance = 55.0
+	_buzz.volume_db = -7.0
+	_buzz.max_polyphony = 1
+	_buzz.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
+	add_child(_buzz)
+	_buzz.play()
+
+func _make_buzz_stream() -> AudioStreamWAV:
+	const RATE := 22050
+	var length := 0.32
+	var count := int(RATE * length)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7331
+	for i in range(count):
+		var t := float(i) / float(RATE)
+		var saw := 0.0
+		var base := 128.0 + sin(t * 9.0) * 6.0
+		saw += sin(TAU * base * t) * 0.5
+		saw += sin(TAU * base * 2.0 * t) * 0.28
+		saw += sin(TAU * base * 3.03 * t) * 0.14
+		var rotor := rng.randf_range(-1.0, 1.0) * 0.10
+		var value := int(clampf((saw * 0.55 + rotor) * 0.55, -1.0, 1.0) * 32767.0)
+		data[i * 2] = value & 0xFF
+		data[i * 2 + 1] = (value >> 8) & 0xFF
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = RATE
+	stream.stereo = false
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end = count
+	stream.data = data
+	return stream
 
 func _build_tether_renderer() -> void:
 	_tether_mesh = MeshInstance3D.new()
