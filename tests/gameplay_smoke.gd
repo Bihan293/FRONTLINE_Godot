@@ -34,6 +34,7 @@ func _ready() -> void:
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
 	await _test_vehicles()
+	await _test_heal_animation()
 	await _test_tactical_bot_ai()
 	await _test_ballistic_bullet_tracers()
 	await _test_toggle_lean()
@@ -1018,6 +1019,32 @@ func _test_tactical_street_props_pack() -> void:
 				_check(sb.collision_layer == 1, "wrong collision layer for %s" % t)
 			node.queue_free()
 
+	await get_tree().process_frame
+
+## QA-fix TASK-0022: перевязка — удержание, анимация бинта, зелёная полоса.
+func _test_heal_animation() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+	player.set("health", 40.0)
+	player.set("medkits", 3)
+	player.call("_use_heal")
+	_check(bool(player.get("is_healing")), "heal did not start")
+	for _dbg in range(3):
+		await get_tree().physics_frame
+	var heal_view: Node3D = player.get("heal_view_root")
+	var heal_bar: Control = player.get("heal_progress_bar")
+	_check(heal_view != null, "heal view model missing")
+	_check(heal_view != null and heal_view.visible, "heal bandage not visible during heal")
+	_check(heal_bar != null and heal_bar.visible, "green heal progress bar not visible")
+	var weapon_root: Node3D = player.get("weapon_root")
+	_check(weapon_root == null or not weapon_root.visible, "weapon still on screen during heal")
+	for _i in range(170):
+		await get_tree().physics_frame
+	_check(float(player.get("health")) > 40.0, "healing did not restore health")
+	_check(not bool(player.get("is_healing")), "healing state stuck after completion")
+	_check(heal_bar != null and not heal_bar.visible, "heal bar still visible after completion")
+	player.queue_free()
 	await get_tree().process_frame
 
 func _report() -> void:
