@@ -97,6 +97,16 @@ var _los_lost_timer := 0.0
 var _audio_env_timer := 0.0
 var _audio_indoors := false
 var _audio_occluded := false
+# QA-optimization: кэш LOS и обхода препятствий, чтобы не рейкастить каждый кадр.
+var _self_rids: Array[RID] = []
+var _los_timer := 0.0
+var _los_cached := false
+var _avoid_timer := 0.0
+var _avoid_in := Vector3.ZERO
+var _avoid_out := Vector3.ZERO
+var _sep_timer := 0.0
+var _drone_timer := 0.0
+var _nearest_drone_cached: Node3D = null
 # QA-fix TASK-0022: тактическая «живость» — перебежки, приседания, разброс маршрутов.
 var _personal_offset_x := 0.0
 var _bound_timer := 0.0
@@ -178,6 +188,7 @@ func _ready() -> void:
 	_build_visuals()
 	_build_weapon()
 	_build_hitboxes()
+	_rebuild_self_rids()
 	_build_label()
 	_build_audio()
 
@@ -403,6 +414,12 @@ func _physics_process(delta: float) -> void:
 
 ## Мягкое расталкивание союзников: боты не сбиваются в кучу в углах и проходах.
 func _apply_separation(delta: float) -> void:
+	# QA-optimization: расталкивание 20 раз/с вместо каждого кадра (O(N^2) скан).
+	_sep_timer += delta
+	if _sep_timer < 0.05:
+		return
+	var step := _sep_timer
+	_sep_timer = 0.0
 	var push := Vector3.ZERO
 	for b in get_tree().get_nodes_in_group("bots"):
 		if b == self or not is_instance_valid(b):
@@ -417,8 +434,8 @@ func _apply_separation(delta: float) -> void:
 			push += d.normalized() * ((2.3 - dist) / 2.3)
 	if push.length_squared() > 0.001:
 		push = push.limit_length(1.0)
-		velocity.x += push.x * 18.0 * delta
-		velocity.z += push.z * 18.0 * delta
+		velocity.x += push.x * 18.0 * step
+		velocity.z += push.z * 18.0 * step
 
 ## QA-fix TASK-0022: боты больше не «залипают» в углах стен.
 ## Если бот хочет идти, но за 0.7 с сместился меньше 22 см — короткий
@@ -453,7 +470,13 @@ func _update_ai(delta: float) -> void:
 		suppression = maxf(0.0, suppression - delta * 0.35 * difficulty_recovery_mult)
 
 	# QA-fix TASK-0022: услышав жужжание дрона, бойцы разбегаются или стреляют по нему.
-	var nearest_drone := _nearest_enemy_drone()
+	_drone_timer -= delta
+	if _drone_timer <= 0.0:
+		_drone_timer = 0.5 + float(get_instance_id() % 5) * 0.02
+		_nearest_drone_cached = _nearest_enemy_drone()
+	var nearest_drone := _nearest_drone_cached
+	if nearest_drone != null and not is_instance_valid(nearest_drone):
+		nearest_drone = null
 	if nearest_drone != null:
 		var drone_range := global_position.distance_to(nearest_drone.global_position)
 		if drone_range < 16.0 and current_target != nearest_drone:
@@ -527,14 +550,14 @@ func _find_cover_point() -> Vector3:
 	var space := get_world_3d().direct_space_state
 	var best := Vector3.ZERO
 	var best_score := -1.0
-	for i in range(8):
-		var angle := TAU * float(i) / 8.0 + randf_range(-0.15, 0.15)
+	for i in range(4):
+		var angle := TAU * float(i) / 4.0 + randf_range(-0.2, 0.2)
 		var dir := Vector3(cos(angle), 0.0, sin(angle))
 		var candidate := global_position + dir * randf_range(2.0, 3.2)
 		# Путь к точке должен быть свободен.
 		var walk_q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.9, candidate + Vector3.UP * 0.9)
 		walk_q.collision_mask = WORLD_LAYER_MASK
-		walk_q.exclude = _get_self_collision_rids()
+		walk_q.exclude = _self_rids
 		walk_q.collide_with_areas = false
 		if not space.intersect_ray(walk_q).is_empty():
 			continue
@@ -542,7 +565,7 @@ func _find_cover_point() -> Vector3:
 		var to := current_target.global_position + Vector3.UP * 1.15
 		var sight_q := PhysicsRayQueryParameters3D.create(from, to)
 		sight_q.collision_mask = WORLD_LAYER_MASK
-		sight_q.exclude = _get_self_collision_rids()
+		sight_q.exclude = _self_rids
 		sight_q.collide_with_areas = false
 		var sight_hit := space.intersect_ray(sight_q)
 		var score := 1.0 if not sight_hit.is_empty() else 0.0
@@ -668,11 +691,21 @@ func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
 	return collider.get_meta("owner_actor") == target_actor
 
 func _get_self_collision_rids() -> Array[RID]:
-	var rids: Array[RID] = [get_rid()]
+	# QA-optimization: массив RID собирается один раз, а не на каждый рейкаст.
+	if _self_rids.is_empty():
+		_rebuild_self_rids()
+	return _self_rids
+
+func _rebuild_self_rids() -> void:
+	_self_rids.clear()
+	_self_rids.append(get_rid())
 	for hitbox in _hitboxes:
 		if is_instance_valid(hitbox):
-			rids.append(hitbox.get_rid())
-	return rids
+			_self_rids.append(hitbox.get_rid())
+
+## Публичный кэш для пуль (bullet_projectile больше не обходит дерево бота).
+func get_projectile_rids() -> Array[RID]:
+	return _get_self_collision_rids()
 
 ## Тактическое поведение в бою (Dummy War Tactical Firefight)
 func _combat_behavior(delta: float) -> void:
@@ -682,7 +715,11 @@ func _combat_behavior(delta: float) -> void:
 
 	# QA-fix TASK-0022: не стрелять сквозь укрытие. Если цель пропала из виду,
 	# бот не «палит в стену», а перепозиционируется; через 1.2 с цель сбрасывается.
-	var can_see := _has_line_of_sight(current_target, _target_aim_point(current_target))
+	_los_timer -= delta
+	if _los_timer <= 0.0 and current_target != null:
+		_los_timer = 0.12 + float(get_instance_id() % 5) * 0.015
+		_los_cached = _has_line_of_sight(current_target, _target_aim_point(current_target))
+	var can_see := _los_cached
 	if can_see:
 		_los_lost_timer = 0.0
 	else:
@@ -890,6 +927,16 @@ func _advance_behavior(delta: float) -> void:
 
 ## Процедурный обход препятствий (стен, заборов, мешков)
 func _avoid_obstacles(desired_dir: Vector3) -> Vector3:
+	# QA-optimization: направление обхода пересчитывается 20 раз/с, не 60.
+	_avoid_timer -= get_physics_process_delta_time()
+	if _avoid_timer > 0.0 and _avoid_in.dot(desired_dir) > 0.92:
+		return _avoid_out
+	_avoid_in = desired_dir
+	_avoid_timer = 0.05 + float(get_instance_id() % 4) * 0.008
+	_avoid_out = _avoid_obstacles_cast(desired_dir)
+	return _avoid_out
+
+func _avoid_obstacles_cast(desired_dir: Vector3) -> Vector3:
 	if desired_dir.length_squared() < 0.01:
 		return desired_dir
 	var space := get_world_3d().direct_space_state

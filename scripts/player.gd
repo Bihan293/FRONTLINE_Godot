@@ -189,6 +189,8 @@ var crosshair
 var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
 var mounted_vehicle: Node3D = null
+var _prompt_timer := 0.0
+var _osd_timer := 0.0
 var _mounted_last_vehicle_yaw := 0.0
 var mobile_fire := false
 var sprint_hold := 0.0
@@ -688,6 +690,19 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	arm.add_child(thumb)
 
 
+	# Короткая манжета рукава за кистью (рука «входит» в кадр, не висит).
+	var cuff := MeshInstance3D.new()
+	cuff.name = "Cuff"
+	var cuff_mesh := CylinderMesh.new()
+	cuff_mesh.top_radius = 0.030
+	cuff_mesh.bottom_radius = 0.033
+	cuff_mesh.height = 0.10
+	cuff_mesh.radial_segments = 8
+	cuff.mesh = cuff_mesh
+	cuff.material_override = sleeve
+	cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	arm.add_child(cuff)
+
 	# Пальцы, обхватывающие оружие (4 коротких фаланги на кисть).
 	for finger_index in range(4):
 		var finger := MeshInstance3D.new()
@@ -731,9 +746,13 @@ func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, forear
 	if upper != null:
 		upper.visible = false
 	if forearm != null:
-		# Предплечье соединяет кисть с нижним краем кадра — рука не «висит».
-		forearm.visible = true
-		_place_limb_segment(forearm, forearm_start, marker_xf.origin)
+		# Длинные предплечья убраны: они всё равно читались как «сосиски».
+		forearm.visible = false
+	var cuff := arm.get_node_or_null("Cuff") as MeshInstance3D
+	if cuff != null:
+		cuff.visible = true
+		cuff.position = Vector3(0.0, -0.016, 0.085)
+		cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
 	# Корень руки совмещаем с кистевым маркером оружия (масштаб оружия учтён).
 	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
 	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
@@ -1479,8 +1498,14 @@ func _physics_process(delta: float) -> void:
 			velocity.y = 0.0
 		move_and_slide()
 		return
-	_refresh_pickup_prompt()
+	# QA-optimization: подсказки и UI не пересобираются каждый кадр.
+	_prompt_timer -= delta
+	if _prompt_timer <= 0.0:
+		_prompt_timer = 0.2
+		_refresh_pickup_prompt()
 	_update_acoustics(delta)
+	COMBAT_AUDIO.listener_pos = camera.global_position
+	COMBAT_AUDIO.listener_valid = true
 
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
@@ -1531,12 +1556,15 @@ func _physics_process(delta: float) -> void:
 				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
 
 	# Вспышка крови на экране
+	var blood_alpha := 0.0
 	if blood_vignette_time > 0.0:
 		blood_vignette_time = maxf(0.0, blood_vignette_time - delta * 2.5)
-		blood_overlay.color.a = blood_vignette_time * 0.45
-	else:
-		var low_hp_alpha := clampf((35.0 - health) / 35.0, 0.0, 0.3) if health < 35.0 else 0.0
-		blood_overlay.color.a = low_hp_alpha
+		blood_alpha = blood_vignette_time * 0.45
+	elif health < 35.0:
+		blood_alpha = clampf((35.0 - health) / 35.0, 0.0, 0.3)
+	if not is_equal_approx(blood_overlay.color.a, blood_alpha):
+		blood_overlay.color.a = blood_alpha
+	blood_overlay.visible = blood_alpha > 0.004
 
 	# Bodycam / Dummy War физика оружия: вес, покачивание и свободная наводка
 	var run_boost := 1.0 + sprint_anim * 0.9
@@ -1681,7 +1709,9 @@ func _physics_process(delta: float) -> void:
 	bodycam_time += delta
 	if bodycam_rec_dot != null:
 		bodycam_rec_dot.modulate.a = 0.30 + 0.70 * absf(sin(bodycam_time * 3.6))
-	if bodycam_osd_label != null:
+	_osd_timer -= delta
+	if _osd_timer <= 0.0 and bodycam_osd_label != null:
+		_osd_timer = 1.0
 		var dt := Time.get_datetime_dict_from_system()
 		bodycam_osd_label.text = "%04d-%02d-%02d %02d:%02d:%02dZ   BAT 94%%" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second]
 
@@ -1741,7 +1771,6 @@ func _process_mounted_vehicle(delta: float) -> void:
 		if crosshair.has_method("set_sniper_scope"):
 			crosshair.call("set_sniper_scope", false)
 		crosshair.visible = true
-		crosshair.queue_redraw()
 	if mounted_vehicle.has_method("tick_driver"):
 		mounted_vehicle.call("tick_driver", self, delta)
 	var firing := mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
@@ -2644,7 +2673,9 @@ func _refresh_pickup_prompt() -> void:
 	if pickup_label != null:
 		pickup_label.visible = prompt != null
 		if prompt != null and prompt.has_method("prompt_text"):
-			pickup_label.text = str(prompt.call("prompt_text", OS.has_feature("mobile")))
+			var new_text := str(prompt.call("prompt_text", OS.has_feature("mobile")))
+			if pickup_label.text != new_text:
+				pickup_label.text = new_text
 	if mobile_controls != null:
 		var show_interact := (mounted_vehicle != null or enterable != null or pickup != null)
 		mobile_controls.set_interact_visible(show_interact)

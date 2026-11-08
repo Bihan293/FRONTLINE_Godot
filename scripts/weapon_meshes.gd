@@ -9,6 +9,10 @@ const MUZZLE_LOCAL := Vector3(0.0, 0.09, 0.501)
 static var _ak_mesh: ArrayMesh
 static var _ak_material: StandardMaterial3D
 static var _weapon_materials: Dictionary = {}
+# QA-optimization: каждый ствол запекается в ОДИН меш с vertex colors.
+static var _baked_weapon_meshes: Dictionary = {}
+static var _baked_weapon_muzzles: Dictionary = {}
+static var _baked_weapon_material: StandardMaterial3D
 
 ## Builds a first-person model with its muzzle marker. AK-47 uses the imported GLB;
 ## the remaining weapons use compact low-poly parts so they need no extra assets.
@@ -239,11 +243,76 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			return null
 	if weapon_id == "entrenching_shovel":
 		return root
+	# QA-optimization: собираем все части в один ArrayMesh (1 draw call).
+	if not _baked_weapon_meshes.has(weapon_id):
+		_baked_weapon_meshes[weapon_id] = _bake_weapon_parts(root)
+		_baked_weapon_muzzles[weapon_id] = Vector3(0.0, muzzle_y, muzzle_z)
+	for child in root.get_children():
+		root.remove_child(child)
+		child.free()
+	var baked := MeshInstance3D.new()
+	baked.name = "BakedBody"
+	baked.mesh = _baked_weapon_meshes[weapon_id]
+	baked.material_override = _baked_weapon_mat()
+	baked.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(baked)
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
-	muzzle.position = Vector3(0.0, muzzle_y, muzzle_z)
+	muzzle.position = _baked_weapon_muzzles[weapon_id]
 	root.add_child(muzzle)
 	return root
+
+static func _bake_weapon_parts(root: Node3D) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for child in root.get_children():
+		if not (child is MeshInstance3D):
+			continue
+		var mi := child as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var col := Color(0.5, 0.5, 0.5)
+		var mat := mi.material_override
+		if mat is StandardMaterial3D:
+			col = (mat as StandardMaterial3D).albedo_color
+		var xf := mi.transform
+		for surface in range(mi.mesh.get_surface_count()):
+			var arrays := mi.mesh.surface_get_arrays(surface)
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var nn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var base := verts.size()
+			for i in range(v.size()):
+				verts.append(xf * v[i])
+				normals.append((xf.basis * nn[i]).normalized())
+				colors.append(col)
+			var idx = arrays[Mesh.ARRAY_INDEX]
+			if idx == null:
+				for i in range(v.size()):
+					indices.append(base + i)
+			else:
+				for i in idx:
+					indices.append(base + i)
+	var mesh := ArrayMesh.new()
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_COLOR] = colors
+	out[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	return mesh
+
+static func _baked_weapon_mat() -> StandardMaterial3D:
+	if _baked_weapon_material == null:
+		_baked_weapon_material = StandardMaterial3D.new()
+		_baked_weapon_material.albedo_color = Color.WHITE
+		_baked_weapon_material.vertex_color_use_as_albedo = true
+		_baked_weapon_material.vertex_color_is_srgb = true
+		_baked_weapon_material.roughness = 0.55
+		_baked_weapon_material.metallic = 0.25
+	return _baked_weapon_material
 
 static var _f1_body_mesh_cache: ArrayMesh
 

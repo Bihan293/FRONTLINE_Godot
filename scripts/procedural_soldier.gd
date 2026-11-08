@@ -412,6 +412,7 @@ func _register_physics_ragdoll() -> void:
 		oldest._freeze_physics_ragdoll()
 
 var _cam_dist_timer: float = 0.0
+var _cached_cam: Camera3D = null
 var _cached_cam_dist: float = 0.0
 var _lod_step_accum: float = 0.0
 
@@ -428,7 +429,11 @@ func _process(delta: float) -> void:
 	if _cam_dist_timer <= 0.0:
 		_cam_dist_timer = 0.35 + randf_range(0.0, 0.1)
 		var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
+		_cached_cam = cam
 		_cached_cam_dist = global_position.distance_to(cam.global_position) if cam != null else 0.0
+	# QA-optimization: за спиной игрока скелет не пересчитываем (кроме ближней зоны).
+	if _cached_cam != null and _cached_cam_dist > 10.0 and not _cached_cam.is_position_in_frustum(global_position):
+		return
 
 	# При дистанции больше near троттлим скелет; на low пороги жёстче.
 	var lod_near := GameSettings.bot_lod_near()

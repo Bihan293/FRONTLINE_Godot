@@ -206,6 +206,8 @@ func _build_world() -> void:
 			_build_diggable_ground(box)
 		else:
 			_build_box(box)
+	# QA-optimization: слить все неотбрасывающие тень боксы в одну геометрию.
+	_flush_merged_boxes()
 
 	# Спавн взрывных тактических бочек с горючим
 	for barrel_pos in layout.barrels():
@@ -313,8 +315,15 @@ func _build_box(data: Dictionary) -> void:
 		"table", "chest", "altar", "pew", "trench_step", "picket_board", "hedge_beam"
 	]
 	var is_flat_or_micro: bool = kind in NO_SHADOW_KINDS or size.y <= 0.22 or (size.x < 0.35 and size.z < 0.35)
-	if not bool(data.get("cast_shadow", true)) or is_flat_or_micro:
-		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var wants_shadow: bool = bool(data.get("cast_shadow", true)) and not is_flat_or_micro
+	var shadow_caster: bool = wants_shadow and GameSettings.quality > 0
+	if shadow_caster:
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	else:
+		# QA-optimization: статичные коробки без теней складываем в один меш.
+		# 195 боксов BATTLEFIELD / 373 VILLAGE = 1 draw call вместо сотен.
+		_append_box_mesh(pos, size, data.color)
+		return
 
 	if not solid:
 		inst.position = pos
@@ -362,6 +371,13 @@ func _flush_merged_boxes() -> void:
 	material.vertex_color_is_srgb = true
 	material.roughness = 0.94
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if GameSettings.quality > 0:
+		if _detail_texture == null:
+			_detail_texture = _make_detail_texture()
+		material.albedo_texture = _detail_texture
+		material.uv1_triplanar = true
+		material.uv1_scale = Vector3(0.4, 0.4, 0.4)
+		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var instance := MeshInstance3D.new()
 	instance.name = "MergedMapGeometry"
 	instance.mesh = mesh
@@ -613,15 +629,25 @@ func spawn_weapon_pickup(pos: Vector3, index: int, clip: int, reserve: int, init
 		velocity = Vector3(randf_range(-0.8, 0.8), 1.1, randf_range(-0.8, 0.8))
 	pickup.launch(velocity)
 
+var _active_bullets := 0
+var _sector_timer := 0.0
+
+func _on_bullet_exited() -> void:
+	_active_bullets = maxi(0, _active_bullets - 1)
+
 func spawn_bullet_projectile(start_pos: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node, damage_to_player := 0) -> bool:
 	if is_game_over:
 		return false
-	if get_tree().get_nodes_in_group("ballistic_bullets").size() >= MAX_ACTIVE_BULLETS:
+	# QA-optimization: счётчик вместо скана группы из ~200 нод на каждый выстрел.
+	var cap := 96 if GameSettings.quality == 0 else MAX_ACTIVE_BULLETS
+	if _active_bullets >= cap:
 		return false
 	var bullet = BULLET_PROJECTILE_SCRIPT.new()
 	# QA-sweep: configure() выставляет global_position — только после add_child,
 	# иначе каждый выстрел пишет ERROR "!is_inside_tree()".
+	bullet.tree_exited.connect(_on_bullet_exited)
 	add_child(bullet)
+	_active_bullets += 1
 	bullet.configure(start_pos, direction, speed, damage, range_m, owner_name, owner_team, owner, damage_to_player)
 	return true
 
@@ -736,7 +762,11 @@ func _process(delta: float) -> void:
 	if is_game_over:
 		return
 	match_elapsed_time += delta
-	_update_sector_captures()
+	# QA-optimization: владение сектором не меняется быстрее 4 Гц.
+	_sector_timer -= delta
+	if _sector_timer <= 0.0:
+		_sector_timer = 0.25
+		_update_sector_captures()
 	_update_ticket_bleed(delta)
 
 func _update_ticket_bleed(delta: float) -> void:
