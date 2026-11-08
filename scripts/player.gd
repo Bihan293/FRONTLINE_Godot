@@ -133,6 +133,11 @@ var medkits := 2
 var is_healing := false
 var heal_timer := 0.0
 var heal_target: Node3D
+var heal_hold := false
+var heal_anim_time := 0.0
+var heal_view_root: Node3D
+var heal_bandage: Node3D
+var heal_progress_bar: ProgressBar
 var throwable_cooldown := 0.0
 var player_role := "ASSAULT"
 var role_primary_weapon_index := 0
@@ -256,6 +261,7 @@ func _build_weapon() -> void:
 	_build_view_hands()
 	_equip_weapon_visual()
 	_build_grenade_view()
+	_build_heal_view()
 
 func _equip_weapon_visual() -> void:
 	if weapon_mount == null:
@@ -894,6 +900,8 @@ func _build_mobile_controls() -> void:
 		mobile_controls.grenade_pressed.connect(_throw_grenade)
 	mobile_controls.smoke_pressed.connect(_throw_smoke)
 	mobile_controls.heal_pressed.connect(_use_heal)
+	if mobile_controls.has_signal("heal_released"):
+		mobile_controls.heal_released.connect(_on_heal_released)
 	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
 	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
 	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
@@ -1019,6 +1027,29 @@ void fragment() {
 	health_bar.custom_minimum_size = Vector2(140, 22)
 	health_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	health_box.add_child(health_bar)
+
+	# QA-fix TASK-0022: зелёная полоса перевязки по центру снизу.
+	heal_progress_bar = ProgressBar.new()
+	heal_progress_bar.min_value = 0.0
+	heal_progress_bar.max_value = 100.0
+	heal_progress_bar.value = 0.0
+	heal_progress_bar.show_percentage = false
+	heal_progress_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	heal_progress_bar.offset_left = -170.0
+	heal_progress_bar.offset_right = 170.0
+	heal_progress_bar.offset_top = -150.0
+	heal_progress_bar.offset_bottom = -134.0
+	heal_progress_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var heal_bg := StyleBoxFlat.new()
+	heal_bg.bg_color = Color(0.06, 0.09, 0.06, 0.85)
+	heal_bg.set_corner_radius_all(4)
+	var heal_fill := StyleBoxFlat.new()
+	heal_fill.bg_color = Color(0.30, 0.85, 0.35, 0.95)
+	heal_fill.set_corner_radius_all(4)
+	heal_progress_bar.add_theme_stylebox_override("background", heal_bg)
+	heal_progress_bar.add_theme_stylebox_override("fill", heal_fill)
+	heal_progress_bar.visible = false
+	hud.add_child(heal_progress_bar)
 
 	ammo_label = Label.new()
 	ammo_label.anchor_left = 1.0
@@ -1318,6 +1349,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if mounted_vehicle != null:
 		mounted_vehicle = null
+	if event is InputEventKey and not event.pressed and event.keycode == KEY_H:
+		heal_hold = false
+		if is_healing:
+			_cancel_healing()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V and player_role == "RADIO_OPERATOR":
 		_launch_drone()
 		return
@@ -1382,12 +1418,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_throw_smoke()
 		elif event.keycode == KEY_H:
 			_use_heal()
+		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
+			_select_weapon_slot(event.keycode - KEY_1)
 		elif event.keycode == KEY_F:
 			_interact_with_pickup()
 		elif event.keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
-			_select_weapon_slot(event.keycode - KEY_1)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -1450,12 +1486,15 @@ func _physics_process(delta: float) -> void:
 		bob_time = fposmod(bob_time, TAU)
 		breathing_time += delta
 
-	# Таймер лечения
+	# Таймер лечения (TASK-0022: удержание кнопки + анимация перевязки)
 	if is_healing:
 		var moving_to_cancel := mobile_move.length() > 0.15 or Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D)
-		if moving_to_cancel:
+		# Отпустил кнопку — перевязка прерывается (флаг един для тача и клавиши).
+		var hold_released := not heal_hold
+		if moving_to_cancel or hold_released:
 			_cancel_healing()
 		else:
+			_update_heal_visual(delta)
 			heal_timer -= delta
 			if heal_timer <= 0.0:
 				if heal_target != null and is_instance_valid(heal_target) and not bool(heal_target.get("is_dead")):
@@ -1465,6 +1504,7 @@ func _physics_process(delta: float) -> void:
 				is_healing = false
 				heal_target = null
 				medkits = maxi(0, medkits - 1)
+				_finish_heal_visual()
 				_refresh_health()
 				_refresh_equipment()
 				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
@@ -2012,6 +2052,100 @@ func _reload() -> void:
 	reload_timer = float(weapon.reload)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
+## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
+func _build_heal_view() -> void:
+	if heal_view_root != null and is_instance_valid(heal_view_root):
+		return
+	var root := Node3D.new()
+	root.name = "HealView"
+	root.visible = false
+	camera.add_child(root)
+
+	var sleeve := StandardMaterial3D.new()
+	sleeve.albedo_color = Color(0.24, 0.25, 0.19)
+	sleeve.roughness = 0.95
+	var glove_mat := StandardMaterial3D.new()
+	glove_mat.albedo_color = Color(0.33, 0.26, 0.19)
+	glove_mat.roughness = 0.9
+
+	# Предплечье, которое перевязываем.
+	var forearm := MeshInstance3D.new()
+	var f_mesh := CylinderMesh.new()
+	f_mesh.top_radius = 0.044
+	f_mesh.bottom_radius = 0.052
+	f_mesh.height = 0.44
+	f_mesh.radial_segments = 8
+	forearm.mesh = f_mesh
+	forearm.material_override = sleeve
+	forearm.position = Vector3(-0.16, -0.24, -0.42)
+	forearm.rotation = Vector3(deg_to_rad(74.0), 0.0, deg_to_rad(-24.0))
+	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(forearm)
+
+	# Рулон бинта (двигается вокруг предплечья).
+	var bandage := Node3D.new()
+	bandage.name = "Bandage"
+	var roll := MeshInstance3D.new()
+	var r_mesh := CylinderMesh.new()
+	r_mesh.top_radius = 0.056
+	r_mesh.bottom_radius = 0.056
+	r_mesh.height = 0.095
+	r_mesh.radial_segments = 10
+	roll.mesh = r_mesh
+	var bandage_mat := StandardMaterial3D.new()
+	bandage_mat.albedo_color = Color(0.88, 0.85, 0.74)
+	bandage_mat.roughness = 1.0
+	roll.material_override = bandage_mat
+	roll.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
+	roll.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bandage.add_child(roll)
+	bandage.position = Vector3(0.02, -0.18, -0.42)
+	root.add_child(bandage)
+	heal_bandage = bandage
+
+	# Кисть, держащая бинт.
+	var hand := MeshInstance3D.new()
+	var h_mesh := BoxMesh.new()
+	h_mesh.size = Vector3(0.06, 0.034, 0.095)
+	hand.mesh = h_mesh
+	hand.material_override = glove_mat
+	hand.position = Vector3(0.09, -0.20, -0.40)
+	hand.rotation = Vector3(deg_to_rad(18.0), deg_to_rad(-12.0), 0.0)
+	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(hand)
+
+	heal_view_root = root
+
+func _update_heal_visual(delta: float) -> void:
+	if not is_healing:
+		return
+	heal_anim_time += delta
+	if heal_view_root != null and is_instance_valid(heal_view_root):
+		heal_view_root.visible = true
+	if weapon_root != null:
+		weapon_root.visible = false
+	if heal_bandage != null and is_instance_valid(heal_bandage):
+		var t := heal_anim_time
+		# Бинт наматывается по кругу вокруг предплечья.
+		heal_bandage.position = Vector3(
+			0.03 + sin(t * 7.5) * 0.055,
+			-0.185 + cos(t * 6.0) * 0.05,
+			-0.42 + cos(t * 7.5) * 0.02
+		)
+		heal_bandage.rotation = Vector3(t * 2.4, t * 1.7, t * 2.1)
+	if heal_progress_bar != null:
+		heal_progress_bar.visible = true
+		heal_progress_bar.value = clampf((1.0 - heal_timer / 2.2) * 100.0, 0.0, 100.0)
+
+func _finish_heal_visual() -> void:
+	heal_anim_time = 0.0
+	if heal_view_root != null and is_instance_valid(heal_view_root):
+		heal_view_root.visible = false
+	if heal_progress_bar != null:
+		heal_progress_bar.visible = false
+	if weapon_root != null and not is_dead and not is_shovel_equipped and grenade_anim_state == GrenadeActionState.IDLE:
+		weapon_root.visible = true
+
 func _build_grenade_view() -> void:
 	if grenade_view_root != null and is_instance_valid(grenade_view_root):
 		return
@@ -2028,6 +2162,11 @@ func _build_grenade_view() -> void:
 	grenade_pull_ring = grenade_view_root.find_child("PullRing", true, false)
 	grenade_hand_left = grenade_view_root.find_child("HandLeft", true, false)
 	grenade_hand_right = grenade_view_root.find_child("HandRight", true, false)
+
+func _on_heal_released() -> void:
+	heal_hold = false
+	if is_healing:
+		_cancel_healing()
 
 func _on_mobile_grenade_changed(pressed: bool) -> void:
 	if pressed:
@@ -2368,6 +2507,8 @@ func _use_heal() -> void:
 	if heal_target == null and health >= MAX_HEALTH:
 		return
 	is_healing = true
+	heal_hold = true
+	heal_anim_time = 0.0
 	heal_timer = 2.2
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 	_refresh_equipment()
@@ -2378,6 +2519,8 @@ func _cancel_healing() -> void:
 	is_healing = false
 	heal_target = null
 	heal_timer = 0.0
+	heal_hold = false
+	_finish_heal_visual()
 	_refresh_equipment()
 
 func _refresh_ammo() -> void:

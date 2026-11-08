@@ -19,6 +19,7 @@ signal grenade_released
 signal grenade_changed(pressed: bool)
 signal smoke_pressed
 signal heal_pressed
+signal heal_released
 signal peek_left_changed(pressed: bool)
 signal peek_right_changed(pressed: bool)
 signal cycle_weapon_pressed
@@ -277,6 +278,8 @@ func _touch_up(index: int) -> void:
 			drone_vertical_changed.emit(1.0, false)
 		elif _drone_mode and id == "crouch":
 			drone_vertical_changed.emit(-1.0, false)
+		elif id == "heal":
+			heal_released.emit()
 		elif id == "peek_left":
 			peek_left_changed.emit(false)
 		elif id == "peek_right":
