@@ -143,55 +143,150 @@ static func boxes() -> Array:
 		_push(out, p, Vector3(1.3, 1.3, 1.3), Color(0.30, 0.22, 0.15), true, "crate")
 
 	# =========================================================================
-	# 4. СЕКТОР BRAVO (ЦЕНТР, Z = -25..25): РАЗРУШЕННЫЙ ГОРОД / РУИНЫ
+	# 4. СЕКТОР BRAVO (ЦЕНТР, Z = -25..25): РАЗРУШЕННЫЙ ГОРОД / РУИНЫ С ОКНАМИ ДЛЯ ПАРКУРА
 	# =========================================================================
-	# Центральные кирпичные руины (укрытия в полный рост и бойницы)
-	_push(out, Vector3(-14, 1.5, -12), Vector3(1.2, 3.0, 14), Color(0.46, 0.26, 0.20), true, "ruins")
-	_push(out, Vector3(14, 1.5, -12), Vector3(1.2, 3.0, 14), Color(0.46, 0.26, 0.20), true, "ruins")
-	_push(out, Vector3(-14, 1.5, 12), Vector3(1.2, 3.0, 14), Color(0.46, 0.26, 0.20), true, "ruins")
-	_push(out, Vector3(14, 1.5, 12), Vector3(1.2, 3.0, 14), Color(0.46, 0.26, 0.20), true, "ruins")
+	var brick_col := Color(0.48, 0.26, 0.20)
+	var rubble_col := Color(0.44, 0.28, 0.22)
+	var slab_col := Color(0.42, 0.43, 0.44)
 
-	# Поперечные полуразрушенные стены с проломами
-	_push(out, Vector3(-8, 1.2, 0), Vector3(12, 2.4, 1.2), Color(0.44, 0.25, 0.19), true, "ruins")
-	_push(out, Vector3(8, 1.2, 0), Vector3(12, 2.4, 1.2), Color(0.44, 0.25, 0.19), true, "ruins")
-	# Низкие обломки и баррикады внутри сектора Bravo
-	_push(out, Vector3(0, 0.5, -7), Vector3(5, 1.0, 1.0), Color(0.40, 0.38, 0.35), true, "debris")
-	_push(out, Vector3(0, 0.5, 7), Vector3(5, 1.0, 1.0), Color(0.40, 0.38, 0.35), true, "debris")
+	# --- Северо-западное крыло руин с окнами для паркура ---
+	_push(out, Vector3(-14, 1.7, -17.5), Vector3(1.2, 3.4, 4.0), brick_col, true, "ruins")
+	_push(out, Vector3(-14, 0.45, -13.5), Vector3(1.2, 0.90, 2.0), brick_col, true, "window_sill") # Оконный проём для паркура!
+	_push(out, Vector3(-14, 2.75, -13.5), Vector3(1.2, 1.30, 2.0), brick_col, true, "window_lintel")
+	_push(out, Vector3(-14, 0.24, -13.5), Vector3(2.4, 0.48, 2.6), rubble_col, true, "rubble") # Осыпь для запрыгивания
+	_push(out, Vector3(-14, 1.7, -8.5), Vector3(1.2, 3.4, 5.0), brick_col, true, "ruins")
+
+	# Пролом в стене для прямого перемахивания (высота 0.96 м)
+	_push(out, Vector3(-14, 0.48, -4.5), Vector3(1.2, 0.96, 2.6), brick_col, true, "wall_breach")
+	_push(out, Vector3(-12.5, 0.26, -4.5), Vector3(2.0, 0.52, 3.0), rubble_col, true, "rubble")
+
+	# --- Северо-восточное крыло руин с окнами для паркура ---
+	_push(out, Vector3(14, 1.7, -17.5), Vector3(1.2, 3.4, 4.0), brick_col, true, "ruins")
+	_push(out, Vector3(14, 0.45, -13.5), Vector3(1.2, 0.90, 2.0), brick_col, true, "window_sill")
+	_push(out, Vector3(14, 2.75, -13.5), Vector3(1.2, 1.30, 2.0), brick_col, true, "window_lintel")
+	_push(out, Vector3(14, 0.24, -13.5), Vector3(2.4, 0.48, 2.6), rubble_col, true, "rubble")
+	_push(out, Vector3(14, 1.7, -8.5), Vector3(1.2, 3.4, 5.0), brick_col, true, "ruins")
+
+	_push(out, Vector3(14, 0.48, -4.5), Vector3(1.2, 0.96, 2.6), brick_col, true, "wall_breach")
+	_push(out, Vector3(12.5, 0.26, -4.5), Vector3(2.0, 0.52, 3.0), rubble_col, true, "rubble")
+
+	# --- Юго-западное крыло руин с окнами для паркура ---
+	_push(out, Vector3(-14, 1.7, 8.5), Vector3(1.2, 3.4, 5.0), brick_col, true, "ruins")
+	_push(out, Vector3(-14, 0.45, 13.5), Vector3(1.2, 0.90, 2.0), brick_col, true, "window_sill")
+	_push(out, Vector3(-14, 2.75, 13.5), Vector3(1.2, 1.30, 2.0), brick_col, true, "window_lintel")
+	_push(out, Vector3(-14, 0.24, 13.5), Vector3(2.4, 0.48, 2.6), rubble_col, true, "rubble")
+	_push(out, Vector3(-14, 1.7, 17.5), Vector3(1.2, 3.4, 4.0), brick_col, true, "ruins")
+
+	_push(out, Vector3(-14, 0.48, 4.5), Vector3(1.2, 0.96, 2.6), brick_col, true, "wall_breach")
+	_push(out, Vector3(-12.5, 0.26, 4.5), Vector3(2.0, 0.52, 3.0), rubble_col, true, "rubble")
+
+	# --- Юго-восточное крыло руин с окнами для паркура ---
+	_push(out, Vector3(14, 1.7, 8.5), Vector3(1.2, 3.4, 5.0), brick_col, true, "ruins")
+	_push(out, Vector3(14, 0.45, 13.5), Vector3(1.2, 0.90, 2.0), brick_col, true, "window_sill")
+	_push(out, Vector3(14, 2.75, 13.5), Vector3(1.2, 1.30, 2.0), brick_col, true, "window_lintel")
+	_push(out, Vector3(14, 0.24, 13.5), Vector3(2.4, 0.48, 2.6), rubble_col, true, "rubble")
+	_push(out, Vector3(14, 1.7, 17.5), Vector3(1.2, 3.4, 4.0), brick_col, true, "ruins")
+
+	_push(out, Vector3(14, 0.48, 4.5), Vector3(1.2, 0.96, 2.6), brick_col, true, "wall_breach")
+	_push(out, Vector3(12.5, 0.26, 4.5), Vector3(2.0, 0.52, 3.0), rubble_col, true, "rubble")
+
+	# Поперечные полуразрушенные стены с проломами и вольтируемыми секциями (1.04 м)
+	_push(out, Vector3(-10, 1.2, 0), Vector3(7.5, 2.4, 1.2), brick_col, true, "ruins")
+	_push(out, Vector3(-4.5, 0.52, 0), Vector3(3.2, 1.04, 1.1), brick_col, true, "ruins_low") # Стенка 1.04м для вольтирования!
+	_push(out, Vector3(4.5, 0.52, 0), Vector3(3.2, 1.04, 1.1), brick_col, true, "ruins_low")
+	_push(out, Vector3(10, 1.2, 0), Vector3(7.5, 2.4, 1.2), brick_col, true, "ruins")
+
+	# Обрушенные плиты перекрытия (пандусы на второй ярус)
+	_push(out, Vector3(-8.0, 0.85, 7.5), Vector3(4.5, 0.35, 3.2), slab_col, true, "fallen_slab")
+	_push(out, Vector3(8.0, 0.85, -7.5), Vector3(4.5, 0.35, 3.2), slab_col, true, "fallen_slab")
+
+	# Пулемётные брустверы из мешков с песком в центре сектора Bravo
+	_push(out, Vector3(0, 0.54, -7.0), Vector3(6.0, 1.08, 1.2), Color(0.48, 0.43, 0.31), true, "sandbag")
+	_push(out, Vector3(0, 0.54, 7.0), Vector3(6.0, 1.08, 1.2), Color(0.48, 0.43, 0.31), true, "sandbag")
 
 	# =========================================================================
-	# 5. СЕКТОР ALPHA (ЗАПАД, X = -65..-40): СЕТЬ ПЕРЕДОВЫХ ОКОПОВ
+	# 5. СЕКТОР ALPHA (ЗАПАД, X = -65..-40): СЕТЬ ОКОПОВ, НАСТИЛЫ И БРУСТВЕРЫ
 	# =========================================================================
-	# Зигзагообразные земляные брустверы траншей
-	_push(out, Vector3(-58, 0.7, -24), Vector3(1.4, 1.4, 22), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-48, 0.7, -24), Vector3(1.4, 1.4, 22), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-53, 0.7, -13), Vector3(12, 1.4, 1.4), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-58, 0.7, 0), Vector3(1.4, 1.4, 24), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-48, 0.7, 0), Vector3(1.4, 1.4, 24), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-53, 0.7, 12), Vector3(12, 1.4, 1.4), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-58, 0.7, 24), Vector3(1.4, 1.4, 22), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	_push(out, Vector3(-48, 0.7, 24), Vector3(1.4, 1.4, 22), Color(0.35, 0.30, 0.22), true, "trench_wall")
-	# Деревянные настилы на дне траншеи
-	_push(out, Vector3(-53, 0.02, 0), Vector3(8.5, 0.05, 52), Color(0.28, 0.22, 0.16), false, "duckboard")
+	var trench_col := Color(0.35, 0.30, 0.22)
+	var wood_col := Color(0.36, 0.28, 0.18)
+	var banquette_col := Color(0.30, 0.24, 0.16)
+	var sandbag_col := Color(0.48, 0.43, 0.31)
+
+	# Зигзагообразные земляные стены окопов
+	_push(out, Vector3(-58, 0.7, -24), Vector3(1.4, 1.4, 22), trench_col, true, "trench_wall")
+	_push(out, Vector3(-48, 0.7, -24), Vector3(1.4, 1.4, 22), trench_col, true, "trench_wall")
+	_push(out, Vector3(-58, 0.7, 0), Vector3(1.4, 1.4, 24), trench_col, true, "trench_wall")
+	_push(out, Vector3(-48, 0.7, 0), Vector3(1.4, 1.4, 24), trench_col, true, "trench_wall")
+	_push(out, Vector3(-58, 0.7, 24), Vector3(1.4, 1.4, 22), trench_col, true, "trench_wall")
+	_push(out, Vector3(-48, 0.7, 24), Vector3(1.4, 1.4, 22), trench_col, true, "trench_wall")
+
+	# Тяжёлые бревенчатые траверсы на стыках окопов
+	_push(out, Vector3(-53, 0.8, -13), Vector3(12, 1.6, 1.6), Color(0.32, 0.24, 0.16), true, "log_traverse")
+	_push(out, Vector3(-53, 0.8, 12), Vector3(12, 1.6, 1.6), Color(0.32, 0.24, 0.16), true, "log_traverse")
+
+	# Дощатые настилы (Duckboards) на дне траншеи
+	_push(out, Vector3(-53, 0.03, -24), Vector3(3.4, 0.06, 20.0), wood_col, false, "duckboard")
+	_push(out, Vector3(-53, 0.03, 0), Vector3(3.4, 0.06, 22.0), wood_col, false, "duckboard")
+	_push(out, Vector3(-53, 0.03, 24), Vector3(3.4, 0.06, 20.0), wood_col, false, "duckboard")
+	_push(out, Vector3(-53, 0.03, -12), Vector3(8.0, 0.06, 2.6), wood_col, false, "duckboard")
+	_push(out, Vector3(-53, 0.03, 12), Vector3(8.0, 0.06, 2.6), wood_col, false, "duckboard")
+
+	# Стрелковые ступени (банкеты / banquettes) вдоль стен траншеи (высота 0.42 м)
+	_push(out, Vector3(-56.5, 0.21, -24), Vector3(0.75, 0.42, 18.0), banquette_col, true, "banquette")
+	_push(out, Vector3(-49.5, 0.21, -24), Vector3(0.75, 0.42, 18.0), banquette_col, true, "banquette")
+	_push(out, Vector3(-56.5, 0.21, 0), Vector3(0.75, 0.42, 20.0), banquette_col, true, "banquette")
+	_push(out, Vector3(-49.5, 0.21, 0), Vector3(0.75, 0.42, 20.0), banquette_col, true, "banquette")
+	_push(out, Vector3(-56.5, 0.21, 24), Vector3(0.75, 0.42, 18.0), banquette_col, true, "banquette")
+	_push(out, Vector3(-49.5, 0.21, 24), Vector3(0.75, 0.42, 18.0), banquette_col, true, "banquette")
+
+	# Ступени быстрого выхода / выпрыгивания из траншеи
+	_push(out, Vector3(-51.5, 0.36, -6.0), Vector3(2.5, 0.36, 1.8), Color(0.32, 0.24, 0.16), true, "trench_step")
+	_push(out, Vector3(-51.5, 0.36, 6.0), Vector3(2.5, 0.36, 1.8), Color(0.32, 0.24, 0.16), true, "trench_step")
+
+	# Мешки с песком на брустверах окопов (огневые бойницы)
+	_push(out, Vector3(-58.6, 1.55, -24), Vector3(0.8, 0.55, 20.0), sandbag_col, true, "sandbag")
+	_push(out, Vector3(-47.4, 1.55, -24), Vector3(0.8, 0.55, 20.0), sandbag_col, true, "sandbag")
+	_push(out, Vector3(-58.6, 1.55, 0), Vector3(0.8, 0.55, 22.0), sandbag_col, true, "sandbag")
+	_push(out, Vector3(-47.4, 1.55, 0), Vector3(0.8, 0.55, 22.0), sandbag_col, true, "sandbag")
+	_push(out, Vector3(-58.6, 1.55, 24), Vector3(0.8, 0.55, 20.0), sandbag_col, true, "sandbag")
+	_push(out, Vector3(-47.4, 1.55, 24), Vector3(0.8, 0.55, 20.0), sandbag_col, true, "sandbag")
 
 	# =========================================================================
 	# 6. СЕКТОР CHARLIE (ВОСТОК, X = 40..65): АРТИЛЛЕРИЙСКИЕ ВОРОНКИ И РЕДУТЫ
 	# =========================================================================
-	# Защитные земляные валы вокруг воронок
 	for offset_z in [-20.0, 0.0, 20.0]:
-		_push(out, Vector3(52, 0.6, offset_z - 6), Vector3(12, 1.2, 1.4), Color(0.32, 0.27, 0.20), true, "crater_berm")
-		_push(out, Vector3(52, 0.6, offset_z + 6), Vector3(12, 1.2, 1.4), Color(0.32, 0.27, 0.20), true, "crater_berm")
-		_push(out, Vector3(45, 0.6, offset_z), Vector3(1.4, 1.2, 10), Color(0.32, 0.27, 0.20), true, "crater_berm")
-		_push(out, Vector3(59, 0.6, offset_z), Vector3(1.4, 1.2, 10), Color(0.32, 0.27, 0.20), true, "crater_berm")
+		# Земляные брустверы воронок с мешками (высота 1.08 м - паркурные!)
+		_push(out, Vector3(52, 0.54, offset_z - 6.5), Vector3(12.0, 1.08, 1.4), sandbag_col, true, "sandbag")
+		_push(out, Vector3(52, 0.54, offset_z + 6.5), Vector3(12.0, 1.08, 1.4), sandbag_col, true, "sandbag")
+		_push(out, Vector3(44.5, 0.54, offset_z), Vector3(1.4, 1.08, 11.0), sandbag_col, true, "sandbag")
+		_push(out, Vector3(59.5, 0.54, offset_z), Vector3(1.4, 1.08, 11.0), sandbag_col, true, "sandbag")
+		# Внутренняя бревенчатая крепь редута
+		_push(out, Vector3(52, 0.38, offset_z - 5.0), Vector3(9.0, 0.76, 0.3), Color(0.34, 0.25, 0.17), true, "log_revetment")
+		_push(out, Vector3(52, 0.38, offset_z + 5.0), Vector3(9.0, 0.76, 0.3), Color(0.34, 0.25, 0.17), true, "log_revetment")
 		# Тёмное дно воронки
-		_push(out, Vector3(52, 0.015, offset_z), Vector3(8, 0.03, 8), Color(0.18, 0.15, 0.12), false, "crater_dirt")
+		_push(out, Vector3(52, 0.015, offset_z), Vector3(7.5, 0.03, 7.5), Color(0.18, 0.15, 0.12), false, "crater_dirt")
 
 	# =========================================================================
-	# 7. ПРОТИВОТАНКОВЫЕ ЕЖИ И БАРРИКАДЫ НЕЙТРАЛЬНОЙ ПОЛОСЫ
+	# 7. ПРОТИВОТАНКОВЫЕ ЕЖИ И КОЛЮЧАЯ ПРОВОЛОКА НА КОЛЬЯХ (НЕЙТРАЛЬНАЯ ПОЛОСА)
 	# =========================================================================
-	for x in [-36.0, -22.0, 22.0, 36.0]:
-		for z in [-28.0, 28.0]:
-			_push(out, Vector3(x, 0.5, z), Vector3(2.4, 1.0, 0.3), Color(0.24, 0.25, 0.27), true, "hedgehog")
-			_push(out, Vector3(x, 0.5, z), Vector3(0.3, 1.0, 2.4), Color(0.24, 0.25, 0.27), true, "hedgehog")
+	var steel_col := Color(0.26, 0.27, 0.29)
+	var stake_col := Color(0.30, 0.22, 0.14)
+	var wire_col := Color(0.28, 0.29, 0.31)
+
+	# Настоящие 3-балочные сварные противотанковые ежи (высота 1.10 м - паркурные!)
+	for x in [-36.0, -20.0, 20.0, 36.0]:
+		for z in [-32.0, 32.0]:
+			_push(out, Vector3(x, 0.55, z), Vector3(2.2, 0.22, 0.22), steel_col, true, "hedgehog")
+			_push(out, Vector3(x, 0.55, z), Vector3(0.22, 0.22, 2.2), steel_col, true, "hedgehog")
+			_push(out, Vector3(x, 0.55, z), Vector3(0.22, 1.10, 0.22), steel_col, true, "hedgehog")
+
+	# Заграждения из колючей проволоки на деревянных кольях (высота 0.95 м - перепрыгиваемые!)
+	for wx in [-42.0, -26.0, 26.0, 42.0]:
+		for wz in [-22.0, 22.0]:
+			_push(out, Vector3(wx - 3.2, 0.58, wz), Vector3(0.18, 1.16, 0.18), stake_col, true, "wire_stake")
+			_push(out, Vector3(wx, 0.58, wz), Vector3(0.18, 1.16, 0.18), stake_col, true, "wire_stake")
+			_push(out, Vector3(wx + 3.2, 0.58, wz), Vector3(0.18, 1.16, 0.18), stake_col, true, "wire_stake")
+			_push(out, Vector3(wx, 0.48, wz), Vector3(7.6, 0.95, 0.35), wire_col, true, "barbed_wire")
 
 	# Внешние ограничительные насыпи карты (чтобы не упасть в пустоту)
 	_push(out, Vector3(0, 3.0, -92), Vector3(240, 6.0, 4.0), Color(0.22, 0.24, 0.20), true, "boundary")

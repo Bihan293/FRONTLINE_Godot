@@ -114,6 +114,9 @@ static func make_weapon(weapon_id: String) -> Node3D:
 			blade.position = Vector3(0.0, -0.055, -0.61)
 			blade.material_override = steel
 			root.add_child(blade)
+		"grenade", "f1", "f1_grenade":
+			root.free()
+			return make_grenade_view_model()
 		_:
 			root.free()
 			return null
@@ -124,6 +127,308 @@ static func make_weapon(weapon_id: String) -> Node3D:
 	muzzle.position = Vector3(0.0, 0.05, muzzle_z)
 	root.add_child(muzzle)
 	return root
+
+static var _f1_body_mesh_cache: ArrayMesh
+
+## Builds procedural low-poly segmented mesh for classic Soviet F-1 fragmentation grenade ("Лимонка").
+## 40 distinct facets arranged in 5 tiers x 8 sectors with indented fragmentation grooves and bevels.
+static func f1_body_mesh() -> ArrayMesh:
+	if _f1_body_mesh_cache != null:
+		return _f1_body_mesh_cache
+
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var indices := PackedInt32Array()
+
+	var num_rings := 5
+	var num_sectors := 8
+	var y_min := -0.040
+	var y_max := 0.040
+	var groove_depth := 0.0035
+	var r_max := 0.0275
+	var r_min := 0.0150
+
+	for i in range(num_rings):
+		var y0: float = y_min + (y_max - y_min) * (float(i) / float(num_rings))
+		var y1: float = y_min + (y_max - y_min) * (float(i + 1) / float(num_rings))
+		var ym: float = 0.5 * (y0 + y1)
+		var dy: float = y1 - y0
+		var yf0: float = y0 + dy * 0.12
+		var yf1: float = y1 - dy * 0.12
+
+		var t: float = clampf(ym / 0.045, -0.99, 0.99)
+		var r_face: float = r_min + (r_max - r_min) * sqrt(1.0 - t * t)
+		var r_groove: float = r_face - groove_depth
+
+		for j in range(num_sectors):
+			var p0: float = float(j) * (TAU / float(num_sectors))
+			var p1: float = float(j + 1) * (TAU / float(num_sectors))
+			var dp: float = p1 - p0
+			var pm: float = 0.5 * (p0 + p1)
+			var pf0: float = p0 + dp * 0.12
+			var pf1: float = p1 - dp * 0.12
+
+			var cos0 := cos(pf0)
+			var sin0 := sin(pf0)
+			var cos1 := cos(pf1)
+			var sin1 := sin(pf1)
+			var cosm := cos(pm)
+			var sinm := sin(pm)
+
+			var v0 := Vector3(r_face * cos0, yf0, r_face * sin0)
+			var v1 := Vector3(r_face * cos1, yf0, r_face * sin1)
+			var v2 := Vector3(r_face * cos1, yf1, r_face * sin1)
+			var v3 := Vector3(r_face * cos0, yf1, r_face * sin0)
+			var face_norm := Vector3(cosm, 0.0, sinm)
+
+			var idx := verts.size()
+			verts.append(v0)
+			verts.append(v1)
+			verts.append(v2)
+			verts.append(v3)
+			normals.append(face_norm)
+			normals.append(face_norm)
+			normals.append(face_norm)
+			normals.append(face_norm)
+			indices.append(idx)
+			indices.append(idx + 1)
+			indices.append(idx + 2)
+			indices.append(idx)
+			indices.append(idx + 2)
+			indices.append(idx + 3)
+
+			# Bevel bottom
+			var vb0 := Vector3(r_groove * cos0, y0, r_groove * sin0)
+			var vb1 := Vector3(r_groove * cos1, y0, r_groove * sin1)
+			var b_norm := Vector3(cosm, -0.7, sinm).normalized()
+			idx = verts.size()
+			verts.append(vb0)
+			verts.append(vb1)
+			verts.append(v1)
+			verts.append(v0)
+			normals.append(b_norm)
+			normals.append(b_norm)
+			normals.append(b_norm)
+			normals.append(b_norm)
+			indices.append(idx)
+			indices.append(idx + 1)
+			indices.append(idx + 2)
+			indices.append(idx)
+			indices.append(idx + 2)
+			indices.append(idx + 3)
+
+			# Bevel top
+			var vt0 := Vector3(r_groove * cos0, y1, r_groove * sin0)
+			var vt1 := Vector3(r_groove * cos1, y1, r_groove * sin1)
+			var t_norm := Vector3(cosm, 0.7, sinm).normalized()
+			idx = verts.size()
+			verts.append(v3)
+			verts.append(v2)
+			verts.append(vt1)
+			verts.append(vt0)
+			normals.append(t_norm)
+			normals.append(t_norm)
+			normals.append(t_norm)
+			normals.append(t_norm)
+			indices.append(idx)
+			indices.append(idx + 1)
+			indices.append(idx + 2)
+			indices.append(idx)
+			indices.append(idx + 2)
+			indices.append(idx + 3)
+
+			# Bevel left
+			var c_p0 := cos(p0)
+			var s_p0 := sin(p0)
+			var vl0 := Vector3(r_groove * c_p0, yf0, r_groove * s_p0)
+			var vl1 := Vector3(r_groove * c_p0, yf1, r_groove * s_p0)
+			var l_norm := Vector3(c_p0, 0.0, s_p0)
+			idx = verts.size()
+			verts.append(vl0)
+			verts.append(v0)
+			verts.append(v3)
+			verts.append(vl1)
+			normals.append(l_norm)
+			normals.append(l_norm)
+			normals.append(l_norm)
+			normals.append(l_norm)
+			indices.append(idx)
+			indices.append(idx + 1)
+			indices.append(idx + 2)
+			indices.append(idx)
+			indices.append(idx + 2)
+			indices.append(idx + 3)
+
+			# Bevel right
+			var c_p1 := cos(p1)
+			var s_p1 := sin(p1)
+			var vr0 := Vector3(r_groove * c_p1, yf0, r_groove * s_p1)
+			var vr1 := Vector3(r_groove * c_p1, yf1, r_groove * s_p1)
+			var r_norm := Vector3(c_p1, 0.0, s_p1)
+			idx = verts.size()
+			verts.append(v1)
+			verts.append(vr0)
+			verts.append(vr1)
+			verts.append(v2)
+			normals.append(r_norm)
+			normals.append(r_norm)
+			normals.append(r_norm)
+			normals.append(r_norm)
+			indices.append(idx)
+			indices.append(idx + 1)
+			indices.append(idx + 2)
+			indices.append(idx)
+			indices.append(idx + 2)
+			indices.append(idx + 3)
+
+	var mesh := ArrayMesh.new()
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	mesh.surface_set_material(0, _weapon_material("f1_olive", Color(0.24, 0.28, 0.18), 0.78, 0.30))
+	_f1_body_mesh_cache = mesh
+	return mesh
+
+## Assembles the complete F-1 grenade with military materials:
+## - Matte olive cast iron body with 40 fragmentation facets
+## - Galvanized zinc UZRGM fuse (запал УЗРГМ)
+## - Dark stamped sheet metal safety lever / spoon (предохранительная скоба)
+## - Bright steel wire pull ring & cotter pin (чека с кольцом)
+static func make_grenade_assembly(with_pin := true, with_lever := true) -> Node3D:
+	var grenade := Node3D.new()
+	grenade.name = "GrenadeAssembly"
+
+	var olive := _weapon_material("f1_olive", Color(0.24, 0.28, 0.18), 0.78, 0.30)
+	var zinc := _weapon_material("f1_zinc", Color(0.68, 0.70, 0.72), 0.40, 0.85)
+	var lever_steel := _weapon_material("f1_lever", Color(0.19, 0.20, 0.22), 0.52, 0.75)
+	var ring_wire := _weapon_material("f1_ring", Color(0.85, 0.86, 0.88), 0.25, 0.95)
+	var dark_metal := _weapon_material("f1_dark", Color(0.12, 0.13, 0.14), 0.58, 0.45)
+
+	# 1. Ribbed cast-iron body ("Лимонка")
+	var body_inst := MeshInstance3D.new()
+	body_inst.name = "BodyMesh"
+	body_inst.mesh = f1_body_mesh()
+	body_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	grenade.add_child(body_inst)
+
+	# Threaded neck boss (top) and base plug (bottom)
+	_add_cylinder_ex(grenade, "BodyNeck", Vector3(0.0, 0.043, 0.0), 0.012, 0.014, 0.008, olive, Vector3.ZERO)
+	_add_cylinder_ex(grenade, "BodyBase", Vector3(0.0, -0.042, 0.0), 0.012, 0.010, 0.006, olive, Vector3.ZERO)
+
+	# 2. UZRGM Fuse assembly (Запал УЗРГМ)
+	var fuse := Node3D.new()
+	fuse.name = "Fuse"
+	fuse.position = Vector3(0.0, 0.046, 0.0)
+	grenade.add_child(fuse)
+
+	# Hexagonal screw collar into body
+	_add_cylinder_ex(fuse, "FuseHexNut", Vector3(0.0, 0.006, 0.0), 0.009, 0.010, 0.012, zinc, Vector3.ZERO)
+	# Central primer guide tube
+	_add_cylinder_ex(fuse, "FuseTube", Vector3(0.0, 0.020, 0.0), 0.0065, 0.0065, 0.020, zinc, Vector3.ZERO)
+	# Striker mechanism housing with horizontal eyelet
+	_add_box(fuse, "PrimerHousing", Vector3(0.0, 0.034, 0.0), Vector3(0.014, 0.012, 0.014), zinc)
+	# Top striker guide dome
+	_add_cylinder_ex(fuse, "StrikerCap", Vector3(0.0, 0.042, 0.0), 0.004, 0.0055, 0.005, dark_metal, Vector3.ZERO)
+
+	# 3. Safety lever / Spoon (Предохранительная скоба)
+	# Pivots from the top striker hinge so rotating/flying off works cleanly.
+	if with_lever:
+		var lever := Node3D.new()
+		lever.name = "SafetyLever"
+		lever.position = Vector3(0.0, 0.086, 0.0)
+		_add_box(lever, "LeverHood", Vector3(0.0, 0.002, 0.005), Vector3(0.016, 0.004, 0.018), lever_steel)
+		_add_box(lever, "LeverElbow", Vector3(0.0, -0.012, 0.016), Vector3(0.015, 0.022, 0.005), lever_steel)
+		_add_box(lever, "LeverSpoon", Vector3(0.0, -0.058, 0.028), Vector3(0.014, 0.076, 0.004), lever_steel)
+		_add_box(lever, "LeverTab", Vector3(0.0, -0.098, 0.031), Vector3(0.016, 0.009, 0.006), lever_steel)
+		grenade.add_child(lever)
+
+	# 4. Pull ring & cotter pin assembly (Чека с кольцом)
+	if with_pin:
+		var pin_node := Node3D.new()
+		pin_node.name = "SafetyPinAssembly"
+		pin_node.position = Vector3(0.0, 0.080, 0.0)
+
+		# Horizontal pin shank passing through lever and fuse eyelet
+		_add_cylinder_ex(pin_node, "PinShaft", Vector3(0.0, 0.0, 0.0), 0.0018, 0.0018, 0.028, ring_wire, Vector3(0.0, 0.0, PI * 0.5))
+		# Split ends on +X side (spread cotter pin tips)
+		_add_cylinder_ex(pin_node, "PinSplitTop", Vector3(0.015, 0.002, 0.0), 0.0012, 0.0012, 0.008, ring_wire, Vector3(0.0, 0.0, PI * 0.38))
+		_add_cylinder_ex(pin_node, "PinSplitBtm", Vector3(0.015, -0.002, 0.0), 0.0012, 0.0012, 0.008, ring_wire, Vector3(0.0, 0.0, PI * 0.62))
+
+		# Steel pull ring on -X side
+		var pull_ring := Node3D.new()
+		pull_ring.name = "PullRing"
+		pull_ring.position = Vector3(-0.035, 0.0, 0.0)
+
+		var ring_mesh_inst := MeshInstance3D.new()
+		ring_mesh_inst.name = "RingMesh"
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.011
+		torus.outer_radius = 0.014
+		torus.rings = 16
+		torus.ring_segments = 8
+		ring_mesh_inst.mesh = torus
+		ring_mesh_inst.rotation_degrees = Vector3(12.0, -8.0, 78.0)
+		ring_mesh_inst.material_override = ring_wire
+		ring_mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pull_ring.add_child(ring_mesh_inst)
+
+		# Grip marker for left hand IK / animation target
+		var ring_grip := Marker3D.new()
+		ring_grip.name = "RingGrip"
+		ring_grip.position = Vector3.ZERO
+		pull_ring.add_child(ring_grip)
+
+		pin_node.add_child(pull_ring)
+		grenade.add_child(pin_node)
+
+	return grenade
+
+## Builds a first-person grenade viewmodel with animated pin pull and spoon lever.
+static func make_grenade_view_model() -> Node3D:
+	var root := Node3D.new()
+	root.name = "GrenadeViewModel"
+
+	var glove := _weapon_material("combat_glove", Color(0.17, 0.14, 0.11), 0.92, 0.0)
+
+	# Complete F-1 grenade assembly
+	var grenade := make_grenade_assembly(true, true)
+	root.add_child(grenade)
+
+	# Right hand gripping the grenade body & holding the spoon lever down
+	var hand_r := Node3D.new()
+	hand_r.name = "HandRight"
+	hand_r.position = Vector3(0.018, -0.01, -0.005)
+	_add_box(hand_r, "PalmR", Vector3(0.032, -0.01, -0.01), Vector3(0.062, 0.075, 0.068), glove)
+	_add_box(hand_r, "ThumbR", Vector3(-0.008, 0.038, 0.030), Vector3(0.030, 0.030, 0.042), glove)
+	_add_box(hand_r, "FingersR", Vector3(-0.024, -0.01, -0.030), Vector3(0.038, 0.070, 0.034), glove)
+	_add_cylinder_ex(hand_r, "ForearmR", Vector3(0.085, -0.07, -0.08), 0.042, 0.045, 0.18, glove, Vector3(deg_to_rad(45.0), deg_to_rad(-25.0), 0.0))
+	root.add_child(hand_r)
+
+	# Left hand positioned on the steel pull ring, ready to yank the pin
+	var hand_l := Node3D.new()
+	hand_l.name = "HandLeft"
+	hand_l.position = Vector3(-0.065, 0.072, 0.004)
+	_add_box(hand_l, "PalmL", Vector3(-0.035, 0.0, 0.0), Vector3(0.050, 0.048, 0.052), glove)
+	_add_box(hand_l, "IndexFingerL", Vector3(0.024, 0.006, 0.0), Vector3(0.036, 0.020, 0.020), glove)
+	_add_cylinder_ex(hand_l, "ForearmL", Vector3(-0.10, -0.07, -0.06), 0.042, 0.045, 0.16, glove, Vector3(deg_to_rad(45.0), deg_to_rad(35.0), 0.0))
+	root.add_child(hand_l)
+
+	# Throw/aim marker
+	var muzzle := Node3D.new()
+	muzzle.name = "Muzzle"
+	muzzle.position = Vector3(0.0, 0.08, -0.20)
+	root.add_child(muzzle)
+
+	return root
+
+## Builds an authentic F-1 world model for thrown physics projectiles or field pickups.
+## In flight: with_pin=false, with_lever=false (lever flew off, sparks emitting).
+## In pickup: with_pin=true, with_lever=true (ready in arsenal).
+static func make_grenade_world_model(with_pin := false, with_lever := false) -> Node3D:
+	return make_grenade_assembly(with_pin, with_lever)
 
 static func _weapon_material(key: String, color: Color, roughness: float, metallic: float) -> StandardMaterial3D:
 	if _weapon_materials.has(key):

@@ -10,6 +10,7 @@ signal exploded(pos: Vector3)
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const SFX_EXPLOSION = preload("res://assets/audio/explosion.wav")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
+const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const FUSE_TIME := 3.0
 const BLAST_RADIUS := 9.0
 const MAX_DAMAGE := 140
@@ -41,37 +42,9 @@ func _build_collision() -> void:
 	add_child(col_shape)
 
 func _build_visuals() -> void:
-	_mesh_root = Node3D.new()
+	# Detailed low-poly F-1 fragmentation grenade ("Лимонка") with UZRGM fuse
+	_mesh_root = WEAPON_MESHES.make_grenade_world_model(false, false)
 	add_child(_mesh_root)
-
-	# Корпус гранаты (рифлёный оливково-зелёный цилиндр)
-	var body := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.055
-	cyl.bottom_radius = 0.050
-	cyl.height = 0.14
-	cyl.radial_segments = 8
-	body.mesh = cyl
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.22, 0.28, 0.18)
-	mat.roughness = 0.75
-	mat.metallic = 0.35
-	body.material_override = mat
-	_mesh_root.add_child(body)
-
-	# Запал и спусковой рычаг
-	var fuse := MeshInstance3D.new()
-	var fuse_cyl := CylinderMesh.new()
-	fuse_cyl.top_radius = 0.018
-	fuse_cyl.bottom_radius = 0.018
-	fuse_cyl.height = 0.045
-	fuse.mesh = fuse_cyl
-	fuse.position.y = 0.09
-	var fuse_mat := StandardMaterial3D.new()
-	fuse_mat.albedo_color = Color(0.65, 0.65, 0.68)
-	fuse_mat.metallic = 0.8
-	fuse.material_override = fuse_mat
-	_mesh_root.add_child(fuse)
 
 func _build_fuse_sparks() -> void:
 	_fuse_sparks = CPUParticles3D.new()

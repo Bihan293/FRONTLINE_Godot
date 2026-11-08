@@ -28,4 +28,8 @@
 | TASK-0024 | P2 | planned | OpenCode | Add gamepad support and input remapping |
 | TASK-0025 | P1 | planned | OpenCode | Art pass for weapons, soldiers and environment props |
 | TASK-0026 | P3 | blocked | OpenCode (after single-player v1.0) | Co-op/online multiplayer after single-player v1.0 |
+| TASK-0027 | P0 | done | Antigravity / code_qa_agent | Parkour & vaulting over fences, low walls and windows with dynamic camera dip and collider squish |
+| TASK-0028 | P0 | done | Antigravity / modeler_agent / code_qa_agent | Grenade hold/cook animation with procedural F-1 'Limonka' mesh, pin-pulling, and release-to-throw state machine |
+| TASK-0029 | P1 | done | Antigravity / modeler_agent / asset_qa_agent | Level detailing pass for Village (cottages with interiors, porches, stoves), Battlefield (ruins, window vaults, trench duckboards/banquettes), and Polygon parkour course |
+
 

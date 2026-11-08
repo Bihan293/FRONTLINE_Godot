@@ -22,6 +22,8 @@ func _ready() -> void:
 	_test_positional_combat_audio()
 	_test_explosion_audio_budget()
 	await _test_death_ragdoll()
+	await _test_parkour_and_grenade_hold()
+	await _test_physics_ragdoll()
 	await _test_pause_freezes_bots()
 	await _test_loadout_presets()
 	await _test_role_weapon_restrictions()
@@ -412,6 +414,43 @@ func _test_role_weapon_restrictions() -> void:
 	battlefield.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame
+
+func _test_parkour_and_grenade_hold() -> void:
+	var grenade_model: Node3D = WEAPON_MESHES.make_grenade_view_model()
+	_check(grenade_model != null, "make_grenade_view_model returned null")
+	if grenade_model != null:
+		_check(grenade_model.find_child("PullRing", true, false) != null, "grenade viewmodel missing PullRing")
+		_check(grenade_model.find_child("SafetyLever", true, false) != null, "grenade viewmodel missing SafetyLever")
+		_check(grenade_model.find_child("HandRight", true, false) != null, "grenade viewmodel missing HandRight")
+		_check(grenade_model.find_child("HandLeft", true, false) != null, "grenade viewmodel missing HandLeft")
+		grenade_model.free()
+
+	var world_grenade: Node3D = WEAPON_MESHES.make_grenade_world_model(false, false)
+	_check(world_grenade != null, "make_grenade_world_model returned null")
+	if world_grenade != null:
+		world_grenade.free()
+
+	var player_script: Script = load("res://scripts/player.gd")
+	_check(player_script != null, "player script missing")
+	if player_script != null:
+		var p = player_script.new()
+		add_child(p)
+		await get_tree().process_frame
+		_check("is_vaulting" in p, "player missing is_vaulting property")
+		_check("grenade_anim_state" in p, "player missing grenade_anim_state property")
+		_check(p.has_method("_try_vault"), "player missing _try_vault method")
+		_check(p.has_method("_start_grenade_hold"), "player missing _start_grenade_hold method")
+		_check(p.has_method("_release_grenade_throw"), "player missing _release_grenade_throw method")
+
+		p.call("_start_grenade_hold")
+		_check(bool(p.get("is_grenade_held")), "grenade hold flag not set after _start_grenade_hold")
+		_check(int(p.get("grenade_anim_state")) > 0, "grenade_anim_state did not advance from IDLE")
+
+		p.call("_release_grenade_throw")
+		_check(not bool(p.get("is_grenade_held")), "grenade hold flag still active after release")
+
+		p.queue_free()
+		await get_tree().process_frame
 
 func _report() -> void:
 	if _failures.is_empty():

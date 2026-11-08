@@ -15,6 +15,8 @@ signal reload_pressed
 signal stance_down_pressed
 signal stance_up_pressed
 signal grenade_pressed
+signal grenade_released
+signal grenade_changed(pressed: bool)
 signal smoke_pressed
 signal heal_pressed
 signal peek_left_changed(pressed: bool)
@@ -137,6 +139,9 @@ func _touch_up(index: int) -> void:
 		_active.erase(id)
 		if id == "fire":
 			fire_changed.emit(false)
+		elif id == "grenade":
+			grenade_released.emit()
+			grenade_changed.emit(false)
 		elif _drone_mode and id == "jump":
 			drone_vertical_changed.emit(1.0, false)
 		elif _drone_mode and id == "crouch":
@@ -187,6 +192,7 @@ func _press(id: String) -> void:
 				stance_up_pressed.emit()
 		"grenade":
 			grenade_pressed.emit()
+			grenade_changed.emit(true)
 		"smoke":
 			smoke_pressed.emit()
 		"heal":

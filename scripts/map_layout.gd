@@ -52,9 +52,21 @@ static func boxes() -> Array:
     ]:
         _push(out, p, Vector3(1.2, 1.2, 1.2), Color(0.38, 0.3, 0.2), true, "crate")
 
-    # Низкие барьеры на огневом рубеже.
+    # Низкие барьеры на огневом рубеже и полоса паркура.
     for p in [Vector3(-10, 0.5, 14), Vector3(10, 0.5, 14)]:
         _push(out, p, Vector3(5, 1.0, 0.7), Color(0.4, 0.38, 0.33), true, "barrier")
+    # Тренировочный забор (1.05 м) и оконный проём для отработки паркура
+    _push(out, Vector3(-18.0, 0.52, 20.0), Vector3(6.0, 1.05, 0.25), Color(0.42, 0.32, 0.22), true, "training_fence")
+    _push(out, Vector3(18.0, 0.44, 20.0), Vector3(2.4, 0.88, 0.40), Color(0.48, 0.43, 0.32), true, "window_sill")
+    _push(out, Vector3(18.0, 2.20, 20.0), Vector3(2.4, 0.80, 0.40), Color(0.48, 0.43, 0.32), true, "window_lintel")
+    _push(out, Vector3(15.6, 1.30, 20.0), Vector3(1.4, 2.60, 0.40), Color(0.48, 0.43, 0.32), true, "wall")
+    _push(out, Vector3(20.4, 1.30, 20.0), Vector3(1.4, 2.60, 0.40), Color(0.48, 0.43, 0.32), true, "wall")
+
+    # Тренировочный противотанковый ёж (1.10 м) и траншейный настил
+    _push(out, Vector3(0.0, 0.55, 18.0), Vector3(2.2, 0.22, 0.22), Color(0.26, 0.27, 0.29), true, "hedgehog")
+    _push(out, Vector3(0.0, 0.55, 18.0), Vector3(0.22, 0.22, 2.2), Color(0.26, 0.27, 0.29), true, "hedgehog")
+    _push(out, Vector3(0.0, 0.55, 18.0), Vector3(0.22, 1.10, 0.22), Color(0.26, 0.27, 0.29), true, "hedgehog")
+    _push(out, Vector3(0.0, 0.02, 14.0), Vector3(8.0, 0.04, 2.4), Color(0.36, 0.28, 0.18), false, "duckboard")
 
     # Мишени (белые щиты с красным центром).
     for p in target_boards():

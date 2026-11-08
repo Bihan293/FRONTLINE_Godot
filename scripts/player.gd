@@ -127,6 +127,26 @@ var active_drone: FRONTLINERadioDrone = null
 var drone_charge_available := true
 var drone_vertical_input := 0.0
 
+# Паркур / Преодоление препятствий (Parkour / Mantling / Vaulting)
+var is_vaulting := false
+var vault_timer := 0.0
+var vault_duration := 0.38
+var vault_start_pos := Vector3.ZERO
+var vault_peak_pos := Vector3.ZERO
+var vault_land_pos := Vector3.ZERO
+
+# Анимация взведения и броска гранаты с удержанием кнопки (Cook / Aim & Release)
+enum GrenadeActionState { IDLE, EQUIP, PULL_PIN, HOLD_AIM, THROW_SWING, RECOVER }
+var grenade_anim_state: GrenadeActionState = GrenadeActionState.IDLE
+var grenade_anim_timer := 0.0
+var is_grenade_held := false
+var grenade_view_root: Node3D
+var grenade_pull_ring: Node3D
+var grenade_safety_lever: Node3D
+var grenade_hand_left: Node3D
+var grenade_hand_right: Node3D
+var grenade_has_spawned := false
+
 # Здоровье и статус игрока
 var health := MAX_HEALTH
 var is_dead := false
@@ -216,6 +236,7 @@ func _build_weapon() -> void:
 	weapon_root.add_child(weapon_mount)
 	_equip_weapon_visual()
 	_build_view_hands()
+	_build_grenade_view()
 
 func _equip_weapon_visual() -> void:
 	if weapon_mount == null:
@@ -394,7 +415,7 @@ func _store_weapon_ammo() -> void:
 	reserve_by_weapon[current_weapon_index] = reserve_ammo
 
 func _switch_weapon(index: int) -> void:
-	if is_dead or index < 0 or index >= WEAPON_DEFS.size():
+	if is_dead or index < 0 or index >= WEAPON_DEFS.size() or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	if not role_weapon_indices.has(index):
 		return
@@ -439,7 +460,7 @@ func _select_weapon_slot(slot: int) -> void:
 	_switch_weapon(role_weapon_indices[slot])
 
 func _toggle_sidearm() -> void:
-	if is_dead or input_locked:
+	if is_dead or input_locked or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	if is_shovel_equipped:
 		is_shovel_equipped = false
@@ -451,7 +472,7 @@ func _toggle_sidearm() -> void:
 		_switch_weapon(SIDEARM_INDEX)
 
 func _toggle_shovel() -> void:
-	if is_dead or input_locked or active_drone != null:
+	if is_dead or input_locked or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	is_shovel_equipped = not is_shovel_equipped
 	is_reloading = false
@@ -741,7 +762,10 @@ func _build_mobile_controls() -> void:
 	mobile_controls.reload_pressed.connect(_reload)
 	mobile_controls.stance_down_pressed.connect(_down_action)
 	mobile_controls.stance_up_pressed.connect(_up_action)
-	mobile_controls.grenade_pressed.connect(_throw_grenade)
+	if mobile_controls.has_signal("grenade_changed"):
+		mobile_controls.grenade_changed.connect(_on_mobile_grenade_changed)
+	else:
+		mobile_controls.grenade_pressed.connect(_throw_grenade)
 	mobile_controls.smoke_pressed.connect(_throw_smoke)
 	mobile_controls.heal_pressed.connect(_use_heal)
 	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
@@ -1084,7 +1108,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cycle_weapon(-1)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_cycle_weapon(1)
-	elif event is InputEventKey and event.pressed and not event.echo:
+	elif event is InputEventKey:
+		if event.keycode == KEY_G:
+			if event.pressed and not event.echo:
+				_start_grenade_hold()
+			elif not event.pressed:
+				_release_grenade_throw()
+			return
+		if not event.pressed or event.echo:
+			return
 		if event.keycode == KEY_9:
 			_toggle_sidearm()
 		elif event.keycode == KEY_0 or event.keycode == KEY_B:
@@ -1095,8 +1127,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_down_action()
 		elif event.keycode == KEY_SPACE:
 			_up_action()
-		elif event.keycode == KEY_G:
-			_throw_grenade()
 		elif event.keycode == KEY_X or event.keycode == KEY_T:
 			_throw_smoke()
 		elif event.keycode == KEY_H:
@@ -1110,13 +1140,18 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
+		is_vaulting = false
 		if not is_on_floor():
 			velocity.y -= 18.0 * delta
 			move_and_slide()
 		return
 	if input_locked:
+		is_vaulting = false
 		velocity = Vector3.ZERO
 		move_and_slide()
+		return
+	if is_vaulting:
+		_process_vault(delta)
 		return
 	if active_drone != null and is_instance_valid(active_drone):
 		_update_drone_controls()
@@ -1134,6 +1169,7 @@ func _physics_process(delta: float) -> void:
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
 	shovel_action_cooldown = maxf(0.0, shovel_action_cooldown - delta)
+	_update_grenade_animation(delta)
 	if crosshair != null:
 		var is_kar98k_scope := aiming and str(_weapon_data().id) == "kar98k"
 		if crosshair.has_method("set_sniper_scope"):
@@ -1349,10 +1385,15 @@ func _up_action() -> void:
 		return
 	if stance > 0:
 		stance -= 1
-	elif is_on_floor():
+		return
+	if _try_vault():
+		return
+	if is_on_floor():
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
+	if grenade_anim_state != GrenadeActionState.IDLE:
+		return
 	if is_shovel_equipped:
 		_use_shovel_action(false)
 		return
@@ -1512,7 +1553,7 @@ func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _regio
 			world.call("add_kill")
 
 func _reload() -> void:
-	if is_shovel_equipped:
+	if is_shovel_equipped or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	var weapon := _weapon_data()
 	if is_reloading or is_healing or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
@@ -1521,21 +1562,260 @@ func _reload() -> void:
 	reload_timer = float(weapon.reload)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
-func _throw_grenade() -> void:
-	if grenades <= 0 or is_dead:
+func _build_grenade_view() -> void:
+	if grenade_view_root != null and is_instance_valid(grenade_view_root):
 		return
+	grenade_view_root = WEAPON_MESHES.make_grenade_view_model()
+	if grenade_view_root == null:
+		return
+	grenade_view_root.name = "GrenadeView"
+	grenade_view_root.position = Vector3(0.18, -0.16, -0.38)
+	grenade_view_root.scale = Vector3.ONE * 0.52
+	grenade_view_root.visible = false
+	camera.add_child(grenade_view_root)
+
+	grenade_safety_lever = grenade_view_root.find_child("SafetyLever", true, false)
+	grenade_pull_ring = grenade_view_root.find_child("PullRing", true, false)
+	grenade_hand_left = grenade_view_root.find_child("HandLeft", true, false)
+	grenade_hand_right = grenade_view_root.find_child("HandRight", true, false)
+
+func _on_mobile_grenade_changed(pressed: bool) -> void:
+	if pressed:
+		_start_grenade_hold()
+	else:
+		_release_grenade_throw()
+
+func _start_grenade_hold() -> void:
+	if grenades <= 0 or is_dead or input_locked or is_healing or active_drone != null or is_reloading or is_vaulting:
+		return
+	is_grenade_held = true
+	if grenade_anim_state == GrenadeActionState.IDLE or grenade_anim_state == GrenadeActionState.RECOVER:
+		grenade_anim_state = GrenadeActionState.EQUIP
+		grenade_anim_timer = 0.12
+		grenade_has_spawned = false
+		if grenade_view_root != null:
+			grenade_view_root.visible = true
+			grenade_view_root.position = Vector3(0.20, -0.36, -0.32)
+			grenade_view_root.rotation = Vector3(deg_to_rad(-18.0), deg_to_rad(-10.0), 0.0)
+			if grenade_pull_ring != null:
+				grenade_pull_ring.position = Vector3(-0.035, 0.0, 0.0)
+				grenade_pull_ring.visible = true
+			if grenade_safety_lever != null:
+				grenade_safety_lever.rotation = Vector3.ZERO
+				grenade_safety_lever.visible = true
+			if grenade_hand_left != null:
+				grenade_hand_left.position = Vector3(-0.075, 0.065, 0.0)
+				grenade_hand_left.visible = true
+		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -8.0, 1.35)
+
+func _release_grenade_throw() -> void:
+	is_grenade_held = false
+	if grenade_anim_state == GrenadeActionState.HOLD_AIM:
+		grenade_anim_state = GrenadeActionState.THROW_SWING
+		grenade_anim_timer = 0.18
+		_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.45)
+	elif grenade_anim_state == GrenadeActionState.PULL_PIN or grenade_anim_state == GrenadeActionState.EQUIP:
+		pass
+
+func _spawn_thrown_grenade() -> void:
+	if grenade_has_spawned or grenades <= 0:
+		return
+	grenade_has_spawned = true
 	grenades -= 1
 	_refresh_equipment()
 	var g := GRENADE_SCRIPT.new()
-	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.5
-	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
-	g.position = spawn_pos
-	g.linear_velocity = throw_dir.normalized() * 19.5 + velocity * 0.4
+	if is_dead:
+		# Мёртвый сброс гранаты под ноги (Dead-man drop при гибели во время замаха)
+		g.position = global_position + Vector3(0.0, 0.45, 0.0)
+		g.linear_velocity = Vector3(randf_range(-0.6, 0.6), 1.2, randf_range(-0.6, 0.6))
+	else:
+		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.20 - camera.global_transform.basis.y * 0.10 - camera.global_transform.basis.z * 0.45
+		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+		g.position = spawn_pos
+		g.linear_velocity = throw_dir.normalized() * 20.5 + velocity * 0.45
 	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	g.thrower_name = "Player"
 	g.team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	get_parent().add_child(g)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
+	if grenade_safety_lever != null:
+		grenade_safety_lever.visible = false
+
+func _update_grenade_animation(delta: float) -> void:
+	if grenade_anim_state == GrenadeActionState.IDLE:
+		if grenade_view_root != null and grenade_view_root.visible:
+			grenade_view_root.visible = false
+		return
+
+	if weapon_root != null:
+		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.28, delta * 14.0)
+
+	grenade_anim_timer -= delta
+
+	match grenade_anim_state:
+		GrenadeActionState.EQUIP:
+			if grenade_view_root != null:
+				grenade_view_root.position = grenade_view_root.position.lerp(Vector3(0.18, -0.14, -0.36), delta * 18.0)
+				grenade_view_root.rotation.x = lerpf(grenade_view_root.rotation.x, deg_to_rad(6.0), delta * 18.0)
+			if grenade_anim_timer <= 0.0:
+				grenade_anim_state = GrenadeActionState.PULL_PIN
+				grenade_anim_timer = 0.16
+				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.55)
+
+		GrenadeActionState.PULL_PIN:
+			var pull_progress := 1.0 - clampf(grenade_anim_timer / 0.16, 0.0, 1.0)
+			if grenade_pull_ring != null:
+				grenade_pull_ring.position.x = lerpf(-0.035, -0.16, pull_progress)
+			if grenade_hand_left != null:
+				grenade_hand_left.position.x = lerpf(-0.075, -0.22, pull_progress)
+			if grenade_anim_timer <= 0.0:
+				if grenade_pull_ring != null:
+					grenade_pull_ring.visible = false
+				if grenade_hand_left != null:
+					grenade_hand_left.visible = false
+				if is_grenade_held:
+					grenade_anim_state = GrenadeActionState.HOLD_AIM
+				else:
+					grenade_anim_state = GrenadeActionState.THROW_SWING
+					grenade_anim_timer = 0.18
+
+		GrenadeActionState.HOLD_AIM:
+			if grenade_view_root != null:
+				var hold_target_pos := Vector3(0.24, -0.09, -0.30)
+				var hold_target_rot := Vector3(deg_to_rad(28.0), deg_to_rad(-16.0), deg_to_rad(12.0))
+				grenade_view_root.position = grenade_view_root.position.lerp(hold_target_pos, delta * 16.0)
+				grenade_view_root.rotation = grenade_view_root.rotation.lerp(hold_target_rot, delta * 16.0)
+			if not is_grenade_held:
+				grenade_anim_state = GrenadeActionState.THROW_SWING
+				grenade_anim_timer = 0.18
+
+		GrenadeActionState.THROW_SWING:
+			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.18, 0.0, 1.0)
+			if grenade_view_root != null:
+				var throw_target_pos := Vector3(0.06, -0.12, -0.62)
+				var throw_target_rot := Vector3(deg_to_rad(-38.0), deg_to_rad(10.0), deg_to_rad(-14.0))
+				grenade_view_root.position = grenade_view_root.position.lerp(throw_target_pos, delta * 26.0)
+				grenade_view_root.rotation = grenade_view_root.rotation.lerp(throw_target_rot, delta * 26.0)
+			if swing_progress >= 0.40 and not grenade_has_spawned:
+				_spawn_thrown_grenade()
+			if grenade_anim_timer <= 0.0:
+				grenade_anim_state = GrenadeActionState.RECOVER
+				grenade_anim_timer = 0.20
+				if grenade_view_root != null:
+					grenade_view_root.visible = false
+
+		GrenadeActionState.RECOVER:
+			if grenade_anim_timer <= 0.0:
+				grenade_anim_state = GrenadeActionState.IDLE
+
+func _throw_grenade() -> void:
+	if grenades <= 0 or is_dead:
+		return
+	if grenade_anim_state == GrenadeActionState.IDLE:
+		_start_grenade_hold()
+		_release_grenade_throw()
+
+## Механика паркура (преодоление заборов, подоконников и низких укрытий)
+func _try_vault() -> bool:
+	if is_dead or input_locked or is_vaulting or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
+		return false
+	var space_state := get_world_3d().direct_space_state
+	if space_state == null:
+		return false
+
+	var fwd := -camera.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.01:
+		fwd = -global_transform.basis.z
+	fwd = fwd.normalized()
+
+	# 1. Луч на уровне пояса (0.65 м)
+	var waist_from := global_position + Vector3(0.0, 0.65, 0.0)
+	var waist_to := waist_from + fwd * 1.35
+	var q_waist := PhysicsRayQueryParameters3D.create(waist_from, waist_to)
+	q_waist.collision_mask = WORLD_LAYER_MASK
+	q_waist.exclude = [get_rid()]
+	q_waist.collide_with_areas = false
+	var waist_hit := space_state.intersect_ray(q_waist)
+	if waist_hit.is_empty():
+		return false
+
+	var hit_pos: Vector3 = waist_hit.position
+
+	# 2. Поиск верхней кромки уступа/подоконника
+	var over_pos := hit_pos + fwd * 0.32 + Vector3(0.0, 1.40, 0.0)
+	var down_to := over_pos + Vector3(0.0, -1.90, 0.0)
+	var q_down := PhysicsRayQueryParameters3D.create(over_pos, down_to)
+	q_down.collision_mask = WORLD_LAYER_MASK
+	q_down.exclude = [get_rid()]
+	q_down.collide_with_areas = false
+	var top_hit := space_state.intersect_ray(q_down)
+	if top_hit.is_empty():
+		return false
+
+	var ledge_y: float = top_hit.position.y
+	var ledge_height: float = ledge_y - global_position.y
+	if ledge_height < 0.40 or ledge_height > 1.55:
+		return false
+
+	# 3. Проверка свободного пространства сверху (для окна/забора)
+	var head_from := hit_pos + Vector3(0.0, (ledge_y - hit_pos.y) + 0.15, 0.0)
+	var head_to := head_from + Vector3(0.0, 1.15, 0.0)
+	var q_head := PhysicsRayQueryParameters3D.create(head_from, head_to)
+	q_head.collision_mask = WORLD_LAYER_MASK
+	q_head.exclude = [get_rid()]
+	var head_hit := space_state.intersect_ray(q_head)
+	if not head_hit.is_empty():
+		return false
+
+	# 4. Проверка точки приземления
+	var land_pos := hit_pos + fwd * 0.95
+	var land_from := land_pos + Vector3(0.0, 1.0, 0.0)
+	var land_to := land_from + Vector3(0.0, -2.6, 0.0)
+	var q_land := PhysicsRayQueryParameters3D.create(land_from, land_to)
+	q_land.collision_mask = WORLD_LAYER_MASK
+	q_land.exclude = [get_rid()]
+	var land_hit := space_state.intersect_ray(q_land)
+	if not land_hit.is_empty():
+		land_pos.y = land_hit.position.y
+	else:
+		land_pos.y = global_position.y
+
+	is_vaulting = true
+	vault_timer = 0.0
+	vault_duration = 0.38
+	vault_start_pos = global_position
+	vault_peak_pos = Vector3(hit_pos.x, maxf(ledge_y + 0.28, global_position.y + 0.75), hit_pos.z)
+	vault_land_pos = land_pos
+	player_capsule.height = 1.15
+	_play_sfx(sfx_footstep, SFX_FOOTSTEPS[0], -6.0, 1.25)
+	return true
+
+func _process_vault(delta: float) -> void:
+	vault_timer += delta
+	var t := clampf(vault_timer / maxf(0.01, vault_duration), 0.0, 1.0)
+	var ease_t := smoothstep(0.0, 1.0, t)
+	var target_horiz := vault_start_pos.lerp(vault_land_pos, ease_t)
+	var arc := sin(t * PI) * (vault_peak_pos.y - minf(vault_start_pos.y, vault_land_pos.y) + 0.12)
+	var target_y := lerpf(vault_start_pos.y, vault_land_pos.y, ease_t) + arc
+	global_position = Vector3(target_horiz.x, target_y, target_horiz.z)
+
+	var cam_dip := -sin(t * PI) * deg_to_rad(6.5)
+	camera.rotation.x = clampf(pitch + recoil.y + cam_dip, -1.45, 1.45)
+	if weapon_root != null:
+		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.14 * sin(t * PI), delta * 24.0)
+		weapon_root.rotation.z = lerpf(weapon_root.rotation.z, -deg_to_rad(15.0) * sin(t * PI), delta * 24.0)
+
+	if t >= 1.0:
+		is_vaulting = false
+		global_position = vault_land_pos
+		var fwd := (vault_land_pos - vault_start_pos)
+		fwd.y = 0.0
+		velocity = fwd.normalized() * SPRINT_SPEED
+		velocity.y = -0.5
+		landing_anim = 0.5
+		player_capsule.height = 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
+		move_and_slide()
 
 func _throw_smoke() -> void:
 	if smoke_grenades <= 0 or is_dead:
@@ -1770,6 +2050,14 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 		mobile_controls.set_drone_mode(false)
 
 	is_dead = true
+	is_vaulting = false
+	if is_grenade_held and not grenade_has_spawned and grenades > 0:
+		_spawn_thrown_grenade()
+	is_grenade_held = false
+	grenade_has_spawned = false
+	grenade_anim_state = GrenadeActionState.IDLE
+	if grenade_view_root != null:
+		grenade_view_root.visible = false
 	health = 0.0
 	velocity = Vector3.ZERO
 	collision_layer = 0
@@ -1810,6 +2098,12 @@ func respawn() -> void:
 		camera.current = true
 
 	is_dead = false
+	is_vaulting = false
+	is_grenade_held = false
+	grenade_has_spawned = false
+	grenade_anim_state = GrenadeActionState.IDLE
+	if grenade_view_root != null:
+		grenade_view_root.visible = false
 	collision_layer = WORLD_LAYER_MASK
 	health = MAX_HEALTH
 	if player_body != null and player_body.has_method("set_ragdoll"):
