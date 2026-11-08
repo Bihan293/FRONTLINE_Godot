@@ -7,6 +7,7 @@ const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
 const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
+const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
@@ -44,6 +45,8 @@ func _layout():
 	var map_name: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
 	if map_name == "VILLAGE":
 		return VILLAGE_LAYOUT
+	if map_name == "COUNTRYSIDE":
+		return COUNTRYSIDE_LAYOUT
 	return BATTLEFIELD_LAYOUT
 
 var hud: CanvasLayer
@@ -190,10 +193,15 @@ func _build_world() -> void:
 	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
-	# Построение блоков карты
+	# Построение природной основы для новой сельской карты.
 	var layout = _layout()
+	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	if map_name == "COUNTRYSIDE":
+		COUNTRYSIDE_LAYOUT.add_world(self, true, true)
 	for box in layout.boxes():
 		var kind := str(box.get("kind", ""))
+		if map_name == "COUNTRYSIDE" and kind == "tree_obstacle":
+			continue
 		if kind == "terrain" or kind == "ground":
 			_build_diggable_ground(box)
 		else:
@@ -210,7 +218,10 @@ func _spawn_barrel(pos: Vector3) -> void:
 
 func _spawn_supply_caches() -> void:
 	var positions: Array[Vector3]
-	if str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE":
+	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	if map_name == "COUNTRYSIDE":
+		return
+	if map_name == "VILLAGE":
 		positions = [
 			Vector3(-35.0, 0.18, -40.0), Vector3(35.0, 0.18, -40.0),
 			Vector3(-35.0, 0.18, 40.0), Vector3(35.0, 0.18, 40.0),
@@ -230,7 +241,7 @@ func _spawn_vehicles() -> void:
 	# Задача TASK-0012: стационарные пулемёты по флангам секторов и
 	# джип у баз. На дебаг-полигоне техника не создаём.
 	var map := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
-	if map == "POLYGON":
+	if map == "POLYGON" or map == "COUNTRYSIDE":
 		return
 	var turrets: Array[Dictionary] = [
 		{"pos": Vector3(-64.0, 0.05, 12.0), "toward": Vector3(-40.0, 0.0, 0.0)},

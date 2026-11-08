@@ -6,6 +6,7 @@ const VILLAGE_PREVIEW_SCRIPT = preload("res://scripts/village_map_preview.gd")
 const LAYOUT = preload("res://scripts/map_layout.gd")
 const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
+const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 
 var map_selected := false
 var selected_map := "BATTLEFIELD"
@@ -173,6 +174,14 @@ func _show_maps() -> void:
 	card_vil.pressed.connect(_select_village)
 	list.add_child(card_vil)
 
+	# Карта COUNTRYSIDE (рельеф, лесополосы и пустые участки будущего города)
+	var card_country := Button.new()
+	card_country.text = "COUNTRYSIDE (ПРИГОРОД)\nХолмы, поля, лесополосы, места под дома (216×168м)"
+	card_country.custom_minimum_size = Vector2(310, 75)
+	card_country.add_theme_font_size_override("font_size", 16)
+	card_country.pressed.connect(_select_countryside)
+	list.add_child(card_country)
+
 	# Карточка POLYGON (Полигон)
 	var card_poly := Button.new()
 	card_poly.text = "POLYGON (ПОЛИГОН)\nТренировочное стрельбище"
@@ -225,7 +234,6 @@ func _show_maps() -> void:
 	village_image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	village_image.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	details.add_child(village_image)
-
 	var title_lbl := _label(details, "КАРТА", 24)
 	var desc_lbl := _label(details, "Описание", 16, Color(0.72,0.77,0.74))
 	var play_btn := _button(details, "ИГРАТЬ НА ЭТОЙ КАРТЕ", _launch_map_tactical, Vector2(0,58))
@@ -255,6 +263,7 @@ func _select_battlefield() -> void:
 	(get_meta("polygon_preview") as Control).visible = false
 	(get_meta("village_preview") as Control).visible = false
 	(get_meta("battlefield_preview") as Control).visible = true
+	(get_meta("battlefield_preview") as FRONTLINEBattlefieldMapPreview).set_map("BATTLEFIELD")
 	title_lbl.text = "BATTLEFIELD  /  TRENCHES & NO MAN'S LAND (240×180м)"
 	desc_lbl.text = "Масштабная боевая карта: сеть окопов, траншеи, артиллерийские воронки, разрушенные руины, укреплённые базы Железного Легиона и Красного Фронта. Бои умных ботов, захват секторов A, B, C, рэгдолл и реалистичная баллистика."
 
@@ -272,6 +281,23 @@ func _select_village() -> void:
 	(get_meta("village_preview") as Control).visible = true
 	title_lbl.text = "VILLAGE  /  RURAL WARFARE (180×150м)"
 	desc_lbl.text = "Деревенская карта: узкие улочки, жилые дома с простреливаемыми комнатами, колокольня церкви святого Иуды, старая мельница с амбаром, каменные колодцы и стога сена. Бои на ближних и средних дистанциях, тактические обходы флангов."
+
+func _select_countryside() -> void:
+	selected_map = "COUNTRYSIDE"
+	get_tree().set_meta("selected_map", "COUNTRYSIDE")
+	var details = get_meta("map_details")
+	var placeholder = get_meta("map_placeholder")
+	var title_lbl: Label = get_meta("title_lbl")
+	var desc_lbl: Label = get_meta("desc_lbl")
+	details.visible = true
+	placeholder.visible = false
+	(get_meta("polygon_preview") as Control).visible = false
+	var preview := get_meta("battlefield_preview") as FRONTLINEBattlefieldMapPreview
+	preview.set_map("COUNTRYSIDE")
+	preview.visible = true
+	(get_meta("village_preview") as Control).visible = false
+	title_lbl.text = "COUNTRYSIDE  /  ХОЛМИСТЫЙ ПРИГОРОД (216×168м)"
+	desc_lbl.text = "Основа новой карты: пологие холмы, открытая поляна, лесополосы, грунтовая уличная сетка и 16 пустых размеченных участков под будущие здания."
 
 func _select_polygon() -> void:
 	selected_map = "POLYGON"
@@ -540,8 +566,9 @@ func _show_deployment() -> void:
 		var vil_prev = VILLAGE_PREVIEW_SCRIPT.new()
 		vil_prev.team_name = selected_team
 		image = vil_prev
-	elif selected_map == "BATTLEFIELD":
+	elif selected_map == "BATTLEFIELD" or selected_map == "COUNTRYSIDE":
 		var bf_prev = BATTLEFIELD_PREVIEW_SCRIPT.new()
+		bf_prev.set_map(selected_map)
 		bf_prev.team_name = selected_team
 		image = bf_prev
 	else:
@@ -824,6 +851,13 @@ func _deploy() -> void:
 	var map: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
 	if map == "VILLAGE":
 		var spawns: Array = VILLAGE_LAYOUT.spawns_red() if selected_team.contains("RED") else VILLAGE_LAYOUT.spawns_iron()
+		var sp: Vector3 = spawns[index % spawns.size()]
+		get_tree().set_meta("spawn_position", sp)
+		get_tree().set_meta("selected_mode", selected_mode)
+		get_tree().set_meta("open_tactical_deploy_at_start", true)
+		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
+	elif map == "COUNTRYSIDE":
+		var spawns: Array = COUNTRYSIDE_LAYOUT.spawns_red() if selected_team.contains("RED") else COUNTRYSIDE_LAYOUT.spawns_iron()
 		var sp: Vector3 = spawns[index % spawns.size()]
 		get_tree().set_meta("spawn_position", sp)
 		get_tree().set_meta("selected_mode", selected_mode)

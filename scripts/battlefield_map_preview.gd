@@ -7,6 +7,7 @@ class_name FRONTLINEBattlefieldMapPreview
 signal spawn_selected(index: int)
 
 const LAYOUT = preload("res://scripts/battlefield_layout.gd")
+const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 const MAP_WIDTH := 240.0
 const MAP_DEPTH := 185.0
 const MAP_MARGIN := 14.0
@@ -17,17 +18,52 @@ var selected_spawn := -1
 var team_name := "IRON LEGION"
 
 var _viewport: SubViewport
+var _container: SubViewportContainer
 var _camera: Camera3D
 var _spawns: Array = []
+var _layout: Variant = LAYOUT
+var _map_id := "BATTLEFIELD"
+var _map_width := MAP_WIDTH
+var _map_depth := MAP_DEPTH
 
 func _ready() -> void:
+	_set_layout(str(get_tree().get_meta("selected_map", "BATTLEFIELD")))
 	mouse_filter = Control.MOUSE_FILTER_STOP if interactive else Control.MOUSE_FILTER_IGNORE
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_spawns = LAYOUT.spawns_red() if team_name.contains("RED") else LAYOUT.spawns_iron()
+	_update_spawns()
 	_build_world_preview()
 	resized.connect(_resize_preview)
 	_resize_preview()
 	queue_redraw()
+
+func set_map(map_id: String) -> void:
+	var changed := map_id != _map_id
+	_set_layout(map_id)
+	_update_spawns()
+	if changed and _container != null and is_instance_valid(_container):
+		remove_child(_container)
+		_container.queue_free()
+		_container = null
+		_viewport = null
+		_camera = null
+		_build_world_preview()
+		_resize_preview()
+	queue_redraw()
+
+func _set_layout(map_id: String) -> void:
+	_map_id = map_id
+	if map_id == "COUNTRYSIDE":
+		_layout = COUNTRYSIDE_LAYOUT
+		var dimensions: Vector2 = COUNTRYSIDE_LAYOUT.map_dimensions()
+		_map_width = dimensions.x
+		_map_depth = dimensions.y
+	else:
+		_layout = LAYOUT
+		_map_width = MAP_WIDTH
+		_map_depth = MAP_DEPTH
+
+func _update_spawns() -> void:
+	_spawns = _layout.spawns_red() if team_name.contains("RED") else _layout.spawns_iron()
 
 func set_selected(index: int) -> void:
 	selected_spawn = index
@@ -35,25 +71,25 @@ func set_selected(index: int) -> void:
 
 func set_team(faction: String) -> void:
 	team_name = faction
-	_spawns = LAYOUT.spawns_red() if team_name.contains("RED") else LAYOUT.spawns_iron()
+	_update_spawns()
 	selected_spawn = 0
 	queue_redraw()
 
 func _build_world_preview() -> void:
-	var container := SubViewportContainer.new()
-	container.name = "MapWorldView"
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	container.stretch = true
-	container.show_behind_parent = true
-	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(container)
+	_container = SubViewportContainer.new()
+	_container.name = "MapWorldView"
+	_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_container.stretch = true
+	_container.show_behind_parent = true
+	_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_container)
 
 	_viewport = SubViewport.new()
 	_viewport.name = "BattlefieldTopDown"
 	_viewport.own_world_3d = true
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_viewport.msaa_3d = Viewport.MSAA_DISABLED
-	container.add_child(_viewport)
+	_container.add_child(_viewport)
 
 	var world_root := Node3D.new()
 	world_root.name = "BattlefieldGeometry"
@@ -76,23 +112,26 @@ func _build_world_preview() -> void:
 	sun.shadow_enabled = false
 	world_root.add_child(sun)
 
-	for data in LAYOUT.boxes():
-		var mesh_instance := MeshInstance3D.new()
-		var box_mesh := BoxMesh.new()
-		box_mesh.size = data.size
-		mesh_instance.mesh = box_mesh
-		mesh_instance.position = data.pos
-		var material := StandardMaterial3D.new()
-		material.albedo_color = data.color
-		material.roughness = 0.95
-		material.metallic = 0.0
-		mesh_instance.material_override = material
-		world_root.add_child(mesh_instance)
+	if _map_id == "COUNTRYSIDE":
+		COUNTRYSIDE_LAYOUT.add_world(world_root, false, false)
+	else:
+		for data in _layout.boxes():
+			var mesh_instance := MeshInstance3D.new()
+			var box_mesh := BoxMesh.new()
+			box_mesh.size = data.size
+			mesh_instance.mesh = box_mesh
+			mesh_instance.position = data.pos
+			var material := StandardMaterial3D.new()
+			material.albedo_color = data.color
+			material.roughness = 0.95
+			material.metallic = 0.0
+			mesh_instance.material_override = material
+			world_root.add_child(mesh_instance)
 
 	_camera = Camera3D.new()
 	_camera.name = "TopDownCamera"
 	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	_camera.position = Vector3(0.0, 180.0, 0.0)
+	_camera.position = Vector3(0.0, maxf(180.0, _map_depth * 1.2), 0.0)
 	_camera.rotation.x = -PI * 0.5
 	_camera.current = true
 	world_root.add_child(_camera)
@@ -103,23 +142,23 @@ func _resize_preview() -> void:
 	var width := maxf(size.x, 1.0)
 	var height := maxf(size.y, 1.0)
 	var aspect := width / height
-	_camera.size = maxf(MAP_DEPTH, MAP_WIDTH / maxf(aspect, 0.1)) * 1.08
+	_camera.size = maxf(_map_depth, _map_width / maxf(aspect, 0.1)) * 1.08
 	queue_redraw()
 
 func world_to_local(point: Vector3) -> Vector2:
 	var usable := Vector2(maxf(size.x - MAP_MARGIN * 2.0, 1.0), maxf(size.y - MAP_MARGIN * 2.0, 1.0))
-	var scale := minf(usable.x / MAP_WIDTH, usable.y / MAP_DEPTH)
+	var scale := minf(usable.x / _map_width, usable.y / _map_depth)
 	return size * 0.5 + Vector2(point.x, -point.z) * scale
 
 func _draw() -> void:
 	var usable := Vector2(maxf(size.x - MAP_MARGIN * 2.0, 1.0), maxf(size.y - MAP_MARGIN * 2.0, 1.0))
-	var scale := minf(usable.x / MAP_WIDTH, usable.y / MAP_DEPTH)
+	var scale := minf(usable.x / _map_width, usable.y / _map_depth)
 	if scale <= 0.0:
 		return
-	var map_size := Vector2(MAP_WIDTH, MAP_DEPTH) * scale
+	var map_size := Vector2(_map_width, _map_depth) * scale
 	var map_rect := Rect2(size * 0.5 - map_size * 0.5, map_size)
 	draw_rect(map_rect, Color(0.68, 0.72, 0.63, 0.82), false, 1.5)
-	for sector in LAYOUT.sectors():
+	for sector in _layout.sectors():
 		var center := world_to_local(sector.pos)
 		draw_arc(center, float(sector.radius) * scale, 0.0, TAU, 48, Color(0.92, 0.81, 0.34, 0.36), 1.5, true)
 		var sector_label := str(sector.name)

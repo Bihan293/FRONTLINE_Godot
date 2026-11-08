@@ -5,6 +5,7 @@ class_name FRONTLINEBotNavigation
 
 const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
+const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 const CELL_SIZE := 3.0
 const MIN_X := -108.0
 const MIN_Z := -84.0
@@ -26,6 +27,8 @@ func _current_map_name() -> String:
 func _get_layout():
 	if _current_map_name() == "VILLAGE":
 		return VILLAGE_LAYOUT
+	if _current_map_name() == "COUNTRYSIDE":
+		return COUNTRYSIDE_LAYOUT
 	return BATTLEFIELD_LAYOUT
 
 func _ready() -> void:

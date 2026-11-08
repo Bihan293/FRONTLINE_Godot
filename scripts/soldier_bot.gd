@@ -20,6 +20,7 @@ const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
+const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 
 const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
 const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
@@ -610,16 +611,23 @@ func _advance_behavior(delta: float) -> void:
 	# 0: левый фланг к Сектору [A] (Церковь / Окопы)
 	# 1: центр к Сектору [B] (Площадь / Руины)
 	# 2: правый фланг к Сектору [C] (Мельница / Склад)
-	var is_village: bool = str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE"
-	var flank_dist: float = 45.0 if is_village else 52.0
-	var enemy_base_z: float = 48.0 if is_village else 56.0
+	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var sector_positions := PackedFloat32Array([-52.0, 0.0, 52.0])
+	var enemy_base_z := 56.0
+	if map_name == "VILLAGE":
+		sector_positions = PackedFloat32Array([-45.0, 0.0, 45.0])
+		enemy_base_z = 48.0
+	elif map_name == "COUNTRYSIDE":
+		var map_sectors: Array[Dictionary] = COUNTRYSIDE_LAYOUT.sectors()
+		sector_positions = PackedFloat32Array([
+			map_sectors[0].pos.x,
+			map_sectors[1].pos.x,
+			map_sectors[2].pos.x
+		])
+		enemy_base_z = 62.0
 
 	var squad := int(get_instance_id() % 3)
-	var sector_x := 0.0
-	match squad:
-		0: sector_x = -flank_dist
-		1: sector_x = 0.0
-		2: sector_x = flank_dist
+	var sector_x: float = sector_positions[squad]
 
 	var offset_x := float(int(get_instance_id() % 5) - 2) * 2.5
 	var target_sector := Vector3(sector_x + offset_x, 0.0, 0.0)
