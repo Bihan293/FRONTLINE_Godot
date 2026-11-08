@@ -78,6 +78,7 @@ func _build_visuals() -> void:
 	stripe_mat.roughness = 0.7
 	stripe.material_override = stripe_mat
 	stripe.position = Vector3(0, 0.60, 0)
+	stripe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(stripe)
 	_visual_details.append(stripe)
 
@@ -96,6 +97,7 @@ func _build_visuals() -> void:
 		rim_mat.roughness = 0.5
 		rim.material_override = rim_mat
 		rim.position = Vector3(0, rim_y, 0)
+		rim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(rim)
 		_visual_details.append(rim)
 
@@ -110,6 +112,7 @@ func _build_visuals() -> void:
 	var cap_mat := StandardMaterial3D.new()
 	cap_mat.albedo_color = Color(0.12, 0.12, 0.12)
 	cap.material_override = cap_mat
+	cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(cap)
 	_visual_details.append(cap)
 

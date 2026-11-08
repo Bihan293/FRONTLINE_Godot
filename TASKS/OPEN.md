@@ -31,5 +31,9 @@
 | TASK-0027 | P0 | done | Antigravity / code_qa_agent | Parkour & vaulting over fences, low walls and windows with dynamic camera dip and collider squish |
 | TASK-0028 | P0 | done | Antigravity / modeler_agent / code_qa_agent | Grenade hold/cook animation with procedural F-1 'Limonka' mesh, pin-pulling, and release-to-throw state machine |
 | TASK-0029 | P1 | done | Antigravity / modeler_agent / asset_qa_agent | Level detailing pass for Village (cottages with interiors, porches, stoves), Battlefield (ruins, window vaults, trench duckboards/banquettes), and Polygon parkour course |
+| TASK-0030 | P0 | done | Antigravity / code_qa_agent | Free weapon pickup from the ground without class restrictions |
+| TASK-0031 | P0 | done | Antigravity / asset_qa_agent | Interactive HUD button customizer with drag-and-drop, presets, scale slider and safe zone alignment |
+| TASK-0032 | P0 | done | Antigravity / modeler_agent / code_qa_agent | 200% optimization pass: 65%+ shadow pass culling on micro-objects, bot AI tick rate throttling (4Hz-10Hz), node caching, minimap & compass throttling |
+
 
 

@@ -37,7 +37,7 @@ func _process(delta: float) -> void:
 			_gunfire_pings.remove_at(i)
 		i -= 1
 	_redraw_accum += delta
-	if _redraw_accum < 0.05:
+	if _redraw_accum < 0.08:
 		return
 	_redraw_accum = 0.0
 	queue_redraw()

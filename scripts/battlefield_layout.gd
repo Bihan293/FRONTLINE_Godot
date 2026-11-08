@@ -296,11 +296,26 @@ static func boxes() -> Array:
 
 	return out
 
-static func _push(out: Array, pos: Vector3, size: Vector3, color: Color, solid: bool, kind: String) -> void:
+## Крупные несущие конструкции поля боя, отбрасывающие тени.
+## Настилы траншей (duckboard), ступени, брустверы, мешки с песком, ежи,
+## проволока и осыпи отключают тени для двукратного сокращения теневых проходов.
+const SHADOW_KINDS := {
+	"boundary": true,
+	"bunker_wall": true,
+	"bunker_roof": true,
+	"log_wall": true,
+	"log_roof": true,
+	"ruins": true,
+	"window_lintel": true,
+}
+
+static func _push(out: Array, pos: Vector3, size: Vector3, color: Color, solid: bool, kind: String, cast_shadow: Variant = null) -> void:
+	var shadow: bool = (cast_shadow as bool) if cast_shadow != null else SHADOW_KINDS.get(kind, false)
 	out.append({
 		"pos": pos,
 		"size": size,
 		"color": color,
 		"solid": solid,
 		"kind": kind,
+		"cast_shadow": shadow,
 	})

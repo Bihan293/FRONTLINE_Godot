@@ -277,6 +277,7 @@ func _equip_weapon_visual() -> void:
 	flash_mat.emission_energy_multiplier = 5.0
 	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	muzzle_flash.material_override = flash_mat
+	muzzle_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	muzzle_flash.visible = false
 	muzzle_flash.name = "MuzzleFlash"
 	muzzle_anchor.add_child(muzzle_flash)
@@ -1957,8 +1958,6 @@ func take_field_ammo(amount: int) -> int:
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
 		return false
-	if not role_weapon_indices.has(index):
-		return false
 	var stored_clip := ammo if index == current_weapon_index else ammo_by_weapon[index]
 	var stored_reserve := reserve_ammo if index == current_weapon_index else reserve_by_weapon[index]
 	var definition: Dictionary = WEAPON_DEFS[index]
@@ -1982,6 +1981,14 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	ammo_by_weapon[previous_index] = 0
 	reserve_by_weapon[previous_index] = 0
 	_spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
+
+	# Свободный подбор любого оружия: заменяем слот основного оружия в пуле
+	if not role_weapon_indices.has(index):
+		var prev_slot := role_weapon_indices.find(previous_index)
+		if prev_slot >= 0:
+			role_weapon_indices[prev_slot] = index
+		else:
+			role_weapon_indices.insert(0, index)
 
 	current_weapon_index = index
 	var incoming: Dictionary = WEAPON_DEFS[index]

@@ -405,11 +405,18 @@ func _test_role_weapon_restrictions() -> void:
 	_check(player != null, "player missing for weapon restriction test")
 	if player != null:
 		var before := int(player.get("current_weapon_index"))
-		player.call("_switch_weapon", 6) # Kar98k is not in the assault kit
-		_check(int(player.get("current_weapon_index")) == before, "assault switched to a non-role weapon")
+		player.call("_switch_weapon", 6) # Kar98k is not in the initial assault kit
+		_check(int(player.get("current_weapon_index")) == before, "assault switched to an unowned weapon before pickup")
 		player.call("_switch_weapon", 3) # M1911 sidearm is allowed
 		_check(int(player.get("current_weapon_index")) == 3, "assault cannot switch to the allowed sidearm")
-		_check(not bool(player.call("can_take_weapon_pickup", 6, 5, 45)), "assault can pick up a sniper rifle")
+		_check(bool(player.call("can_take_weapon_pickup", 6, 5, 45)), "player cannot pick up a fallen sniper rifle from the field")
+		var picked: bool = bool(player.call("take_weapon_pickup", 6, 5, 45))
+		_check(picked, "take_weapon_pickup returned false for fallen rifle")
+		_check(int(player.get("current_weapon_index")) == 6, "player weapon index did not change to picked rifle")
+		_check(bool(player.call("can_take_weapon_pickup", 1, 32, 128)), "player cannot pick up an MP-40 pickup")
+		var picked_mp40: bool = bool(player.call("take_weapon_pickup", 1, 32, 128))
+		_check(picked_mp40, "take_weapon_pickup returned false for MP-40")
+		_check(int(player.get("current_weapon_index")) == 1, "player weapon index did not change to MP-40")
 	battlefield.queue_free()
 	await get_tree().process_frame
 	await get_tree().process_frame

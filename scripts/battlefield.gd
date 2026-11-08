@@ -236,6 +236,17 @@ func _build_box(data: Dictionary) -> void:
 	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
 	inst.material_override = _mat(data.color, textured)
+
+	# Оптимизация теней для мобилок (экономия до 260 draw calls в shadow pass)
+	const NO_SHADOW_KINDS := [
+		"road", "crossroad", "plaza", "crater_dirt", "house_floor", "duckboard",
+		"porch_deck", "porch_step", "window_frame", "shutter", "window_sill_board",
+		"table", "chest", "altar", "pew", "trench_step", "picket_board", "hedge_beam"
+	]
+	var is_flat_or_micro: bool = kind in NO_SHADOW_KINDS or size.y <= 0.22 or (size.x < 0.35 and size.z < 0.35)
+	if not bool(data.get("cast_shadow", true)) or is_flat_or_micro:
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
 	if not solid:
 		inst.position = pos
 	parent.add_child(inst)

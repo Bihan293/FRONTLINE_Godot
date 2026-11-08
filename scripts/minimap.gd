@@ -44,8 +44,22 @@ func _get_enemy_visible_range() -> float:
 	return ENEMY_VISIBLE_RANGE
 
 var _redraw_accum := 0.0
+var _cached_crates: Array = []
+var _cached_drones: Array = []
+var _cached_bots: Array = []
+var _cache_timer := 0.0
 
 func _process(delta: float) -> void:
+	_cache_timer -= delta
+	if _cache_timer <= 0.0:
+		_cache_timer = 0.50
+		_cached_crates = get_tree().get_nodes_in_group("field_supply_crates")
+		_cached_drones = get_tree().get_nodes_in_group("radio_drones")
+		if bots.is_empty():
+			_cached_bots = get_tree().get_nodes_in_group("bots")
+		else:
+			_cached_bots = bots
+
 	_redraw_accum += delta
 	if _redraw_accum < 0.08:
 		return
@@ -133,8 +147,7 @@ func _draw_sectors(center: Vector2, radius: float, scale: float) -> void:
 		draw_string(font, p + Vector2(-4.0, 4.0), letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, color)
 
 func _draw_supply_crates(center: Vector2, radius: float, scale: float) -> void:
-	var crates := get_tree().get_nodes_in_group("field_supply_crates")
-	for crate in crates:
+	for crate in _cached_crates:
 		if not is_instance_valid(crate) or not (crate is Node3D):
 			continue
 		var crate_3d := crate as Node3D
@@ -152,8 +165,7 @@ func _draw_supply_crates(center: Vector2, radius: float, scale: float) -> void:
 		draw_line(Vector2(p.x - 1.5, p.y), Vector2(p.x + 1.5, p.y), box_col, 1.0)
 
 func _draw_drones(center: Vector2, radius: float, scale: float) -> void:
-	var drones := get_tree().get_nodes_in_group("radio_drones")
-	for d in drones:
+	for d in _cached_drones:
 		if not is_instance_valid(d) or not (d is Node3D):
 			continue
 		var drone := d as Node3D
@@ -195,8 +207,9 @@ func _draw_drones(center: Vector2, radius: float, scale: float) -> void:
 func _draw_bots(center: Vector2, radius: float, scale: float) -> void:
 	var origin := player.global_position
 	var max_enemy_dist := _get_enemy_visible_range()
+	var bot_list: Array = _cached_bots if not _cached_bots.is_empty() else bots
 
-	for bot in bots:
+	for bot in bot_list:
 		if not is_instance_valid(bot):
 			continue
 		if bool(bot.get("is_dead")):

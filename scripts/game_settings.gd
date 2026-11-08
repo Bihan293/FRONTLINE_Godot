@@ -7,6 +7,7 @@ const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 
 const CONFIG_PATH := "user://frontline_settings.cfg"
 const QUALITY_NAMES := ["НИЗКАЯ", "СРЕДНЯЯ", "ВЫСОКАЯ"]
+const HUD_PRESET_NAMES := ["СТАНДАРТ", "КОМПАКТНЫЙ", "РАЗРЕЖЕННЫЙ", "ДЛЯ ЛЕВШИ"]
 
 const MIN_LOOK_SENSITIVITY := 0.30
 const MAX_LOOK_SENSITIVITY := 2.50
@@ -24,6 +25,11 @@ var aim_sensitivity := 0.70
 var invert_y := false
 var fov := 78.0
 
+# Настройки расположения и масштаба мобильных кнопок HUD
+var hud_preset: int = 0
+var hud_scale: float = 1.0
+var hud_button_offsets: Dictionary = {}
+
 func _ready() -> void:
 	COMBAT_AUDIO.ensure_audio_buses()
 	load_settings()
@@ -40,6 +46,9 @@ func load_settings() -> void:
 		aim_sensitivity = clampf(float(cfg.get_value("controls", "aim_sensitivity", 0.70)), MIN_AIM_SENSITIVITY, MAX_AIM_SENSITIVITY)
 		invert_y = bool(cfg.get_value("controls", "invert_y", false))
 		fov = clampf(float(cfg.get_value("video", "fov", 78.0)), MIN_FOV, MAX_FOV)
+		hud_preset = clampi(int(cfg.get_value("hud", "preset", 0)), 0, 3)
+		hud_scale = clampf(float(cfg.get_value("hud", "scale", 1.0)), 0.70, 1.40)
+		hud_button_offsets = cfg.get_value("hud", "offsets", {})
 	else:
 		# На мобилках по умолчанию средний пресет: заметно быстрее High,
 		# но без «мыла» низкого разрешения.
@@ -47,6 +56,9 @@ func load_settings() -> void:
 		master_volume = 0.8
 		sfx_volume = 0.90
 		ambience_volume = 0.75
+		hud_preset = 0
+		hud_scale = 1.0
+		hud_button_offsets = {}
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -58,7 +70,44 @@ func save_settings() -> void:
 	cfg.set_value("controls", "look_sensitivity", look_sensitivity)
 	cfg.set_value("controls", "aim_sensitivity", aim_sensitivity)
 	cfg.set_value("controls", "invert_y", invert_y)
+	cfg.set_value("hud", "preset", hud_preset)
+	cfg.set_value("hud", "scale", hud_scale)
+	cfg.set_value("hud", "offsets", hud_button_offsets)
 	cfg.save(CONFIG_PATH)
+
+func hud_preset_name() -> String:
+	return HUD_PRESET_NAMES[clampi(hud_preset, 0, HUD_PRESET_NAMES.size() - 1)]
+
+func cycle_hud_preset() -> void:
+	hud_preset = (hud_preset + 1) % HUD_PRESET_NAMES.size()
+	hud_button_offsets.clear()
+	save_settings()
+
+func set_hud_preset(preset_idx: int) -> void:
+	hud_preset = clampi(preset_idx, 0, HUD_PRESET_NAMES.size() - 1)
+	hud_button_offsets.clear()
+	save_settings()
+
+func set_hud_scale(val: float) -> void:
+	hud_scale = clampf(val, 0.70, 1.40)
+	save_settings()
+
+func get_hud_button_offset(btn_name: String) -> Vector2:
+	if hud_button_offsets.has(btn_name):
+		var v = hud_button_offsets[btn_name]
+		if v is Vector2:
+			return v
+	return Vector2.ZERO
+
+func set_hud_button_offset(btn_name: String, offset: Vector2) -> void:
+	hud_button_offsets[btn_name] = offset
+	save_settings()
+
+func reset_hud_layout() -> void:
+	hud_preset = 0
+	hud_scale = 1.0
+	hud_button_offsets.clear()
+	save_settings()
 
 func quality_name() -> String:
 	return QUALITY_NAMES[clampi(quality, 0, 2)]

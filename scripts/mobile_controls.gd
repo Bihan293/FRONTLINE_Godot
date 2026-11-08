@@ -51,26 +51,112 @@ func _ready() -> void:
 	set_process_input(true)
 	resized.connect(queue_redraw)
 
+func _joy_radius() -> float:
+	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
+	return JOY_RADIUS * sc
+
+func _fire_radius() -> float:
+	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
+	return FIRE_RADIUS * sc
+
+func _small_radius() -> float:
+	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
+	return SMALL_RADIUS * sc
+
 func _layout() -> Dictionary:
 	var s := size
-	return {
-		"joy": Vector2(150.0, s.y - 155.0),
-		"fire": Vector2(s.x - 118.0, s.y - 122.0),
-		"reload": Vector2(s.x - 118.0, s.y - 292.0),
-		"aim": Vector2(s.x - 118.0, s.y - 402.0),
-		"crouch": Vector2(s.x - 288.0, s.y - 120.0),
-		"jump": Vector2(s.x - 288.0, s.y - 238.0),
-		"grenade": Vector2(s.x - 288.0, s.y - 355.0),
-		"smoke": Vector2(s.x - 378.0, s.y - 355.0),
-		"heal": Vector2(s.x - 198.0, s.y - 355.0),
-		"peek_left": Vector2(s.x - 386.0, s.y - 466.0),
-		"peek_right": Vector2(s.x - 294.0, s.y - 466.0),
-		"weapon": Vector2(s.x - 118.0, s.y - 512.0),
-		"interact": Vector2(s.x - 195.0, s.y - 530.0),
-		"drone": Vector2(s.x - 478.0, s.y - 355.0),
-		"sidearm": Vector2(maxf(210.0, s.x - 478.0), s.y - 245.0),
-		"shovel": Vector2(maxf(210.0, s.x - 478.0), s.y - 155.0),
-	}
+	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
+	var preset: int = GameSettings.hud_preset if ("hud_preset" in GameSettings) else 0
+
+	var base: Dictionary = {}
+	if preset == 3:
+		# Левша: джойстик справа, кнопки действий слева (безопасные зоны без наложений)
+		base = {
+			"joy": Vector2(s.x - 170.0 * sc, s.y - 160.0 * sc),
+			"fire": Vector2(130.0 * sc, s.y - 135.0 * sc),
+			"reload": Vector2(120.0 * sc, s.y - 275.0 * sc),
+			"aim": Vector2(120.0 * sc, s.y - 395.0 * sc),
+			"crouch": Vector2(275.0 * sc, s.y - 125.0 * sc),
+			"jump": Vector2(275.0 * sc, s.y - 235.0 * sc),
+			"grenade": Vector2(310.0 * sc, s.y - 355.0 * sc),
+			"smoke": Vector2(415.0 * sc, s.y - 355.0 * sc),
+			"heal": Vector2(205.0 * sc, s.y - 340.0 * sc),
+			"peek_left": Vector2(305.0 * sc, s.y - 475.0 * sc),
+			"peek_right": Vector2(410.0 * sc, s.y - 475.0 * sc),
+			"weapon": Vector2(115.0 * sc, s.y - 515.0 * sc),
+			"interact": Vector2(235.0 * sc, s.y - 580.0 * sc),
+			"drone": Vector2(520.0 * sc, s.y - 355.0 * sc),
+			"sidearm": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 245.0 * sc),
+			"shovel": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 135.0 * sc),
+		}
+	elif preset == 1:
+		# Компактный: кнопки сгруппированы плотнее к углам
+		base = {
+			"joy": Vector2(125.0 * sc, s.y - 130.0 * sc),
+			"fire": Vector2(s.x - 95.0 * sc, s.y - 95.0 * sc),
+			"reload": Vector2(s.x - 95.0 * sc, s.y - 230.0 * sc),
+			"aim": Vector2(s.x - 95.0 * sc, s.y - 325.0 * sc),
+			"crouch": Vector2(s.x - 225.0 * sc, s.y - 95.0 * sc),
+			"jump": Vector2(s.x - 225.0 * sc, s.y - 190.0 * sc),
+			"grenade": Vector2(s.x - 225.0 * sc, s.y - 285.0 * sc),
+			"smoke": Vector2(s.x - 305.0 * sc, s.y - 285.0 * sc),
+			"heal": Vector2(s.x - 160.0 * sc, s.y - 285.0 * sc),
+			"peek_left": Vector2(s.x - 310.0 * sc, s.y - 380.0 * sc),
+			"peek_right": Vector2(s.x - 230.0 * sc, s.y - 380.0 * sc),
+			"weapon": Vector2(s.x - 95.0 * sc, s.y - 415.0 * sc),
+			"interact": Vector2(s.x - 160.0 * sc, s.y - 430.0 * sc),
+			"drone": Vector2(s.x - 385.0 * sc, s.y - 285.0 * sc),
+			"sidearm": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 190.0 * sc),
+			"shovel": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 100.0 * sc),
+		}
+	elif preset == 2:
+		# Разреженный: для больших планшетов
+		base = {
+			"joy": Vector2(175.0 * sc, s.y - 175.0 * sc),
+			"fire": Vector2(s.x - 135.0 * sc, s.y - 135.0 * sc),
+			"reload": Vector2(s.x - 135.0 * sc, s.y - 330.0 * sc),
+			"aim": Vector2(s.x - 135.0 * sc, s.y - 450.0 * sc),
+			"crouch": Vector2(s.x - 330.0 * sc, s.y - 135.0 * sc),
+			"jump": Vector2(s.x - 330.0 * sc, s.y - 270.0 * sc),
+			"grenade": Vector2(s.x - 330.0 * sc, s.y - 400.0 * sc),
+			"smoke": Vector2(s.x - 435.0 * sc, s.y - 400.0 * sc),
+			"heal": Vector2(s.x - 225.0 * sc, s.y - 400.0 * sc),
+			"peek_left": Vector2(s.x - 440.0 * sc, s.y - 520.0 * sc),
+			"peek_right": Vector2(s.x - 335.0 * sc, s.y - 520.0 * sc),
+			"weapon": Vector2(s.x - 135.0 * sc, s.y - 570.0 * sc),
+			"interact": Vector2(s.x - 225.0 * sc, s.y - 590.0 * sc),
+			"drone": Vector2(s.x - 540.0 * sc, s.y - 400.0 * sc),
+			"sidearm": Vector2(maxf(210.0, s.x - 540.0 * sc), s.y - 275.0 * sc),
+			"shovel": Vector2(maxf(210.0, s.x - 540.0 * sc), s.y - 175.0 * sc),
+		}
+	else:
+		# Стандартный (проверенные безопасные зоны без перекрытия кнопок)
+		base = {
+			"joy": Vector2(170.0 * sc, s.y - 160.0 * sc),
+			"fire": Vector2(s.x - 130.0 * sc, s.y - 135.0 * sc),
+			"reload": Vector2(s.x - 120.0 * sc, s.y - 275.0 * sc),
+			"aim": Vector2(s.x - 120.0 * sc, s.y - 395.0 * sc),
+			"crouch": Vector2(s.x - 275.0 * sc, s.y - 125.0 * sc),
+			"jump": Vector2(s.x - 275.0 * sc, s.y - 235.0 * sc),
+			"grenade": Vector2(s.x - 310.0 * sc, s.y - 355.0 * sc),
+			"smoke": Vector2(s.x - 415.0 * sc, s.y - 355.0 * sc),
+			"heal": Vector2(s.x - 205.0 * sc, s.y - 340.0 * sc),
+			"peek_left": Vector2(s.x - 410.0 * sc, s.y - 475.0 * sc),
+			"peek_right": Vector2(s.x - 305.0 * sc, s.y - 475.0 * sc),
+			"weapon": Vector2(s.x - 115.0 * sc, s.y - 515.0 * sc),
+			"interact": Vector2(s.x - 235.0 * sc, s.y - 580.0 * sc),
+			"drone": Vector2(s.x - 520.0 * sc, s.y - 355.0 * sc),
+			"sidearm": Vector2(maxf(210.0, s.x - 520.0 * sc), s.y - 245.0 * sc),
+			"shovel": Vector2(maxf(210.0, s.x - 520.0 * sc), s.y - 135.0 * sc),
+		}
+
+	# Применяем пользовательские индивидуальные смещения
+	for k in base.keys():
+		var offset := GameSettings.get_hud_button_offset(k) if ("get_hud_button_offset" in GameSettings) else Vector2.ZERO
+		var target: Vector2 = base[k] + offset
+		base[k] = Vector2(clampf(target.x, 35.0, s.x - 35.0), clampf(target.y, 35.0, s.y - 35.0))
+
+	return base
 
 func set_interact_visible(is_visible: bool) -> void:
 	if _interact_visible == is_visible:
@@ -117,14 +203,14 @@ func _touch_down(index: int, pos: Vector2) -> void:
 			continue
 		if id == "drone" and not _drone_visible:
 			continue
-		var radius := FIRE_RADIUS if id == "fire" else SMALL_RADIUS
+		var radius := _fire_radius() if id == "fire" else _small_radius()
 		if pos.distance_to(l[id]) <= radius * 1.15:
 			_button_touches[index] = id
 			_active[id] = true
 			_press(id)
 			queue_redraw()
 			return
-	if _joy_touch == -1 and pos.distance_to(l.joy) <= JOY_RADIUS * 1.7:
+	if _joy_touch == -1 and pos.distance_to(l.joy) <= _joy_radius() * 1.7:
 		_joy_touch = index
 		_joy_origin = l.joy
 		_set_joy(Vector2.ZERO)
@@ -161,9 +247,10 @@ func _touch_up(index: int) -> void:
 func _touch_drag(index: int, pos: Vector2, relative: Vector2) -> void:
 	if index == _joy_touch:
 		var d := pos - _joy_origin
-		if d.length() > JOY_RADIUS:
-			d = d.normalized() * JOY_RADIUS
-		_set_joy(d / JOY_RADIUS)
+		var jr := _joy_radius()
+		if d.length() > jr:
+			d = d.normalized() * jr
+		_set_joy(d / jr)
 	elif index == _look_touch:
 		var normalized_relative := Vector2(
 			relative.x * LOOK_REFERENCE_SIZE.x / maxf(size.x, 1.0),
@@ -228,35 +315,38 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 
 	# Джойстик
-	draw_circle(l.joy, JOY_RADIUS, Color(0.012, 0.016, 0.019, 0.70))
-	draw_arc(l.joy, JOY_RADIUS, 0.0, TAU, 64, Color(0.88, 0.92, 0.93, 0.50), 2.0, true)
-	var knob: Vector2 = l.joy + _joy_value * JOY_RADIUS
-	draw_circle(knob, JOY_RADIUS * 0.40, Color(0.035, 0.045, 0.05, 0.92))
-	draw_arc(knob, JOY_RADIUS * 0.40, 0.0, TAU, 48, Color(0.96, 0.97, 0.97, 0.76), 1.8, true)
+	var jr := _joy_radius()
+	var fr := _fire_radius()
+	var sr := _small_radius()
+	draw_circle(l.joy, jr, Color(0.012, 0.016, 0.019, 0.70))
+	draw_arc(l.joy, jr, 0.0, TAU, 64, Color(0.88, 0.92, 0.93, 0.50), 2.0, true)
+	var knob: Vector2 = l.joy + _joy_value * jr
+	draw_circle(knob, jr * 0.40, Color(0.035, 0.045, 0.05, 0.92))
+	draw_arc(knob, jr * 0.40, 0.0, TAU, 48, Color(0.96, 0.97, 0.97, 0.76), 1.8, true)
 	if _drone_mode:
-		_draw_button(l.fire, FIRE_RADIUS, "", "detonate", Color.BLACK, font, 16)
-		_draw_button(l.jump, SMALL_RADIUS, "", "drone_up", Color.BLACK, font, 11)
-		_draw_button(l.crouch, SMALL_RADIUS, "", "drone_down", Color.BLACK, font, 12)
-		_draw_button(l.drone, SMALL_RADIUS, "", "return", Color.BLACK, font, 10)
+		_draw_button(l.fire, fr, "", "detonate", Color.BLACK, font, 16)
+		_draw_button(l.jump, sr, "", "drone_up", Color.BLACK, font, 11)
+		_draw_button(l.crouch, sr, "", "drone_down", Color.BLACK, font, 12)
+		_draw_button(l.drone, sr, "", "return", Color.BLACK, font, 10)
 		return
 
-	_draw_button(l.fire, FIRE_RADIUS, "", "fire", Color.BLACK, font, 18)
-	_draw_button(l.reload, SMALL_RADIUS, "", "reload", Color.BLACK, font, 12)
-	_draw_button(l.aim, SMALL_RADIUS, "", "aim", Color.BLACK, font, 12)
-	_draw_button(l.crouch, SMALL_RADIUS, "", "crouch", Color.BLACK, font, 11)
-	_draw_button(l.jump, SMALL_RADIUS, "", "jump", Color.BLACK, font, 12)
-	_draw_button(l.grenade, SMALL_RADIUS, "", "grenade", Color.BLACK, font, 11)
-	_draw_button(l.smoke, SMALL_RADIUS, "", "smoke", Color.BLACK, font, 12)
-	_draw_button(l.heal, SMALL_RADIUS, "", "heal", Color.BLACK, font, 12)
-	_draw_button(l.peek_left, SMALL_RADIUS, "", "peek_left", Color.BLACK, font, 10)
-	_draw_button(l.peek_right, SMALL_RADIUS, "", "peek_right", Color.BLACK, font, 9)
-	_draw_button(l.weapon, SMALL_RADIUS, "", "weapon", Color.BLACK, font, 10)
+	_draw_button(l.fire, fr, "", "fire", Color.BLACK, font, 18)
+	_draw_button(l.reload, sr, "", "reload", Color.BLACK, font, 12)
+	_draw_button(l.aim, sr, "", "aim", Color.BLACK, font, 12)
+	_draw_button(l.crouch, sr, "", "crouch", Color.BLACK, font, 11)
+	_draw_button(l.jump, sr, "", "jump", Color.BLACK, font, 12)
+	_draw_button(l.grenade, sr, "", "grenade", Color.BLACK, font, 11)
+	_draw_button(l.smoke, sr, "", "smoke", Color.BLACK, font, 12)
+	_draw_button(l.heal, sr, "", "heal", Color.BLACK, font, 12)
+	_draw_button(l.peek_left, sr, "", "peek_left", Color.BLACK, font, 10)
+	_draw_button(l.peek_right, sr, "", "peek_right", Color.BLACK, font, 9)
+	_draw_button(l.weapon, sr, "", "weapon", Color.BLACK, font, 10)
 	if _interact_visible:
-		_draw_button(l.interact, SMALL_RADIUS, "", "interact", Color.BLACK, font, 11)
+		_draw_button(l.interact, sr, "", "interact", Color.BLACK, font, 11)
 	if _drone_visible:
-		_draw_button(l.drone, SMALL_RADIUS, "", "drone", Color.BLACK, font, 11)
-	_draw_button(l.sidearm, SMALL_RADIUS, "", "sidearm", Color.BLACK, font, 11)
-	_draw_button(l.shovel, SMALL_RADIUS, "", "shovel", Color.BLACK, font, 11)
+		_draw_button(l.drone, sr, "", "drone", Color.BLACK, font, 11)
+	_draw_button(l.sidearm, sr, "", "sidearm", Color.BLACK, font, 11)
+	_draw_button(l.shovel, sr, "", "shovel", Color.BLACK, font, 11)
 
 func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
 	var state_id := id
