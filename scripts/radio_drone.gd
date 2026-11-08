@@ -265,35 +265,12 @@ func _apply_blast_damage(pos: Vector3) -> void:
 					barrel.call("receive_hit", barrel_dmg, pos, "barrel", operator_name + " [DRONE]")
 
 func _spawn_explosion_visuals(world: Node, pos: Vector3) -> void:
-	# Вспышка и частицы взрыва
-	var flash := OmniLight3D.new()
-	flash.position = pos + Vector3.UP * 0.5
-	flash.light_color = Color(1.0, 0.65, 0.25)
-	flash.light_energy = 9.0
-	flash.omni_range = 14.0
-	world.add_child(flash)
-	get_tree().create_timer(0.12, false).timeout.connect(flash.queue_free)
-
-	# Сфера огненного шара
-	var sphere := MeshInstance3D.new()
-	var smesh := SphereMesh.new()
-	smesh.radius = 2.4
-	smesh.height = 4.8
-	sphere.mesh = smesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.45, 0.1)
-	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.35, 0.05)
-	mat.emission_energy_multiplier = 4.0
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sphere.material_override = mat
-	sphere.position = pos
-	world.add_child(sphere)
-
-	var tween := sphere.create_tween()
-	tween.tween_property(sphere, "scale", Vector3(1.8, 1.8, 1.8), 0.22)
-	tween.parallel().tween_property(mat, "albedo_color:a", 0.0, 0.25)
-	tween.tween_callback(sphere.queue_free)
+	# QA-fix TASK-0022: объёмный взрыв дрона (как у гранаты, чуть мощнее).
+	HIT_EFFECTS.spawn_explosion(world, pos, 1.1)
+	# Тряска камеры рядом с местом подрыва (если игрок не в дроне).
+	var player := get_tree().get_first_node_in_group("player")
+	if player != null and player.has_method("apply_explosion_shake"):
+		player.call("apply_explosion_shake", pos, 34.0, 0.95)
 
 func _build_model() -> void:
 	_model = Node3D.new()

@@ -189,6 +189,193 @@ static func spawn_directional_blood(parent: Node, pos: Vector3, bullet_dir: Vect
 		mist.emitting = true
 		mist.finished.connect(mist.queue_free)
 
+static var _explosion_bass: AudioStreamWAV = null
+
+## QA-fix TASK-0022: объёмный взрыв — слои огня, ударная волна, дым, осколки,
+## вспышка, подпалина и низкочастотный «бум». Заменяет «пик и жёлтый шар».
+static func spawn_explosion(parent: Node, pos: Vector3, power := 1.0) -> void:
+	if parent == null:
+		return
+	var low := GameSettings.quality == 0
+
+	# 1) Огненные шары (два слоя, аддитивное смешивание).
+	for i in range(2):
+		var radius := (0.85 + 0.45 * float(i)) * power
+		var sphere := MeshInstance3D.new()
+		var mesh := SphereMesh.new()
+		mesh.radius = radius
+		mesh.height = radius * 2.0
+		mesh.radial_segments = 10
+		mesh.rings = 6
+		sphere.mesh = mesh
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(1.0, 0.55, 0.15, 0.95 if i == 0 else 0.55)
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.38, 0.07)
+		mat.emission_energy_multiplier = 3.2
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		sphere.material_override = mat
+		sphere.position = pos + Vector3.UP * 0.55 * power
+		sphere.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(sphere)
+		var tw := sphere.create_tween()
+		tw.tween_property(sphere, "scale", Vector3.ONE * (2.4 + float(i)), 0.30 + 0.10 * float(i)).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(mat, "albedo_color:a", 0.0, 0.32 + 0.16 * float(i))
+		tw.tween_callback(sphere.queue_free)
+
+	# 2) Ударная волна по земле.
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.85 * power
+	torus.outer_radius = 1.12 * power
+	torus.rings = 12
+	torus.ring_segments = 8
+	ring.mesh = torus
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.albedo_color = Color(0.88, 0.80, 0.62, 0.50)
+	ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	ring.material_override = ring_mat
+	ring.position = pos + Vector3.UP * 0.12
+	ring.scale = Vector3(1.0, 0.22, 1.0)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(ring)
+	var ring_tw := ring.create_tween()
+	ring_tw.tween_property(ring, "scale", Vector3(7.5, 0.3, 7.5) * power, 0.5).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	ring_tw.parallel().tween_property(ring_mat, "albedo_color:a", 0.0, 0.5)
+	ring_tw.tween_callback(ring.queue_free)
+
+	# 3) Поднимающийся столб дыма (плавно, не мгновенный шар).
+	var smoke := CPUParticles3D.new()
+	var puff := SphereMesh.new()
+	puff.radius = 0.5
+	puff.height = 1.0
+	var puff_mat := StandardMaterial3D.new()
+	puff_mat.albedo_color = Color(0.30, 0.29, 0.27, 0.42)
+	puff_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	puff_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	puff.material = puff_mat
+	smoke.mesh = puff
+	smoke.amount = 20 if low else 32
+	smoke.lifetime = 3.4
+	smoke.one_shot = true
+	smoke.explosiveness = 0.55
+	smoke.direction = Vector3.UP
+	smoke.spread = 52.0
+	smoke.initial_velocity_min = 1.4
+	smoke.initial_velocity_max = 4.2
+	smoke.gravity = Vector3(0.25, 0.55, 0.18)
+	smoke.scale_amount_min = 1.3
+	smoke.scale_amount_max = 3.2
+	smoke.position = pos + Vector3.UP * 0.45
+	smoke.fixed_fps = 20
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(smoke)
+	smoke.emitting = true
+	smoke.finished.connect(smoke.queue_free)
+
+	# 4) Осколки и искры.
+	var debris := CPUParticles3D.new()
+	var frag := BoxMesh.new()
+	frag.size = Vector3(0.06, 0.06, 0.10)
+	var frag_mat := StandardMaterial3D.new()
+	frag_mat.albedo_color = Color(0.30, 0.27, 0.22)
+	frag_mat.emission_enabled = true
+	frag_mat.emission = Color(0.9, 0.45, 0.12)
+	frag_mat.emission_energy_multiplier = 0.6
+	frag.material = frag_mat
+	debris.mesh = frag
+	debris.amount = 18 if low else 34
+	debris.lifetime = 1.1
+	debris.one_shot = true
+	debris.explosiveness = 0.95
+	debris.direction = Vector3.UP
+	debris.spread = 85.0
+	debris.initial_velocity_min = 5.0 * power
+	debris.initial_velocity_max = 15.0 * power
+	debris.gravity = Vector3(0, -16.0, 0)
+	debris.angular_velocity_min = -420.0
+	debris.angular_velocity_max = 420.0
+	debris.scale_amount_min = 0.6
+	debris.scale_amount_max = 1.4
+	debris.position = pos + Vector3.UP * 0.3
+	debris.fixed_fps = 24
+	debris.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(debris)
+	debris.emitting = true
+	debris.finished.connect(debris.queue_free)
+
+	# 5) Вспышка света.
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.70, 0.30)
+	light.light_energy = 10.0 * power
+	light.omni_range = 16.0 * power
+	light.position = pos + Vector3.UP * 0.8
+	parent.add_child(light)
+	var light_tw := light.create_tween()
+	light_tw.tween_property(light, "light_energy", 0.0, 0.30)
+	light_tw.tween_callback(light.queue_free)
+
+	# 6) Подпалина на земле.
+	var scorch := MeshInstance3D.new()
+	var quad := PlaneMesh.new()
+	quad.size = Vector2(3.4 * power, 3.4 * power)
+	scorch.mesh = quad
+	var scorch_mat := StandardMaterial3D.new()
+	scorch_mat.albedo_texture = _get_hole_texture()
+	scorch_mat.albedo_color = Color(0.20, 0.18, 0.16, 0.85)
+	scorch_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	scorch_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	scorch_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	scorch.material_override = scorch_mat
+	scorch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(scorch)
+	scorch.global_transform = _surface_transform(Vector3(pos.x, 0.02, pos.z), Vector3.UP, 0.0)
+	_register_decal(scorch)
+
+	# 7) Низкочастотный «бум» — взрыв слышно и телом, а не только ушами.
+	if _explosion_bass == null:
+		_explosion_bass = _make_bass_boom()
+	var boom := AudioStreamPlayer3D.new()
+	boom.stream = _explosion_bass
+	boom.unit_size = 26.0 * power
+	boom.max_distance = 320.0
+	boom.volume_db = 4.0
+	boom.max_polyphony = 1
+	boom.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
+	parent.add_child(boom)
+	boom.global_position = pos
+	boom.play()
+	boom.finished.connect(boom.queue_free)
+
+static func _make_bass_boom() -> AudioStreamWAV:
+	const RATE := 22050
+	var count := int(RATE * 1.1)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5150
+	for i in range(count):
+		var t := float(i) / float(RATE)
+		var env := exp(-t * 3.4)
+		var sub := sin(TAU * 38.0 * t) * 0.65
+		var body := sin(TAU * 64.0 * t) * 0.35 * exp(-t * 6.0)
+		var rumble := rng.randf_range(-1.0, 1.0) * 0.10 * exp(-t * 2.2)
+		var value := int(clampf((sub + body + rumble) * env * 0.95, -1.0, 1.0) * 32767.0)
+		data[i * 2] = value & 0xFF
+		data[i * 2 + 1] = (value >> 8) & 0xFF
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = RATE
+	stream.stereo = false
+	stream.loop_mode = AudioStreamWAV.LOOP_DISABLED
+	stream.data = data
+	return stream
+
 static func spawn_bullet_hole(parent: Node, pos: Vector3, normal: Vector3) -> void:
 	if parent == null:
 		return
