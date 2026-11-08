@@ -14,6 +14,7 @@ const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const TACTICAL_DEPLOY = preload("res://scripts/tactical_deploy.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
+const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
 
 var _failures: Array[String] = []
 
@@ -40,6 +41,7 @@ func _ready() -> void:
 	await _test_first_person_ads_alignment()
 	await _test_field_pickup_weapon_swap_and_ammo()
 	await _test_hud_customizer_input()
+	await _test_tactical_buildings_pack()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -929,6 +931,46 @@ func _test_hud_customizer_input() -> void:
 	GameSettings.save_settings()
 
 	customizer.queue_free()
+	await get_tree().process_frame
+
+func _test_tactical_buildings_pack() -> void:
+	_check(TACTICAL_BUILDINGS != null, "tactical_buildings.gd missing")
+	if TACTICAL_BUILDINGS == null:
+		return
+
+	var types: Array[String] = TACTICAL_BUILDINGS.get_available_types()
+	_check(types.size() == 4, "expected 4 tactical building types, got %d" % types.size())
+	_check(types.has("house_1story"), "missing house_1story")
+	_check(types.has("house_2story"), "missing house_2story")
+	_check(types.has("house_3story"), "missing house_3story")
+	_check(types.has("house_5story"), "missing house_5story")
+
+	for type_name in types:
+		var info: Dictionary = TACTICAL_BUILDINGS.get_building_info(type_name)
+		_check(info.has("floors") and int(info["floors"]) >= 1, "invalid building info for %s" % type_name)
+
+		# Test box layout data generation with rotation
+		var boxes_0: Array[Dictionary] = TACTICAL_BUILDINGS.get_building_boxes(type_name, Vector3.ZERO, 0.0)
+		var boxes_90: Array[Dictionary] = TACTICAL_BUILDINGS.get_building_boxes(type_name, Vector3(5, 0, 10), 90.0)
+		_check(boxes_0.size() > 0, "no boxes generated for %s" % type_name)
+		_check(boxes_0.size() == boxes_90.size(), "box count mismatch under rotation for %s" % type_name)
+
+		# Test node instantiation with static body and collision shapes
+		var node: Node3D = TACTICAL_BUILDINGS.create_building_node(type_name)
+		_check(node != null, "create_building_node returned null for %s" % type_name)
+		if node != null:
+			add_child(node)
+			var sb: StaticBody3D = node.get_node_or_null("BuildingCollisions") as StaticBody3D
+			_check(sb != null, "missing StaticBody3D for %s" % type_name)
+			if sb != null:
+				_check(sb.collision_layer == 1, "wrong collision layer for %s" % type_name)
+				var shapes := sb.find_children("*", "CollisionShape3D", true, false)
+				_check(shapes.size() > 0, "no CollisionShape3D children in %s" % type_name)
+
+			var meshes := node.find_children("*", "MeshInstance3D", true, false)
+			_check(meshes.size() > 0, "no MeshInstance3D children in %s" % type_name)
+			node.queue_free()
+
 	await get_tree().process_frame
 
 func _report() -> void:
