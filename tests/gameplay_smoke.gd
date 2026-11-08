@@ -684,6 +684,8 @@ func _test_tactical_bot_ai() -> void:
 	await get_tree().physics_frame
 
 	var desired := Vector3(0.0, 0.0, -1.0)
+	# Кэш обхода сбрасываем: геометрия изменилась (появилась стена).
+	bot.set("_avoid_timer", 0.0)
 	var avoided: Vector3 = bot.call("_avoid_obstacles", desired)
 	_check(avoided.distance_to(desired) > 0.1, "obstacle avoidance did not deflect away from blocking wall")
 	_check(avoided.length() > 0.5, "avoidance vector is too small")

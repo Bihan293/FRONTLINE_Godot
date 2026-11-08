@@ -48,60 +48,50 @@ func _build_collision() -> void:
 	shape.position = Vector3(0, 0.625, 0)
 	add_child(shape)
 
-func _build_visuals() -> void:
-	_barrel_mesh = MeshInstance3D.new()
-	var cyl_mesh := CylinderMesh.new()
-	cyl_mesh.top_radius = 0.42
-	cyl_mesh.bottom_radius = 0.42
-	cyl_mesh.height = 1.20
-	cyl_mesh.radial_segments = 16
-	_barrel_mesh.mesh = cyl_mesh
-	_barrel_mesh.position = Vector3(0, 0.60, 0)
+static var _baked_barrel_mesh: ArrayMesh = null
+static var _baked_barrel_mat: StandardMaterial3D = null
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.82, 0.16, 0.12) # Насыщенный ярко-красный цвет бочки
-	mat.roughness = 0.65
-	mat.metallic = 0.35
-	_barrel_mesh.material_override = mat
+func _build_visuals() -> void:
+	# QA-optimization: бочка — один меш с vertex colors вместо 5 draw calls.
+	_barrel_mesh = MeshInstance3D.new()
+	_barrel_mesh.name = "BarrelBody"
+	_barrel_mesh.mesh = _get_baked_barrel_mesh()
+	_barrel_mesh.material_override = _get_baked_barrel_material()
+	_barrel_mesh.visibility_range_end = 70.0
 	add_child(_barrel_mesh)
 
-	# Жёлтая полоса опасности по центру бочки
-	var stripe := MeshInstance3D.new()
-	var stripe_mesh := CylinderMesh.new()
-	stripe_mesh.top_radius = 0.43
-	stripe_mesh.bottom_radius = 0.43
-	stripe_mesh.height = 0.28
-	stripe_mesh.radial_segments = 16
-	stripe.mesh = stripe_mesh
-	var stripe_mat := StandardMaterial3D.new()
-	stripe_mat.albedo_color = Color(0.92, 0.78, 0.12) # Жёлтый предупреждающий
-	stripe_mat.roughness = 0.7
-	stripe.material_override = stripe_mat
-	stripe.position = Vector3(0, 0.60, 0)
-	stripe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(stripe)
-	_visual_details.append(stripe)
+static func _get_baked_barrel_material() -> StandardMaterial3D:
+	if _baked_barrel_mat == null:
+		_baked_barrel_mat = StandardMaterial3D.new()
+		_baked_barrel_mat.albedo_color = Color.WHITE
+		_baked_barrel_mat.vertex_color_use_as_albedo = true
+		_baked_barrel_mat.vertex_color_is_srgb = true
+		_baked_barrel_mat.roughness = 0.62
+		_baked_barrel_mat.metallic = 0.35
+	return _baked_barrel_mat
 
-	# Чёрные стальные обода сверху и снизу
-	for rim_y in [0.08, 1.12]:
-		var rim := MeshInstance3D.new()
-		var rim_mesh := CylinderMesh.new()
-		rim_mesh.top_radius = 0.44
-		rim_mesh.bottom_radius = 0.44
-		rim_mesh.height = 0.08
-		rim_mesh.radial_segments = 16
-		rim.mesh = rim_mesh
-		var rim_mat := StandardMaterial3D.new()
-		rim_mat.albedo_color = Color(0.18, 0.18, 0.20)
-		rim_mat.metallic = 0.6
-		rim_mat.roughness = 0.5
-		rim.material_override = rim_mat
-		rim.position = Vector3(0, rim_y, 0)
-		rim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(rim)
-		_visual_details.append(rim)
-
-	# Верхняя крышка с пробкой
+static func _get_baked_barrel_mesh() -> ArrayMesh:
+	if _baked_barrel_mesh != null:
+		return _baked_barrel_mesh
+	var root := Node3D.new()
+	var parts: Array[Dictionary] = [
+		{"radius": 0.42, "height": 1.20, "y": 0.60, "color": Color(0.82, 0.16, 0.12)},
+		{"radius": 0.43, "height": 0.28, "y": 0.60, "color": Color(0.92, 0.78, 0.12)},
+		{"radius": 0.44, "height": 0.08, "y": 0.08, "color": Color(0.18, 0.18, 0.20)},
+		{"radius": 0.44, "height": 0.08, "y": 1.12, "color": Color(0.18, 0.18, 0.20)},
+	]
+	for part in parts:
+		var mi := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = float(part.radius)
+		cyl.bottom_radius = float(part.radius)
+		cyl.height = float(part.height)
+		cyl.radial_segments = 14
+		mi.mesh = cyl
+		mi.position = Vector3(0, float(part.y), 0)
+		mi.set_meta("bake_color", part.color)
+		root.add_child(mi)
+	# Крышка с пробкой (маленький цилиндр сверху).
 	var cap := MeshInstance3D.new()
 	var cap_mesh := CylinderMesh.new()
 	cap_mesh.top_radius = 0.08
@@ -109,12 +99,49 @@ func _build_visuals() -> void:
 	cap_mesh.height = 0.06
 	cap.mesh = cap_mesh
 	cap.position = Vector3(0.20, 1.22, 0.12)
-	var cap_mat := StandardMaterial3D.new()
-	cap_mat.albedo_color = Color(0.12, 0.12, 0.12)
-	cap.material_override = cap_mat
-	cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(cap)
-	_visual_details.append(cap)
+	cap.set_meta("bake_color", Color(0.12, 0.12, 0.12))
+	root.add_child(cap)
+
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for child in root.get_children():
+		var mi := child as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		var col: Color = mi.get_meta("bake_color", Color(0.5, 0.5, 0.5))
+		var xf := mi.transform
+		for surface in range(mi.mesh.get_surface_count()):
+			var arrays := mi.mesh.surface_get_arrays(surface)
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var nn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var base := verts.size()
+			for i in range(v.size()):
+				verts.append(xf * v[i])
+				normals.append((xf.basis * nn[i]).normalized())
+				colors.append(col)
+			var idx = arrays[Mesh.ARRAY_INDEX]
+			if idx == null:
+				for i in range(v.size()):
+					indices.append(base + i)
+			else:
+				for i in idx:
+					indices.append(base + i)
+	var mesh := ArrayMesh.new()
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_COLOR] = colors
+	out[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	for child in root.get_children():
+		root.remove_child(child)
+		child.free()
+	root.free()
+	_baked_barrel_mesh = mesh
+	return mesh
 
 func _build_hitbox() -> void:
 	_hitbox = Area3D.new()

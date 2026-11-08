@@ -70,10 +70,17 @@ func _small_radius() -> float:
 	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
 	return SMALL_RADIUS * sc
 
+var _layout_cache: Dictionary = {}
+var _layout_cache_key := ""
+
 func _layout() -> Dictionary:
+	var cache_key := "%s_%s_%s_%s" % [str(size), str(GameSettings.hud_scale), str(GameSettings.hud_preset), str(GameSettings.hud_layout_version)]
+	if cache_key == _layout_cache_key and not _layout_cache.is_empty():
+		return _layout_cache
+	_layout_cache_key = cache_key
 	var s := size
-	var sc: float = GameSettings.hud_scale if ("hud_scale" in GameSettings) else 1.0
-	var preset: int = GameSettings.hud_preset if ("hud_preset" in GameSettings) else 0
+	var sc: float = GameSettings.hud_scale
+	var preset: int = GameSettings.hud_preset
 
 	var base: Dictionary = {}
 	if preset == 3:
@@ -171,6 +178,7 @@ func _layout() -> Dictionary:
 	base["veh_right"] = vp + Vector2(vr * 1.28, 0.0)
 	base["veh_exit"] = vp + Vector2(0.0, 0.0)
 
+	_layout_cache = base
 	return base
 
 func set_interact_visible(is_visible: bool) -> void:
@@ -383,9 +391,11 @@ func _set_joy(value: Vector2) -> void:
 		v = Vector2.ZERO
 	else:
 		v = v.normalized() * ((length - JOY_DEADZONE) / (1.0 - JOY_DEADZONE))
+	var changed := _joy_value.distance_squared_to(v) > 0.0004
 	_joy_value = v
 	move_changed.emit(v)
-	queue_redraw()
+	if changed:
+		queue_redraw()
 
 func _draw() -> void:
 	var l := _layout()
@@ -440,7 +450,7 @@ func _draw() -> void:
 func _draw_equip_slot(center: Vector2, radius: float) -> void:
 	var font := ThemeDB.fallback_font
 	draw_circle(center, radius, Color(0.012, 0.016, 0.019, 0.72))
-	draw_arc(center, radius - 1.0, 0.0, TAU, 48, Color(0.85, 0.90, 0.85, 0.70), 2.0, true)
+	draw_arc(center, radius - 1.0, 0.0, TAU, 24, Color(0.85, 0.90, 0.85, 0.70), 2.0, true)
 	_draw_icon(center, radius * 0.55, _equip_icon_id)
 	var text_sz := font.get_string_size(_equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
 	draw_string(font, center + Vector2(-text_sz.x * 0.5, radius + 13.0), _equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10, Color(0.92, 0.95, 0.90, 0.85))
@@ -454,7 +464,7 @@ func _draw_button(center: Vector2, radius: float, label: String, id: String, col
 		"return": state_id = "drone"
 	var active: bool = _aim_on if state_id == "aim" else bool(_active.get(state_id, false))
 	draw_circle(center, radius, Color(0.012, 0.016, 0.019, 0.82))
-	draw_arc(center, radius - 1.0, 0.0, TAU, 56, Color(0.88, 0.92, 0.93, 0.92 if active else 0.56), 2.5 if active else 1.6, true)
+	draw_arc(center, radius - 1.0, 0.0, TAU, 24, Color(0.88, 0.92, 0.93, 0.92 if active else 0.56), 2.5 if active else 1.6, true)
 	_draw_icon(center, radius * 0.48, id)
 
 func _draw_icon(center: Vector2, size: float, id: String) -> void:

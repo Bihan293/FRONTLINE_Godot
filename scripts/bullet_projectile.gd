@@ -18,6 +18,7 @@ var shooter_team := ""
 var shooter: Node
 var _excluded_rids: Array[RID] = []
 var _visual: MeshInstance3D
+var _query: PhysicsRayQueryParameters3D
 
 func configure(start_pos: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node, damage_to_player := 0, gravity_mps2 := 9.81) -> void:
 	global_position = start_pos
@@ -34,6 +35,11 @@ func _ready() -> void:
 	add_to_group("ballistic_bullets")
 	_build_visual()
 	_build_exclusions()
+	# QA-optimization: запрос переиспользуется, а не создаётся каждый кадр.
+	_query = PhysicsRayQueryParameters3D.create(Vector3.ZERO, Vector3.ZERO)
+	_query.collision_mask = COLLISION_MASK
+	_query.exclude = _excluded_rids
+	_query.collide_with_areas = true
 	_face_velocity()
 
 func _physics_process(delta: float) -> void:
@@ -47,13 +53,18 @@ func _physics_process(delta: float) -> void:
 	if step.length() > remaining_range and step.length() > 0.001:
 		step *= remaining_range / step.length()
 	var to := from + step
-	var ear := COMBAT_AUDIO.get_listener_position(get_tree())
-	COMBAT_AUDIO.trigger_bullet_flyby_3d(get_parent(), from, to, ear)
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collision_mask = COLLISION_MASK
-	query.exclude = _excluded_rids
-	query.collide_with_areas = true
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var ear := COMBAT_AUDIO.listener_pos
+	if COMBAT_AUDIO.listener_valid and ear.distance_squared_to(from) < 1600.0:
+		COMBAT_AUDIO.trigger_bullet_flyby_3d(get_parent(), from, to, ear)
+	if _query == null:
+		_query = PhysicsRayQueryParameters3D.create(from, to)
+		_query.collision_mask = COLLISION_MASK
+		_query.exclude = _excluded_rids
+		_query.collide_with_areas = true
+	else:
+		_query.from = from
+		_query.to = to
+	var hit := get_world_3d().direct_space_state.intersect_ray(_query)
 	if not hit.is_empty():
 		_resolve_impact(hit, velocity.normalized())
 		queue_free()
@@ -104,6 +115,12 @@ func _build_visual() -> void:
 
 func _build_exclusions() -> void:
 	if not is_instance_valid(shooter):
+		return
+	# QA-optimization: бот отдаёт готовый кэш RID (без обхода дерева).
+	if shooter.has_method("get_projectile_rids"):
+		var cached = shooter.call("get_projectile_rids")
+		if cached is Array:
+			_excluded_rids = (cached as Array[RID]).duplicate()
 		return
 	if shooter is CollisionObject3D:
 		_excluded_rids.append((shooter as CollisionObject3D).get_rid())

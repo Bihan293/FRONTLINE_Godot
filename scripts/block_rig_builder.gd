@@ -93,7 +93,30 @@ static func rig_model(model_root: Node, arms_only: bool = false) -> Skeleton3D:
 
 ## Собирает все части скелета (включая шлем и бронежилет) в один skinned-меш.
 ## Это даёт 1 draw call на солдата вместо ~20 и сильно снижает нагрузку на мобилках.
+static var _merged_cache: Dictionary = {}
+static var _merged_skin_cache: Dictionary = {}
+
 static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [], only_bones: Array = [], cleanup: bool = true) -> MeshInstance3D:
+	# QA-optimization: одинаковые модели ботов переиспользуют уже собранный меш.
+	# Раньше каждый солдат собирался ~40-50 мс, 28 ботов = заметный фриз старта.
+	var cache_key := ""
+	var root := skeleton.get_parent()
+	if excluded_bones.is_empty() and only_bones.is_empty() and root is Node:
+		cache_key = (root as Node).scene_file_path
+	if cache_key != "" and _merged_cache.has(cache_key) and _merged_skin_cache.has(cache_key):
+		var inst_cached := MeshInstance3D.new()
+		inst_cached.name = "MergedSoldier"
+		inst_cached.mesh = _merged_cache[cache_key]
+		inst_cached.skin = _merged_skin_cache[cache_key]
+		inst_cached.skeleton = NodePath("..")
+		skeleton.add_child(inst_cached)
+		if cleanup:
+			for child in skeleton.get_children():
+				if child is BoneAttachment3D:
+					skeleton.remove_child(child)
+					child.queue_free()
+		return inst_cached
+
 	var bone_count := skeleton.get_bone_count()
 	var rest_global: Array[Transform3D] = []
 	rest_global.resize(bone_count)
@@ -191,6 +214,8 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [],
 	mesh_arrays[Mesh.ARRAY_WEIGHTS] = weights
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_arrays)
 	merged.surface_set_material(0, _get_merged_material())
+	if cache_key != "":
+		_merged_cache[cache_key] = merged
 
 	var skin := Skin.new()
 	skin.set_bind_count(bone_count)
@@ -203,6 +228,8 @@ static func merge_rigged_model(skeleton: Skeleton3D, excluded_bones: Array = [],
 	inst.mesh = merged
 	inst.skin = skin
 	inst.skeleton = NodePath("..")
+	if cache_key != "":
+		_merged_skin_cache[cache_key] = skin
 	skeleton.add_child(inst)
 
 	if cleanup:

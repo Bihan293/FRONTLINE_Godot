@@ -294,6 +294,9 @@ func _update_drag(pos: Vector2) -> void:
 		canvas.queue_redraw()
 
 func _end_drag() -> void:
+	if not _dragged_id.is_empty():
+		# QA-optimization: сохранение один раз за перетаскивание, не за каждый пиксель.
+		GameSettings.save_settings()
 	_dragged_id = ""
 	_drag_touch = -1
 	var canvas = find_child("Canvas", true, false)

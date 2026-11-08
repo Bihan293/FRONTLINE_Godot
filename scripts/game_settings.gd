@@ -17,6 +17,8 @@ const MIN_FOV := 60.0
 const MAX_FOV := 100.0
 
 var quality := 1
+# QA-optimization: версия раскладки HUD для кэша в mobile_controls.
+var hud_layout_version := 0
 var master_volume := 0.8
 var sfx_volume := 0.90
 var ambience_volume := 0.75
@@ -101,9 +103,12 @@ func get_hud_button_offset(btn_name: String) -> Vector2:
 
 func set_hud_button_offset(btn_name: String, offset: Vector2) -> void:
 	hud_button_offsets[btn_name] = offset
-	save_settings()
+	hud_layout_version += 1
+	# QA-optimization: не пишем файл на каждый touch-drag — сохранение делает
+	# редактор HUD по завершении перетаскивания/выходу.
 
 func reset_hud_layout() -> void:
+	hud_layout_version += 1
 	hud_preset = 0
 	hud_scale = 1.0
 	hud_button_offsets.clear()

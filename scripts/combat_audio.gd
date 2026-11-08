@@ -118,7 +118,14 @@ static func _ensure_bus(bus_name: StringName, send_to: StringName) -> void:
 		AudioServer.set_bus_send(idx, send_to)
 
 ## Получение позиции уха игрока (или активной камеры)
+## QA-optimization: позиция слушателя обновляется раз в кадр игроком,
+## а не собирается через group-скан на каждую пулю каждый кадр.
+static var listener_pos := Vector3.ZERO
+static var listener_valid := false
+
 static func get_listener_position(tree: SceneTree) -> Vector3:
+	if listener_valid:
+		return listener_pos
 	if tree == null:
 		return Vector3.ZERO
 	var player = tree.get_first_node_in_group("player")
