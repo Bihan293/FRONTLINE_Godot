@@ -98,6 +98,9 @@ var _personal_offset_x := 0.0
 var _bound_timer := 0.0
 var _bound_crouch := false
 var _scan_time := 0.0
+# QA-fix TASK-0022: укрытия под огнём.
+var _cover_target := Vector3.ZERO
+var _cover_timer := 0.0
 var _route_goal := Vector3.ZERO
 var _route_has_attempted := false
 var _shout_timer := 0.0
@@ -433,6 +436,27 @@ func _update_ai(delta: float) -> void:
 	if suppression > 0.0:
 		suppression = maxf(0.0, suppression - delta * 0.35 * difficulty_recovery_mult)
 
+	# QA-fix TASK-0022: услышав жужжание дрона, бойцы разбегаются или стреляют по нему.
+	var nearest_drone := _nearest_enemy_drone()
+	if nearest_drone != null:
+		var drone_range := global_position.distance_to(nearest_drone.global_position)
+		if drone_range < 16.0 and current_target != nearest_drone:
+			var away := global_position - nearest_drone.global_position
+			away.y = 0.0
+			if away.length_squared() > 0.01:
+				away = away.normalized()
+				if randf() < 0.6:
+					_shout("ДРОН!" if team_name.contains("RED") else "DRONE!", Color(1.0, 0.3, 0.25))
+				var flee_dir := _avoid_obstacles(away)
+				velocity.x = flee_dir.x * SPEED_SPRINT
+				velocity.z = flee_dir.z * SPEED_SPRINT
+				stance = 0
+				if is_on_floor() and randf() < 0.02:
+					velocity.y = 4.2
+				_route_repath_timer = 0.0
+				_route_has_attempted = false
+				return
+
 	# Поведение санитара (Medic)
 	if bot_role == "MEDIC" and not is_reloading:
 		_medic_timer -= delta
@@ -480,6 +504,57 @@ func _update_ai(delta: float) -> void:
 
 	_advance_behavior(delta)
 
+## Ищет точку рядом, из-за которой цель не видит бота (стена/мешки/техника).
+func _find_cover_point() -> Vector3:
+	if current_target == null or not is_instance_valid(current_target):
+		return Vector3.ZERO
+	var space := get_world_3d().direct_space_state
+	var best := Vector3.ZERO
+	var best_score := -1.0
+	for i in range(8):
+		var angle := TAU * float(i) / 8.0 + randf_range(-0.15, 0.15)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var candidate := global_position + dir * randf_range(2.0, 3.2)
+		# Путь к точке должен быть свободен.
+		var walk_q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.9, candidate + Vector3.UP * 0.9)
+		walk_q.collision_mask = WORLD_LAYER_MASK
+		walk_q.exclude = _get_self_collision_rids()
+		walk_q.collide_with_areas = false
+		if not space.intersect_ray(walk_q).is_empty():
+			continue
+		var from := candidate + Vector3.UP * 1.15
+		var to := current_target.global_position + Vector3.UP * 1.15
+		var sight_q := PhysicsRayQueryParameters3D.create(from, to)
+		sight_q.collision_mask = WORLD_LAYER_MASK
+		sight_q.exclude = _get_self_collision_rids()
+		sight_q.collide_with_areas = false
+		var sight_hit := space.intersect_ray(sight_q)
+		var score := 1.0 if not sight_hit.is_empty() else 0.0
+		score += randf() * 0.35
+		# Небольшой бонус за близость к текущей позиции.
+		score -= candidate.distance_to(global_position) * 0.02
+		if score > best_score:
+			best_score = score
+			best = candidate
+	return best
+
+func _nearest_enemy_drone() -> Node3D:
+	var nearest: Node3D = null
+	var best := 999.0
+	for d in get_tree().get_nodes_in_group("radio_drones"):
+		var drone := d as Node3D
+		if drone == null or not is_instance_valid(drone):
+			continue
+		if str(drone.get("operator_team")) == team_name:
+			continue
+		if bool(drone.get("is_exploding")):
+			continue
+		var dist := global_position.distance_to(drone.global_position)
+		if dist < best:
+			best = dist
+			nearest = drone
+	return nearest
+
 func _try_heal_nearby_ally() -> void:
 	var bots := get_tree().get_nodes_in_group("bots")
 	for b in bots:
@@ -511,6 +586,20 @@ func _find_target() -> void:
 			if dist < best_dist and _has_line_of_sight(player, _target_aim_point(player)):
 				best_dist = dist
 				best_target = player
+
+	# 1b. Дрон врага — приоритетная цель, если он в зоне видимости.
+	for d in get_tree().get_nodes_in_group("radio_drones"):
+		var drone := d as Node3D
+		if drone == null or not is_instance_valid(drone):
+			continue
+		var drone_team := str(drone.get("operator_team"))
+		if drone_team == team_name:
+			continue
+		var drone_dist := global_position.distance_to(drone.global_position)
+		if drone_dist < 46.0 and _has_line_of_sight(drone, drone.global_position):
+			if drone_dist < best_dist:
+				best_dist = drone_dist
+				best_target = drone
 
 	# 2. Проверяем ботов вражеской команды
 	var bots = get_tree().get_nodes_in_group("bots")
@@ -664,6 +753,21 @@ func _combat_behavior(delta: float) -> void:
 		else:
 			velocity.x = lerpf(velocity.x, 0.0, delta * 5.0)
 			velocity.z = lerpf(velocity.z, 0.0, delta * 5.0)
+
+	# Под огнём/ранении ищет укрытие и смещается к нему, а не стоит в открытую.
+	if (health < 70.0 or suppression > 0.40) and dist > 12.0:
+		_cover_timer -= delta
+		if _cover_timer <= 0.0:
+			_cover_timer = randf_range(1.8, 3.2)
+			_cover_target = _find_cover_point()
+		if _cover_target != Vector3.ZERO:
+			var to_cover := _cover_target - global_position
+			to_cover.y = 0.0
+			if to_cover.length() > 0.8:
+				var cover_dir := _avoid_obstacles(to_cover.normalized())
+				velocity.x = lerpf(velocity.x, cover_dir.x * SPEED_WALK * 1.15, clampf(delta * 7.0, 0.0, 1.0))
+				velocity.z = lerpf(velocity.z, cover_dir.z * SPEED_WALK * 1.15, clampf(delta * 7.0, 0.0, 1.0))
+				stance = 1
 
 	# Бросок гранаты при подходящей дистанции
 	if can_see and dist >= 14.0 and dist <= 32.0 and grenades > 0:

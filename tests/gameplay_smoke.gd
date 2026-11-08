@@ -81,6 +81,12 @@ func _test_combat_roles_and_drone() -> void:
 		_check(drone.get_node_or_null("DroneCollision") != null, "drone missing DroneCollision shape")
 		_check(drone.get_node_or_null("DroneCamera") != null, "drone missing DroneCamera")
 		_check(drone.get_node_or_null("TetherLine") != null, "drone missing TetherLine")
+		# QA-fix TASK-0022: камера не внутри корпуса, есть жужжание и HP.
+		var drone_cam := drone.get_node_or_null("DroneCamera") as Camera3D
+		_check(drone_cam != null and drone_cam.position.y >= 0.2, "drone camera still inside the frame")
+		_check((drone_cam.cull_mask & (1 << 2)) == 0, "drone camera does not cull its own model layer")
+		_check(drone.get_node_or_null("DroneBuzz") != null, "drone missing buzzing audio")
+		_check(float(drone.get("health")) > 0.0, "drone has no health")
 
 		# Test launch and tether limit
 		var op := CharacterBody3D.new()
