@@ -93,6 +93,10 @@ var _stuck_last_pos := Vector3.ZERO
 var _unstick_timer := 0.0
 var _unstick_dir := Vector3.ZERO
 var _los_lost_timer := 0.0
+# QA-optimization: кэш акустики (4 Гц вместо каждого выстрела).
+var _audio_env_timer := 0.0
+var _audio_indoors := false
+var _audio_occluded := false
 # QA-fix TASK-0022: тактическая «живость» — перебежки, приседания, разброс маршрутов.
 var _personal_offset_x := 0.0
 var _bound_timer := 0.0
@@ -218,6 +222,17 @@ func _build_visuals() -> void:
 	_pivot.add_child(_visual)
 	if has_rig:
 		_proc = _visual as FRONTLINEProceduralSoldier
+	# QA-optimization: мелкие детали модели скрываем на дистанции — меньше draw calls.
+	if GameSettings.quality == 0 and _visual != null:
+		for mesh_node in _visual.find_children("*", "MeshInstance3D", true, false):
+			var mesh_inst := mesh_node as MeshInstance3D
+			if mesh_inst == null or mesh_inst.mesh == null:
+				continue
+			var diag: float = mesh_inst.mesh.get_aabb().size.length()
+			if diag < 0.28:
+				mesh_inst.visibility_range_end = 26.0
+			elif diag < 0.60:
+				mesh_inst.visibility_range_end = 48.0
 		_proc.set_t_pose_arms(false)
 		_proc.set_aiming(true)
 		_proc.set_motion(0.0, false)
@@ -356,6 +371,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y = 0.0
 
 	_handle_effects(delta)
+	_audio_env_timer -= delta
 	_update_ai(delta)
 	_apply_separation(delta)
 	move_and_slide()
@@ -707,23 +723,24 @@ func _combat_behavior(delta: float) -> void:
 	combat_strafe_timer -= delta
 	if combat_strafe_timer <= 0.0:
 		combat_strafe_timer = randf_range(1.2, 2.5)
+		# QA-fix TASK-0022: бойцы почти всегда в движении — короткие паузы,
+		# а не «стоим по 2.5 секунды и ничего не делаем».
 		var maneuver := randf()
-		if maneuver < 0.35:
+		if maneuver < 0.45:
 			var right := global_transform.basis.x
 			right.y = 0.0
 			combat_strafe_dir = right.normalized()
 			stance = 0 if randf() > 0.45 else 1
-		elif maneuver < 0.70:
+		elif maneuver < 0.90:
 			var left := -global_transform.basis.x
 			left.y = 0.0
 			combat_strafe_dir = left.normalized()
 			stance = 0 if randf() > 0.45 else 1
-		elif maneuver < 0.88:
-			combat_strafe_dir = Vector3.ZERO
-			stance = 1 # присесть за укрытие / мешки
 		else:
+			# Короткая остановка «отстреляться из укрытия».
 			combat_strafe_dir = Vector3.ZERO
-			stance = 0 # встать для беглого огня
+			stance = 1
+			combat_strafe_timer = randf_range(0.35, 0.7)
 
 	if dist > preferred_max:
 		# Сближение с обходом препятствий
@@ -748,11 +765,17 @@ func _combat_behavior(delta: float) -> void:
 			stance = 0 # в упор встаёт и стрейфит
 		if combat_strafe_dir != Vector3.ZERO:
 			var sdir := _avoid_obstacles(combat_strafe_dir)
-			velocity.x = lerpf(velocity.x, sdir.x * SPEED_CROUCH * 1.35, delta * 6.0)
-			velocity.z = lerpf(velocity.z, sdir.z * SPEED_CROUCH * 1.35, delta * 6.0)
+			var strafe_speed := SPEED_WALK * (0.9 if stance == 0 else 0.55)
+			velocity.x = lerpf(velocity.x, sdir.x * strafe_speed, delta * 6.0)
+			velocity.z = lerpf(velocity.z, sdir.z * strafe_speed, delta * 6.0)
 		else:
 			velocity.x = lerpf(velocity.x, 0.0, delta * 5.0)
 			velocity.z = lerpf(velocity.z, 0.0, delta * 5.0)
+		# Даже в паузе бот не «замирает»: лёгкий дрейф в сторону.
+		if Vector2(velocity.x, velocity.z).length() < 0.6:
+			var tangent := Vector3(-to.normalized().z, 0.0, to.normalized().x) * (1.0 if randf() < 0.5 else -1.0)
+			velocity.x += tangent.x * delta * 6.0
+			velocity.z += tangent.z * delta * 6.0
 
 	# Под огнём/ранении ищет укрытие и смещается к нему, а не стоит в открытую.
 	if (health < 70.0 or suppression > 0.40) and dist > 12.0:
@@ -844,7 +867,7 @@ func _advance_behavior(delta: float) -> void:
 	_bound_timer -= delta
 	if _bound_timer <= 0.0:
 		_bound_crouch = not _bound_crouch
-		_bound_timer = randf_range(0.7, 1.2) if _bound_crouch else randf_range(1.6, 3.0)
+		_bound_timer = randf_range(0.35, 0.7) if _bound_crouch else randf_range(1.4, 2.8)
 		_scan_time = 0.0
 	if _bound_crouch:
 		stance = 1
@@ -999,12 +1022,18 @@ func _fire_single_shot() -> void:
 			_sfx_shot.max_distance = max_dist
 			_sfx_shot.pitch_scale = float(prof.get("pitch", 1.0)) * randf_range(0.95, 1.05)
 			_sfx_shot.volume_db = float(prof.get("vol", -2.0))
-			var world_3d := get_world_3d()
-			if COMBAT_AUDIO.is_indoors(world_3d, from):
+			# QA-optimization: акустика пересчитывается 4 раза/с, а не на каждый
+			# выстрел — иначе 7 автоматчиков дают сотни рейкастов в секунду.
+			if _audio_env_timer <= 0.0:
+				_audio_env_timer = 0.25
+				var world_3d := get_world_3d()
+				_audio_indoors = COMBAT_AUDIO.is_indoors(world_3d, from)
+				_audio_occluded = (not _audio_indoors) and COMBAT_AUDIO.check_occlusion(world_3d, from, listener_pos)
+			if _audio_indoors:
 				_sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
 				_sfx_shot.attenuation_filter_cutoff_hz = 18000.0
 				_sfx_shot.attenuation_filter_db = 0.0
-			elif COMBAT_AUDIO.check_occlusion(world_3d, from, listener_pos):
+			elif _audio_occluded:
 				_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_OCCLUDED
 				_sfx_shot.attenuation_filter_cutoff_hz = 1250.0
 				_sfx_shot.attenuation_filter_db = -8.0
