@@ -21,6 +21,12 @@ var _spawn_buttons: Array[Button] = []
 var _role_buttons: Dictionary = {}
 var _status_label: Label
 var _deploy_btn: Button
+var _next_btn: Button
+var _back_btn: Button
+var _spawn_panel: PanelContainer
+var _class_panel: PanelContainer
+var _top_label: Label
+var _step := 0
 var _root_container: Control
 
 const CLASSES = [
@@ -51,6 +57,13 @@ const CLASSES = [
 		"primary": 7, # Panzerfaust
 		"primary_name": "Панцерфауст / Дробовик",
 		"desc": "Тяжелая огневая мощь против техники, укреплений и скоплений пехоты."
+	},
+	{
+		"role": "RADIO_OPERATOR",
+		"name": "РАДИСТ",
+		"primary": 5, # PPSh-41
+		"primary_name": "ППШ-41 + FPV-дрон",
+		"desc": "Разведка и подрыв с кабельного FPV-дрона, дымовая завеса."
 	},
 	{
 		"role": "SUPPORT",
@@ -100,6 +113,7 @@ func _build_ui() -> void:
 	top_label.add_theme_font_size_override("font_size", 20)
 	top_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
 	top_bar.add_child(top_label)
+	_top_label = top_label
 
 	# Главный контейнер (Слева спавны, справа классы)
 	var main_h := HBoxContainer.new()
@@ -124,13 +138,14 @@ func _build_ui() -> void:
 	panel_style.border_color = Color(0.25, 0.35, 0.42, 0.60)
 	spawn_panel.add_theme_stylebox_override("panel", panel_style)
 	main_h.add_child(spawn_panel)
+	_spawn_panel = spawn_panel
 
 	var spawn_vbox := VBoxContainer.new()
 	spawn_vbox.add_theme_constant_override("separation", 10)
 	spawn_panel.add_child(spawn_vbox)
 
 	var spawn_header := Label.new()
-	spawn_header.text = "📍 ТОЧКИ ВЫСАДКИ (SPAWN POINTS)"
+	spawn_header.text = "ТОЧКИ ВЫСАДКИ (SPAWN POINTS)"
 	spawn_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	spawn_header.add_theme_font_size_override("font_size", 17)
 	spawn_header.add_theme_color_override("font_color", Color(0.45, 0.85, 1.0))
@@ -138,7 +153,7 @@ func _build_ui() -> void:
 
 	# 1. Базовый спавн (всегда доступен)
 	var base_btn := Button.new()
-	base_btn.text = "🏠 ГЛАВНАЯ БАЗА (%s)" % ("СЕВЕР" if team_name.contains("RED") else "ЮГ")
+	base_btn.text = "[БАЗА] ГЛАВНАЯ БАЗА (%s)" % ("СЕВЕР" if team_name.contains("RED") else "ЮГ")
 	base_btn.custom_minimum_size = Vector2(0, 48)
 	base_btn.add_theme_font_size_override("font_size", 16)
 	base_btn.pressed.connect(func():
@@ -156,14 +171,14 @@ func _build_ui() -> void:
 
 		var btn := Button.new()
 		if is_friendly:
-			btn.text = "🚩 СЕКТОР [ %s ] • ЗАХВАЧЕН (ДОСТУПЕН)" % sec_name
+			btn.text = "[СЕКТОР] %s • ЗАХВАЧЕН (ДОСТУПЕН)" % sec_name
 			btn.add_theme_color_override("font_color", Color(0.45, 1.0, 0.45))
 			btn.pressed.connect(func():
 				_select_spawn(sec_pos + Vector3(randf_range(-2.0, 2.0), 0.0, randf_range(-2.0, 2.0)), "СЕКТОР " + sec_name, btn)
 			)
 		else:
 			var status_str := "ВРАГ" if sec_owner != "" else "НЕЙТРАЛЕН"
-			btn.text = "🔒 СЕКТОР [ %s ] • %s (НЕДОСТУПЕН)" % [sec_name, status_str]
+			btn.text = "[СЕКТОР] %s • %s (НЕДОСТУПЕН)" % [sec_name, status_str]
 			btn.add_theme_color_override("font_color", Color(0.65, 0.65, 0.65))
 			btn.disabled = true
 		btn.custom_minimum_size = Vector2(0, 48)
@@ -177,13 +192,14 @@ func _build_ui() -> void:
 	class_panel.size_flags_stretch_ratio = 1.2
 	class_panel.add_theme_stylebox_override("panel", panel_style)
 	main_h.add_child(class_panel)
+	_class_panel = class_panel
 
 	var class_vbox := VBoxContainer.new()
 	class_vbox.add_theme_constant_override("separation", 8)
 	class_panel.add_child(class_vbox)
 
 	var class_header := Label.new()
-	class_header.text = "🪖 КЛАСС И СНАРЯЖЕНИЕ (LOADOUT)"
+	class_header.text = "КЛАСС И СНАРЯЖЕНИЕ (LOADOUT)"
 	class_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	class_header.add_theme_font_size_override("font_size", 17)
 	class_header.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
@@ -223,7 +239,7 @@ func _build_ui() -> void:
 	_root_container.add_child(bottom_bar)
 
 	_deploy_btn = Button.new()
-	_deploy_btn.text = "▶  В БОЙ / ДЕПЛОЙ  (DEPLOY)  ◀"
+	_deploy_btn.text = "В БОЙ / ДЕПЛОЙ (DEPLOY)"
 	_deploy_btn.custom_minimum_size = Vector2(420, 56)
 	_deploy_btn.add_theme_font_size_override("font_size", 22)
 	_deploy_btn.add_theme_color_override("font_color", Color(1.0, 0.92, 0.40))
@@ -239,10 +255,42 @@ func _build_ui() -> void:
 	_deploy_btn.pressed.connect(_on_deploy_clicked)
 	bottom_bar.add_child(_deploy_btn)
 
+	# QA-fix TASK-0022: два шага — сначала точка высадки, потом снаряжение.
+	_next_btn = Button.new()
+	_next_btn.text = "ДАЛЕЕ → СНАРЯЖЕНИЕ"
+	_next_btn.custom_minimum_size = Vector2(260, 52)
+	_next_btn.add_theme_font_size_override("font_size", 18)
+	_next_btn.pressed.connect(func(): _show_step(1))
+	bottom_bar.add_child(_next_btn)
+
+	_back_btn = Button.new()
+	_back_btn.text = "← ТОЧКА ВЫСАДКИ"
+	_back_btn.custom_minimum_size = Vector2(220, 52)
+	_back_btn.add_theme_font_size_override("font_size", 17)
+	_back_btn.pressed.connect(func(): _show_step(0))
+	bottom_bar.add_child(_back_btn)
+
 	# Инициализация выбора
 	if not _spawn_buttons.is_empty():
 		_select_spawn(selected_spawn, "ГЛАВНАЯ БАЗА", _spawn_buttons[0])
 	_select_class(selected_role, selected_primary)
+	_show_step(0)
+
+func _show_step(step: int) -> void:
+	_step = step
+	var spawn_step := step == 0
+	if _spawn_panel != null:
+		_spawn_panel.visible = spawn_step
+	if _class_panel != null:
+		_class_panel.visible = not spawn_step
+	if _next_btn != null:
+		_next_btn.visible = spawn_step
+	if _deploy_btn != null:
+		_deploy_btn.visible = not spawn_step
+	if _back_btn != null:
+		_back_btn.visible = not spawn_step
+	if _top_label != null:
+		_top_label.text = ("ШАГ 1/2 • ВЫБОР ТОЧКИ ВЫСАДКИ • " if spawn_step else "ШАГ 2/2 • КЛАСС И СНАРЯЖЕНИЕ • ") + team_name.to_upper()
 
 func _select_spawn(pos: Vector3, spawn_name: String, active_btn: Button) -> void:
 	selected_spawn = pos

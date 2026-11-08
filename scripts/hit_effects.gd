@@ -106,48 +106,85 @@ static func spawn_blood(parent: Node, pos: Vector3, normal: Vector3, world_paren
 static func spawn_directional_blood(parent: Node, pos: Vector3, bullet_dir: Vector3, is_lethal: bool = false, world_parent: Node = null) -> void:
 	if parent == null:
 		return
+	# QA-fix TASK-0022: кровь больше не «приклеенный к телу спрайт».
+	# Декали живут в мире и остаются на земле/стене, когда тело падает.
 	var mat := _blood_material()
 	var normal := bullet_dir.normalized()
 	if normal.length_squared() < 0.1:
 		normal = Vector3.UP
+	var ground_parent: Node = world_parent if world_parent != null else parent
 
-	# Настенная / телесная декаль крови
-	var decal := MeshInstance3D.new()
-	var quad := PlaneMesh.new()
-	var decal_size: float = 0.55 if is_lethal else 0.38
-	quad.size = Vector2(decal_size, decal_size)
-	decal.mesh = quad
-	decal.material_override = mat
-	decal.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(decal)
-	decal.global_transform = _surface_transform(pos, normal, 0.015)
-	_register_decal(decal)
+	if is_lethal:
+		# Большая лужа под телом + 2-3 боковых брызга вокруг.
+		var main_pool := MeshInstance3D.new()
+		var main_quad := PlaneMesh.new()
+		main_quad.size = Vector2(randf_range(1.5, 2.1), randf_range(1.4, 2.0))
+		main_pool.mesh = main_quad
+		main_pool.material_override = mat
+		main_pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ground_parent.add_child(main_pool)
+		main_pool.global_transform = _surface_transform(Vector3(pos.x, 0.015, pos.z), Vector3.UP, 0.0)
+		main_pool.rotate_y(randf_range(0.0, TAU))
+		_register_decal(main_pool)
+		for splash_index in range(3):
+			var angle := randf_range(0.0, TAU)
+			var radius := randf_range(0.55, 1.35)
+			var spot := MeshInstance3D.new()
+			var spot_quad := PlaneMesh.new()
+			var spot_size := randf_range(0.35, 0.75)
+			spot_quad.size = Vector2(spot_size, spot_size)
+			spot.mesh = spot_quad
+			spot.material_override = mat
+			spot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			ground_parent.add_child(spot)
+			var splash_pos := Vector3(pos.x + cos(angle) * radius, 0.014, pos.z + sin(angle) * radius)
+			spot.global_transform = _surface_transform(splash_pos, Vector3.UP, 0.0)
+			spot.rotate_y(randf_range(0.0, TAU))
+			_register_decal(spot)
+	else:
+		# Небольшая декаль в точке попадания, в мире (не на теле).
+		var decal := MeshInstance3D.new()
+		var quad := PlaneMesh.new()
+		quad.size = Vector2(0.30, 0.30)
+		decal.mesh = quad
+		decal.material_override = mat
+		decal.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ground_parent.add_child(decal)
+		decal.global_transform = _surface_transform(pos + normal * 0.02, normal, 0.015)
+		_register_decal(decal)
 
-	# Лужа крови на полу под телом
-	var pool_parent: Node = world_parent if world_parent != null else parent
-	var pool := MeshInstance3D.new()
-	var pool_mesh := PlaneMesh.new()
-	var pool_size: float = 1.35 if is_lethal else 0.85
-	pool_mesh.size = Vector2(pool_size, pool_size)
-	pool.mesh = pool_mesh
-	pool.material_override = mat
-	pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pool_parent.add_child(pool)
-	pool.global_transform = _surface_transform(Vector3(pos.x, 0.012, pos.z), Vector3.UP, 0.0)
-	_register_decal(pool)
-
-	# Направленные частицы брызг крови
-	var particles := _make_particles(parent, pos, normal, false)
+	# Направленные частицы брызг крови (артериальный фонтан при смертельном).
+	var particles := _make_particles(ground_parent, pos, normal, false)
 	if particles != null:
-		particles.amount = 26 if is_lethal else 16
-		particles.initial_velocity_min = 2.2 if is_lethal else 1.2
-		particles.initial_velocity_max = 5.0 if is_lethal else 3.4
-		particles.spread = 45.0
+		particles.amount = 34 if is_lethal else 18
+		particles.initial_velocity_min = 3.0 if is_lethal else 1.4
+		particles.initial_velocity_max = 6.5 if is_lethal else 3.6
+		particles.spread = 55.0
+		particles.gravity = Vector3(0, -14.0, 0)
 		particles.scale_amount_min = 0.02
-		particles.scale_amount_max = 0.06
+		particles.scale_amount_max = 0.075
 		particles.mesh = _get_blood_sphere()
 		particles.emitting = true
 		particles.finished.connect(particles.queue_free)
+
+	# Мелкая кровавая взвесь вокруг раны (читается объёмнее, чем один спрайт).
+	var mist := _make_particles(ground_parent, pos + normal * 0.15, normal, false)
+	if mist != null:
+		mist.amount = 10
+		mist.initial_velocity_min = 0.2
+		mist.initial_velocity_max = 0.7
+		mist.spread = 70.0
+		mist.scale_amount_min = 0.10
+		mist.scale_amount_max = 0.22
+		mist.color = Color(0.42, 0.02, 0.015, 0.45)
+		var haze := SphereMesh.new()
+		haze.radius = 0.06
+		haze.height = 0.12
+		haze.radial_segments = 6
+		haze.rings = 4
+		mist.mesh = haze
+		mist.emitting = true
+		mist.finished.connect(mist.queue_free)
 
 static func spawn_bullet_hole(parent: Node, pos: Vector3, normal: Vector3) -> void:
 	if parent == null:

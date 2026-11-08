@@ -133,6 +133,9 @@ func _capture(file_name: String) -> void:
 		push_error("Cannot save %s: %s" % [path, error_string(error)])
 
 func _load_map(map_name: String, team: String) -> Node3D:
+	# QA-tool: скрины не должны перекрываться экраном тактического деплоя.
+	get_tree().set_meta("skip_deploy_screen", true)
+	get_tree().set_meta("open_tactical_deploy_at_start", false)
 	get_tree().set_meta("selected_map", map_name)
 	get_tree().set_meta("selected_mode", "CONQUEST")
 	get_tree().set_meta("selected_team", team)

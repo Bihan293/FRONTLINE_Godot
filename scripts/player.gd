@@ -182,11 +182,12 @@ var crosshair
 var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
 var mounted_vehicle: Node3D = null
+var _mounted_last_vehicle_yaw := 0.0
 var mobile_fire := false
 var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu
-var _view_arm_left: MeshInstance3D
-var _view_arm_right: MeshInstance3D
+var _view_arm_left: Node3D
+var _view_arm_right: Node3D
 
 var sfx_shot: AudioStreamPlayer
 var sfx_empty: AudioStreamPlayer
@@ -464,6 +465,63 @@ func _switch_weapon(index: int) -> void:
 	_refresh_ammo()
 	_play_sfx(sfx_ui, SFX_UI, -6.0, 1.0)
 
+## QA-fix TASK-0022: цикл снаряжения в руке — автомат → пистолет → лопата.
+## Вызывается стрелками «влево/вправо» у иконки оружия в HUD.
+func _cycle_equipment(direction: int) -> void:
+	if is_dead or input_locked or active_drone != null or mounted_vehicle != null:
+		return
+	if grenade_anim_state != GrenadeActionState.IDLE:
+		return
+	var cur := "primary"
+	if is_shovel_equipped:
+		cur = "shovel"
+	elif current_weapon_index == SIDEARM_INDEX:
+		cur = "sidearm"
+	var order := ["primary", "sidearm", "shovel"]
+	var idx: int = order.find(cur)
+	idx = posmod(idx + direction, order.size())
+	match str(order[idx]):
+		"primary":
+			if is_shovel_equipped:
+				is_shovel_equipped = false
+				_equip_weapon_visual()
+				_refresh_ammo()
+			if current_weapon_index == SIDEARM_INDEX:
+				_switch_weapon(last_primary_weapon_index)
+		"sidearm":
+			if is_shovel_equipped:
+				is_shovel_equipped = false
+				_equip_weapon_visual()
+			if current_weapon_index != SIDEARM_INDEX:
+				_toggle_sidearm()
+		"shovel":
+			if not is_shovel_equipped:
+				_toggle_shovel()
+	_refresh_equipment_icon()
+
+func _refresh_equipment_icon() -> void:
+	if mobile_controls == null or not is_instance_valid(mobile_controls):
+		return
+	if not mobile_controls.has_method("set_equipment_info"):
+		return
+	var icon_id := "rifle"
+	var label := "АВТОМАТ"
+	if is_shovel_equipped:
+		icon_id = "shovel"
+		label = "ЛОПАТА"
+	elif current_weapon_index == SIDEARM_INDEX:
+		icon_id = "sidearm"
+		label = "ПИСТОЛЕТ"
+	else:
+		var weapon := _weapon_data()
+		var wid := str(weapon.get("id", ""))
+		if wid == "panzerfaust":
+			icon_id = "rpg"
+			label = "РПГ"
+		else:
+			label = str(weapon.get("name", "ОРУЖИЕ"))
+	mobile_controls.call("set_equipment_info", icon_id, label)
+
 func _cycle_weapon(direction: int) -> void:
 	if role_weapon_indices.is_empty():
 		return
@@ -472,6 +530,7 @@ func _cycle_weapon(direction: int) -> void:
 		slot = 0
 	slot = posmod(slot + direction, role_weapon_indices.size())
 	_switch_weapon(role_weapon_indices[slot])
+	_refresh_equipment_icon()
 
 func _select_weapon_slot(slot: int) -> void:
 	if slot < 0 or slot >= role_weapon_indices.size():
@@ -554,27 +613,84 @@ func _build_view_hands() -> void:
 	wrist_left_marker.position = Vector3(0.0, -0.055, 0.02)
 	left_arm_pivot.add_child(wrist_left_marker)
 
-	_add_view_hand(wrist_right_marker, false)
-	_add_view_hand(wrist_left_marker, true)
-	_view_arm_left = _make_view_arm("ViewArmL")
-	_view_arm_right = _make_view_arm("ViewArmR")
+	# QA-fix TASK-0022: чёрные «отвязанные» кисти убраны; руки — изогнутые
+	# двухзвенные конечности с ладонями на запястьях.
+	_view_arm_left = _make_view_arm("ViewArmL", true)
+	_view_arm_right = _make_view_arm("ViewArmR", false)
 
-func _make_view_arm(arm_name: String) -> MeshInstance3D:
-	var arm := MeshInstance3D.new()
+func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
+	var arm := Node3D.new()
 	arm.name = arm_name
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.026
-	mesh.bottom_radius = 0.042
-	mesh.height = 1.0
-	mesh.radial_segments = 8
-	arm.mesh = mesh
-	var material := StandardMaterial3D.new()
 	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	var is_red: bool = player_team.to_upper().contains("RED") or player_team.to_upper().contains("SOVIET")
-	material.albedo_color = Color(0.25, 0.29, 0.18) if is_red else Color(0.24, 0.25, 0.26)
-	material.roughness = 0.92
-	arm.material_override = material
-	arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var sleeve := StandardMaterial3D.new()
+	# Тёмная полевая ткань — без «синих» оттенков, ближе к Dummy War.
+	sleeve.albedo_color = Color(0.26, 0.22, 0.15) if is_red else Color(0.19, 0.21, 0.15)
+	sleeve.roughness = 0.95
+	var glove := StandardMaterial3D.new()
+	glove.albedo_color = Color(0.32, 0.25, 0.18)
+	glove.roughness = 0.90
+
+	# Плечо (верхнее звено) и предплечье — два отдельных сегмента, локоть гнётся.
+	var upper := MeshInstance3D.new()
+	upper.name = "Upper"
+	var upper_mesh := CylinderMesh.new()
+	upper_mesh.top_radius = 0.040
+	upper_mesh.bottom_radius = 0.034
+	upper_mesh.height = 1.0
+	upper_mesh.radial_segments = 8
+	upper.mesh = upper_mesh
+	upper.material_override = sleeve
+	upper.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Плечо видно коротким сегментом от локтя вниз — читается сгиб руки.
+	upper.visible = true
+	arm.add_child(upper)
+
+	var forearm := MeshInstance3D.new()
+	forearm.name = "Forearm"
+	var forearm_mesh := CylinderMesh.new()
+	forearm_mesh.top_radius = 0.030
+	forearm_mesh.bottom_radius = 0.024
+	forearm_mesh.height = 1.0
+	forearm_mesh.radial_segments = 8
+	forearm.mesh = forearm_mesh
+	forearm.material_override = sleeve
+	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	arm.add_child(forearm)
+
+	# Ладонь и большой палец — на конце предплечья.
+	var palm := MeshInstance3D.new()
+	palm.name = "Palm"
+	var palm_mesh := BoxMesh.new()
+	palm_mesh.size = Vector3(0.055, 0.032, 0.090)
+	palm.mesh = palm_mesh
+	palm.material_override = glove
+	palm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	arm.add_child(palm)
+
+	var thumb := MeshInstance3D.new()
+	thumb.name = "Thumb"
+	var thumb_mesh := BoxMesh.new()
+	thumb_mesh.size = Vector3(0.022, 0.024, 0.050)
+	thumb.mesh = thumb_mesh
+	thumb.material_override = glove
+	thumb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	arm.add_child(thumb)
+
+
+	# Пальцы, обхватывающие оружие (4 коротких фаланги на кисть).
+	for finger_index in range(4):
+		var finger := MeshInstance3D.new()
+		finger.name = "Finger%d" % finger_index
+		var finger_mesh := BoxMesh.new()
+		finger_mesh.size = Vector3(0.017, 0.020, 0.055)
+		finger.mesh = finger_mesh
+		finger.material_override = glove
+		finger.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		finger.set_meta("finger_index", finger_index)
+		arm.add_child(finger)
+
+	arm.set_meta("is_left", is_left)
 	if camera != null:
 		camera.add_child(arm)
 	return arm
@@ -588,76 +704,58 @@ func _update_view_arms() -> void:
 		if _view_arm_right != null:
 			_view_arm_right.visible = false
 		return
-	var cam_xf := camera.global_transform
-	var l_shoulder := cam_xf.origin + cam_xf.basis * Vector3(-0.16, -0.15, -0.06)
-	var r_shoulder := cam_xf.origin + cam_xf.basis * Vector3(0.16, -0.15, -0.06)
+	# QA-fix TASK-0022: в первом лице показываем кисти с пальцами и манжетами
+	# прямо на оружии. Длинные цилиндрические «руки» убраны — они читались
+	# как палки из ушей и закрывали полэкрана.
 	if wrist_left_marker != null and _view_arm_left != null:
-		var l_end := wrist_left_marker.global_position
-		_place_view_arm(_view_arm_left, l_shoulder, l_end)
+		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true)
 	if wrist_right_marker != null and _view_arm_right != null:
-		var r_end := wrist_right_marker.global_position
-		_place_view_arm(_view_arm_right, r_shoulder, r_end)
+		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false)
 
-func _place_view_arm(arm: MeshInstance3D, start: Vector3, end: Vector3) -> void:
-	var delta := end - start
-	var length := delta.length()
-	if length < 0.05:
-		arm.visible = false
-		return
+func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool) -> void:
 	arm.visible = true
-	var dir := delta / length
-	var up := dir
-	var right := dir.cross(Vector3.UP)
+	var upper := arm.get_node_or_null("Upper") as MeshInstance3D
+	var forearm := arm.get_node_or_null("Forearm") as MeshInstance3D
+	if upper != null:
+		upper.visible = false
+	if forearm != null:
+		forearm.visible = false
+	# Корень руки совмещаем с кистевым маркером оружия (масштаб оружия учтён).
+	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
+	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
+	if palm != null:
+		palm.visible = true
+		palm.position = Vector3(0.0, -0.012, -0.055)
+		palm.rotation = Vector3(deg_to_rad(-8.0), deg_to_rad(8.0 if is_left else -8.0), 0.0)
+	var thumb := arm.get_node_or_null("Thumb") as MeshInstance3D
+	if thumb != null:
+		thumb.visible = true
+		thumb.position = Vector3(0.05 if is_left else -0.05, 0.012, -0.048)
+		thumb.rotation = Vector3(deg_to_rad(14.0), 0.0, deg_to_rad(20.0 if is_left else -20.0))
+	# Пальцы охватывают оружие: четыре фаланги поперёк кисти.
+	var finger_x := -0.030
+	for finger_index in range(4):
+		var finger := arm.get_node_or_null("Finger%d" % finger_index) as MeshInstance3D
+		if finger == null:
+			continue
+		finger.visible = true
+		finger.position = Vector3(finger_x + float(finger_index) * 0.020, -0.020, -0.085)
+		finger.rotation = Vector3(deg_to_rad(72.0), 0.0, deg_to_rad(6.0 if is_left else -6.0))
+
+func _place_limb_segment(mesh_inst: MeshInstance3D, a: Vector3, b: Vector3) -> void:
+	var d := b - a
+	var l := d.length()
+	if l < 0.01:
+		mesh_inst.visible = false
+		return
+	mesh_inst.visible = true
+	var up := d / l
+	var right := up.cross(Vector3.UP)
 	if right.length_squared() < 0.0001:
-		right = dir.cross(Vector3.RIGHT)
+		right = up.cross(Vector3.RIGHT)
 	right = right.normalized()
-	var forward := up.cross(right).normalized()
-	var b := Basis(right, up * length, forward)
-	arm.global_transform = Transform3D(b, (start + end) * 0.5)
-
-## Низкополигональная кисть на оружии. Заменяет длинные IK-руки,
-## которые вытягивались через весь экран.
-func _add_view_hand(marker: Node3D, is_left: bool) -> void:
-	var glove := StandardMaterial3D.new()
-	glove.albedo_color = Color(0.17, 0.14, 0.11)
-	glove.roughness = 0.92
-
-	var hand := MeshInstance3D.new()
-	hand.name = "HandL" if is_left else "HandR"
-	var palm := BoxMesh.new()
-	palm.size = Vector3(0.12, 0.10, 0.18)
-	hand.mesh = palm
-	hand.material_override = glove
-	hand.position = Vector3(0.0, -0.015, -0.06)
-	hand.rotation = Vector3(deg_to_rad(-6.0), deg_to_rad(9.0 if is_left else -9.0), 0.0)
-	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	marker.add_child(hand)
-
-	var thumb := MeshInstance3D.new()
-	thumb.name = "Thumb"
-	var thumb_mesh := BoxMesh.new()
-	thumb_mesh.size = Vector3(0.045, 0.05, 0.09)
-	thumb.mesh = thumb_mesh
-	thumb.material_override = glove
-	thumb.position = Vector3(0.055 if is_left else -0.055, 0.01, -0.055)
-	thumb.rotation = Vector3(deg_to_rad(12.0), 0.0, deg_to_rad(18.0 if is_left else -18.0))
-	thumb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	marker.add_child(thumb)
-
-	var cuff := MeshInstance3D.new()
-	cuff.name = "Cuff"
-	var cuff_mesh := CylinderMesh.new()
-	cuff_mesh.top_radius = 0.045
-	cuff_mesh.bottom_radius = 0.055
-	cuff_mesh.height = 0.15
-	cuff_mesh.radial_segments = 8
-	cuff.mesh = cuff_mesh
-	cuff.material_override = glove
-	cuff.position = Vector3(0.0, -0.01, 0.07)
-	cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
-	cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	cuff.visible = true
-	marker.add_child(cuff)
+	var fwd := up.cross(right).normalized()
+	mesh_inst.global_transform = Transform3D(Basis(right, up * l, fwd), (a + b) * 0.5)
 
 func _set_aiming(enabled: bool) -> void:
 	if aiming == enabled or is_dead or input_locked:
@@ -799,6 +897,10 @@ func _build_mobile_controls() -> void:
 	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
 	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
 	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
+	if mobile_controls.has_signal("equip_prev_pressed"):
+		mobile_controls.equip_prev_pressed.connect(func(): _cycle_equipment(-1))
+	if mobile_controls.has_signal("equip_next_pressed"):
+		mobile_controls.equip_next_pressed.connect(func(): _cycle_equipment(1))
 	if mobile_controls.has_signal("sidearm_pressed"):
 		mobile_controls.sidearm_pressed.connect(_toggle_sidearm)
 	if mobile_controls.has_signal("shovel_pressed"):
@@ -810,6 +912,9 @@ func _build_mobile_controls() -> void:
 		mobile_controls.drone_vertical_changed.connect(_on_drone_vertical_changed)
 	if player_role == "RADIO_OPERATOR":
 		mobile_controls.set_drone_visible(true)
+
+func _refresh_equipment_after_hud() -> void:
+	_refresh_equipment_icon()
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
@@ -1297,9 +1402,10 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
-		_process_mounted_vehicle(delta)
-		# QA-sweep bugfix: без применения взгляда камера не вращалась в технике.
+		# Сначала применяем взгляд, затем тик техники: турель берёт свежую
+		# камеру (иначе наводка отстаёт на кадр).
 		_apply_look(delta)
+		_process_mounted_vehicle(delta)
 		return
 	if mounted_vehicle != null:
 		mounted_vehicle = null
@@ -1495,6 +1601,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= 18.0 * delta
 	var fall_speed := velocity.y
 	move_and_slide()
+	_try_step_up()
 
 	var on_floor := is_on_floor()
 	if on_floor and not _was_on_floor and fall_speed < -3.0:
@@ -1558,6 +1665,18 @@ func _physics_process(delta: float) -> void:
 
 func _process_mounted_vehicle(delta: float) -> void:
 	velocity = Vector3.ZERO
+	# QA-fix TASK-0022: в джипе камера едет вместе с корпусом — игроку не нужно
+	# «доворачивать» взгляд на каждом повороте (турели остаются свободными).
+	if mounted_vehicle.has_method("camera_follows_vehicle") and bool(mounted_vehicle.call("camera_follows_vehicle")):
+		var vehicle_yaw: float = mounted_vehicle.global_rotation.y
+		yaw += wrapf(vehicle_yaw - _mounted_last_vehicle_yaw, -PI, PI)
+		_mounted_last_vehicle_yaw = vehicle_yaw
+	# В технике всегда показываем точку прицеливания (без снайперского скопа).
+	if crosshair != null and not is_dead:
+		if crosshair.has_method("set_sniper_scope"):
+			crosshair.call("set_sniper_scope", false)
+		crosshair.visible = true
+		crosshair.queue_redraw()
 	if mounted_vehicle.has_method("tick_driver"):
 		mounted_vehicle.call("tick_driver", self, delta)
 	var firing := mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
@@ -1574,10 +1693,15 @@ func _enter_vehicle(vehicle: Node3D) -> void:
 	if not vehicle.has_method("enter") or not bool(vehicle.call("can_enter", self)):
 		return
 	mounted_vehicle = vehicle
+	_mounted_last_vehicle_yaw = vehicle.global_rotation.y
+	if vehicle.has_method("camera_follows_vehicle") and bool(vehicle.call("camera_follows_vehicle")):
+		yaw = _mounted_last_vehicle_yaw
 	vehicle.call("enter", self)
 	if vehicle is PhysicsBody3D:
 		add_collision_exception_with(vehicle)
 	velocity = Vector3.ZERO
+	if mobile_controls != null and mobile_controls.has_method("set_vehicle_mode"):
+		mobile_controls.call("set_vehicle_mode", true)
 	if weapon_root != null:
 		weapon_root.visible = false
 	var eye_height := 1.20
@@ -1598,6 +1722,8 @@ func _exit_vehicle() -> void:
 		if vehicle.has_method("exit_position"):
 			global_position = vehicle.call("exit_position")
 	velocity = Vector3.ZERO
+	if mobile_controls != null and mobile_controls.has_method("set_vehicle_mode"):
+		mobile_controls.call("set_vehicle_mode", false)
 	# Стоячая высота камеры после высадки (lerp в _physics_process дочекается).
 	camera.position.y = 1.70
 	if weapon_root != null and not is_dead:
@@ -1706,6 +1832,18 @@ func _shoot() -> void:
 	_refresh_ammo()
 	_play_player_shot_sfx(str(weapon.id), float(weapon.pitch))
 
+	# QA-fix TASK-0022: попадание считается ДО отдачи. Раньше recoil успевал
+	# повернуть камеру на ~1.5-2°, и снайперская пуля в прицеле уходила выше
+	# цели (в зуме это стабильный промах «не регает урон»).
+	var pre_recoil_dir := -camera.global_transform.basis.z
+	var pre_aim_end := camera.global_position + pre_recoil_dir * float(weapon["range"])
+	var pre_aim_query := PhysicsRayQueryParameters3D.create(camera.global_position, pre_aim_end)
+	pre_aim_query.collision_mask = RAY_COLLISION_MASK
+	pre_aim_query.exclude = [get_rid()]
+	pre_aim_query.collide_with_areas = true
+	var pre_aim_hit := get_world_3d().direct_space_state.intersect_ray(pre_aim_query)
+	var pre_aim_point: Vector3 = pre_aim_hit.get("position", pre_aim_end)
+
 	if str(weapon.id) == "panzerfaust":
 		recoil.y = minf(recoil.y + 0.055, 0.18)
 		recoil.x = clampf(recoil.x + randf_range(-0.015, 0.015), -0.06, 0.06)
@@ -1714,7 +1852,7 @@ func _shoot() -> void:
 			muzzle_flash.visible = true
 			muzzle_flash_time = 0.08
 		_apply_look()
-		var shoot_dir := -camera.global_transform.basis.z
+		var shoot_dir := pre_recoil_dir
 		var desired_spawn := camera.global_position + shoot_dir * 0.45 + camera.global_transform.basis.x * 0.14 - camera.global_transform.basis.y * 0.08
 		var wall_query := PhysicsRayQueryParameters3D.create(camera.global_position, desired_spawn)
 		wall_query.collision_mask = WORLD_LAYER_MASK
@@ -1777,14 +1915,7 @@ func _shoot() -> void:
 	# The camera ray selects the point the player is aiming at; it never applies
 	# damage. The actual round travels from the muzzle to that point and collides
 	# along its own path, preserving the visible muzzle-to-sight parallax.
-	var camera_direction := -camera.global_transform.basis.z
-	var aim_end := camera.global_position + camera_direction * float(weapon["range"])
-	var aim_query := PhysicsRayQueryParameters3D.create(camera.global_position, aim_end)
-	aim_query.collision_mask = RAY_COLLISION_MASK
-	aim_query.exclude = [get_rid()]
-	aim_query.collide_with_areas = true
-	var aim_hit := get_world_3d().direct_space_state.intersect_ray(aim_query)
-	var aim_point: Vector3 = aim_hit.get("position", aim_end)
+	var aim_point := pre_aim_point
 	var base_direction := (aim_point - bullet_origin).normalized()
 	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
 	var pellet_count := int(weapon.pellets)
@@ -1889,7 +2020,7 @@ func _build_grenade_view() -> void:
 		return
 	grenade_view_root.name = "GrenadeView"
 	grenade_view_root.position = Vector3(0.18, -0.16, -0.38)
-	grenade_view_root.scale = Vector3.ONE * 0.52
+	grenade_view_root.scale = Vector3.ONE * 0.60
 	grenade_view_root.visible = false
 	camera.add_child(grenade_view_root)
 
@@ -1922,16 +2053,16 @@ func _start_grenade_hold() -> void:
 			if grenade_safety_lever != null:
 				grenade_safety_lever.rotation = Vector3.ZERO
 				grenade_safety_lever.visible = true
+			# Гранату держит ОДНА рука — вторая не дублируется на экране.
 			if grenade_hand_left != null:
-				grenade_hand_left.position = Vector3(-0.075, 0.065, 0.0)
-				grenade_hand_left.visible = true
+				grenade_hand_left.visible = false
 		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -8.0, 1.35)
 
 func _release_grenade_throw() -> void:
 	is_grenade_held = false
 	if grenade_anim_state == GrenadeActionState.HOLD_AIM:
 		grenade_anim_state = GrenadeActionState.THROW_SWING
-		grenade_anim_timer = 0.18
+		grenade_anim_timer = 0.26
 		_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.45)
 	elif grenade_anim_state == GrenadeActionState.PULL_PIN or grenade_anim_state == GrenadeActionState.EQUIP:
 		pass
@@ -1948,10 +2079,12 @@ func _spawn_thrown_grenade() -> void:
 		g.position = global_position + Vector3(0.0, 0.45, 0.0)
 		g.linear_velocity = Vector3(randf_range(-0.6, 0.6), 1.2, randf_range(-0.6, 0.6))
 	else:
-		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.20 - camera.global_transform.basis.y * 0.10 - camera.global_transform.basis.z * 0.45
-		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+		# QA-fix TASK-0022: граната вылетает из кисти (ниже и правее камеры),
+		# а не «из головы», и бросается с весом — медленнее и ниже.
+		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
 		g.position = spawn_pos
-		g.linear_velocity = throw_dir.normalized() * 20.5 + velocity * 0.45
+		g.linear_velocity = throw_dir.normalized() * 14.5 + velocity * 0.45
 	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	g.thrower_name = "Player"
 	g.team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
@@ -1964,7 +2097,15 @@ func _update_grenade_animation(delta: float) -> void:
 	if grenade_anim_state == GrenadeActionState.IDLE:
 		if grenade_view_root != null and grenade_view_root.visible:
 			grenade_view_root.visible = false
+		# QA-fix TASK-0022: оружие возвращается в руки после броска.
+		if weapon_root != null and not weapon_root.visible and not is_dead and not is_shovel_equipped:
+			weapon_root.visible = true
 		return
+
+	# QA-fix TASK-0022: на время работы с гранатой оружие полностью убирается —
+	# раньше автомат оставался на экране вместе с руками гранаты («каша»).
+	if weapon_root != null:
+		weapon_root.visible = false
 
 	if weapon_root != null:
 		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.28, delta * 14.0)
@@ -1996,7 +2137,7 @@ func _update_grenade_animation(delta: float) -> void:
 					grenade_anim_state = GrenadeActionState.HOLD_AIM
 				else:
 					grenade_anim_state = GrenadeActionState.THROW_SWING
-					grenade_anim_timer = 0.18
+					grenade_anim_timer = 0.26
 
 		GrenadeActionState.HOLD_AIM:
 			if grenade_view_root != null:
@@ -2009,7 +2150,7 @@ func _update_grenade_animation(delta: float) -> void:
 				grenade_anim_timer = 0.18
 
 		GrenadeActionState.THROW_SWING:
-			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.18, 0.0, 1.0)
+			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.26, 0.0, 1.0)
 			if grenade_view_root != null:
 				var throw_target_pos := Vector3(0.06, -0.12, -0.62)
 				var throw_target_rot := Vector3(deg_to_rad(-38.0), deg_to_rad(10.0), deg_to_rad(-14.0))
@@ -2035,6 +2176,54 @@ func _throw_grenade() -> void:
 		_release_grenade_throw()
 
 ## Механика паркура (преодоление заборов, подоконников и низких укрытий)
+## QA-fix TASK-0022: ступеньки/бордюры/швы до 0.55 м больше не «застревают».
+## Раньше CharacterBody3D упирался в любой пиксельный выступ; теперь, если
+## перед игроком низкий бортик с проходимой площадкой сверху, капсула
+## аккуратно приподнимается на него.
+func _try_step_up() -> void:
+	if is_vaulting or stance != 0 or not is_on_floor():
+		return
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	if horizontal.length_squared() < 0.30:
+		return
+	var dir := horizontal.normalized()
+	var feet := global_position
+	var space := get_world_3d().direct_space_state
+	var low_from := feet + Vector3.UP * 0.08 + dir * 0.28
+	var low_q := PhysicsRayQueryParameters3D.create(low_from, low_from + dir * 0.36)
+	low_q.collision_mask = WORLD_LAYER_MASK
+	low_q.exclude = [get_rid()]
+	low_q.collide_with_areas = false
+	var low_hit := space.intersect_ray(low_q)
+	if low_hit.is_empty():
+		return
+	var top_from: Vector3 = low_hit.position + Vector3.UP * 0.70
+	var top_q := PhysicsRayQueryParameters3D.create(top_from, top_from + Vector3.DOWN * 0.85)
+	top_q.collision_mask = WORLD_LAYER_MASK
+	top_q.exclude = [get_rid()]
+	top_q.collide_with_areas = false
+	var top_hit := space.intersect_ray(top_q)
+	if top_hit.is_empty():
+		return
+	var rise: float = float(top_hit.position.y) - feet.y
+	if rise < 0.03 or rise > 0.55:
+		return
+	if float(top_hit.get("normal", Vector3.UP).y) < 0.55:
+		return
+	var clearance := PhysicsShapeQueryParameters3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.33
+	capsule.height = 1.15
+	clearance.shape = capsule
+	clearance.transform = Transform3D(Basis(), feet + Vector3.UP * (rise + 0.65) + dir * 0.30)
+	clearance.collision_mask = WORLD_LAYER_MASK
+	clearance.exclude = [get_rid()]
+	clearance.collide_with_areas = false
+	if not space.intersect_shape(clearance, 1).is_empty():
+		return
+	global_position = feet + Vector3.UP * (rise + 0.03)
+	velocity.y = maxf(velocity.y, 0.0)
+
 func _try_vault() -> bool:
 	if is_dead or input_locked or is_vaulting or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
 		return false
@@ -2142,10 +2331,11 @@ func _throw_smoke() -> void:
 	smoke_grenades -= 1
 	_refresh_equipment()
 	var s := SMOKE_SCRIPT.new()
-	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.5
-	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.24
+	# QA-fix TASK-0022: дымовая вылетает из кисти, а не из головы персонажа.
+	var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+	var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
 	s.position = spawn_pos
-	s.linear_velocity = throw_dir.normalized() * 19.5 + velocity * 0.4
+	s.linear_velocity = throw_dir.normalized() * 13.5 + velocity * 0.4
 	s.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	s.thrower_name = "Player"
 	get_parent().add_child(s)

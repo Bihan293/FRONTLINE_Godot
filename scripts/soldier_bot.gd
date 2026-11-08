@@ -441,7 +441,7 @@ func _find_target() -> void:
 		var player_dead: bool = player.get("is_dead") if "is_dead" in player else false
 		if not player_dead and player_team != team_name:
 			var dist := global_position.distance_to(player.global_position)
-			if dist < best_dist and _has_line_of_sight(player, player.global_position + Vector3(0, 1.4, 0)):
+			if dist < best_dist and _has_line_of_sight(player, _target_aim_point(player)):
 				best_dist = dist
 				best_target = player
 
@@ -453,7 +453,7 @@ func _find_target() -> void:
 		var bot = b as FRONTLINESoldierBot
 		if bot != null and not bot.is_dead and bot.team_name != team_name:
 			var dist := global_position.distance_to(bot.global_position)
-			if dist < best_dist and _has_line_of_sight(bot, bot.global_position + Vector3(0, 1.4, 0)):
+			if dist < best_dist and _has_line_of_sight(bot, _target_aim_point(bot)):
 				best_dist = dist
 				best_target = bot
 
@@ -464,6 +464,16 @@ func _find_target() -> void:
 			_shout("ВИЖУ ВРАГА!" if team_name.contains("RED") else "KONTAKT!", Color(1.0, 0.85, 0.3))
 	elif best_target == null:
 		current_target = null
+
+## QA-fix TASK-0022: точка прицеливания зависит от стойки цели.
+## Раньше луч всегда шёл в +1.4 м, и по присевшему/лежачему игроку он
+## проходил выше хитбокса — «боты не видят игрока, когда он сидит/лежит».
+static func _target_aim_point(target: Node3D) -> Vector3:
+	var height := 1.4
+	if "stance" in target:
+		var st := int(target.get("stance"))
+		height = 1.40 if st <= 0 else (1.00 if st == 1 else 0.50)
+	return target.global_position + Vector3(0.0, height, 0.0)
 
 ## Проверка прямой видимости (нет ли стен/земли или дымовой завесы между ботом и целью)
 func _has_line_of_sight(target_actor: Node3D, target_pos_3d: Vector3) -> bool:
