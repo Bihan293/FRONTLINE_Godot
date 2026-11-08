@@ -33,7 +33,7 @@ static func get_furniture_info(type_name: String) -> Dictionary:
 		"writing_desk":
 			return _info("Письменный стол", "Потёртый рабочий стол с выдвижными ящиками.", Vector3(1.25, 0.78, 0.68), "кабинет")
 		"dining_chair":
-			return _info("Деревянный стул", "Простой кухонный стул с планочной спинкой.", Vector3(0.48, 0.92, 0.48), "гостиная")
+			return _info("Деревянный стул", "Простой кухонный стул с планочной спинкой.", Vector3(0.48, 1.01, 0.48), "гостиная")
 		"wooden_bench":
 			return _info("Лавка", "Грубая длинная лавка из широких досок.", Vector3(1.30, 0.48, 0.42), "гостиная")
 		"single_bed":
@@ -41,25 +41,25 @@ static func get_furniture_info(type_name: String) -> Dictionary:
 		"double_bed":
 			return _info("Двуспальная кровать", "Широкая кровать с парой подушек и простым изголовьем.", Vector3(1.56, 0.78, 2.05), "спальня")
 		"wardrobe":
-			return _info("Шкаф", "Двухдверный деревянный шкаф с ручками.", Vector3(1.25, 2.05, 0.58), "спальня")
+			return _info("Шкаф", "Двухдверный деревянный шкаф с ручками.", Vector3(1.25, 2.06, 0.64), "спальня")
 		"bedside_cabinet":
-			return _info("Прикроватная тумбочка", "Компактная тумба с двумя ящиками.", Vector3(0.54, 0.62, 0.45), "спальня")
+			return _info("Прикроватная тумбочка", "Компактная тумба с двумя ящиками.", Vector3(0.54, 0.62, 0.56), "спальня")
 		"dresser":
-			return _info("Комод", "Низкий комод с тремя широкими ящиками.", Vector3(0.95, 0.90, 0.48), "спальня")
+			return _info("Комод", "Низкий комод с тремя широкими ящиками.", Vector3(0.95, 0.90, 0.60), "спальня")
 		"bookcase":
 			return _info("Книжный шкаф", "Открытый шкаф с полками и несколькими старыми книгами.", Vector3(0.92, 1.75, 0.34), "кабинет")
 		"sofa":
-			return _info("Диван", "Потёртый двухместный диван с тканевыми подушками.", Vector3(1.90, 0.92, 0.78), "гостиная")
+			return _info("Диван", "Потёртый двухместный диван с тканевыми подушками.", Vector3(1.90, 0.90, 0.78), "гостиная")
 		"kitchen_cabinet":
-			return _info("Кухонный шкаф", "Низкий кухонный шкаф с дверцами и столешницей.", Vector3(1.10, 0.88, 0.55), "кухня")
+			return _info("Кухонный шкаф", "Низкий кухонный шкаф с дверцами и столешницей.", Vector3(1.10, 0.88, 0.61), "кухня")
 		"sink":
-			return _info("Умывальник", "Эмалированная раковина на металлической стойке с краном.", Vector3(0.62, 0.88, 0.52), "санузел")
+			return _info("Умывальник", "Эмалированная раковина на металлической стойке с краном.", Vector3(0.62, 1.13, 0.52), "санузел")
 		"toilet":
-			return _info("Туалет", "Старый напольный унитаз с бачком и сиденьем.", Vector3(0.42, 0.82, 0.68), "санузел")
+			return _info("Туалет", "Старый напольный унитаз с бачком и сиденьем.", Vector3(0.44, 0.90, 0.76), "санузел")
 		"wood_stove":
 			return _info("Печь-буржуйка", "Небольшая чугунная печь с дверцей и дымоходом.", Vector3(0.72, 1.48, 0.66), "кухня")
 		"radiator":
-			return _info("Радиатор", "Старый секционный радиатор отопления.", Vector3(0.86, 0.62, 0.18), "любая комната")
+			return _info("Радиатор", "Старый секционный радиатор отопления.", Vector3(1.06, 0.62, 0.18), "любая комната")
 		_:
 			return {}
 
@@ -149,6 +149,8 @@ static func create_furniture_node(type_name: String, rot_deg: float = 0.0) -> No
 
 		var mesh_instance := MeshInstance3D.new()
 		mesh_instance.mesh = _make_mesh(part.shape, size)
+		if part.shape == "sphere":
+			mesh_instance.scale = size
 		mesh_instance.material_override = materials[color]
 		mesh_instance.position = pos
 		if not bool(part.get("cast_shadow", true)):
@@ -229,7 +231,7 @@ static func _build_chair(out: Array[Dictionary]) -> void:
 		for z in [-0.15, 0.18]:
 			_piece(out, Vector3(x, 0.23, z), Vector3(0.065, 0.44, 0.065), COLOR_WOOD_DARK, "chair_leg")
 	for x in [-0.18, 0.18]:
-		_piece(out, Vector3(x, 0.78, 0.20), Vector3(0.07, 0.82, 0.07), COLOR_WOOD_DARK, "chair_back_post")
+		_piece(out, Vector3(x, 0.76, 0.20), Vector3(0.07, 0.46, 0.07), COLOR_WOOD_DARK, "chair_back_post")
 	for y in [0.62, 0.79, 0.96]:
 		_piece(out, Vector3(0, y, 0.20), Vector3(0.39, 0.09, 0.065), COLOR_WOOD_WORN, "chair_back_slats")
 
@@ -241,17 +243,17 @@ static func _build_bench(out: Array[Dictionary]) -> void:
 
 static func _build_bed(out: Array[Dictionary], width: float) -> void:
 	var half_w := width * 0.5
-	var mattress_z := 0.18
-	_piece(out, Vector3(0, 0.43, 0.10), Vector3(width - 0.10, 0.18, 1.86), COLOR_FABRIC, "mattress")
+	var mattress_z := 0.12
+	_piece(out, Vector3(0, 0.43, 0.10), Vector3(width - 0.10, 0.18, 1.82), COLOR_FABRIC, "mattress")
 	_piece(out, Vector3(0, 0.535, -0.48), Vector3(width * 0.34, 0.10, 0.36), COLOR_FABRIC_LIGHT, "pillow")
 	if width > 1.0:
 		_piece(out, Vector3(-width * 0.22, 0.535, -0.48), Vector3(width * 0.28, 0.10, 0.34), COLOR_FABRIC_LIGHT, "pillow")
-	_piece(out, Vector3(0, 0.31, mattress_z), Vector3(width + 0.10, 0.12, 1.98), COLOR_WOOD, "bed_frame")
+	_piece(out, Vector3(0, 0.31, mattress_z), Vector3(width + 0.10, 0.12, 1.90), COLOR_WOOD, "bed_frame")
 	for x in [-half_w + 0.06, half_w - 0.06]:
 		for z in [-0.78, 0.88]:
 			_piece(out, Vector3(x, 0.15, z), Vector3(0.09, 0.30, 0.09), COLOR_WOOD_DARK, "bed_leg")
-	_piece(out, Vector3(0, 0.61, -0.92), Vector3(width + 0.10, 0.72, 0.10), COLOR_WOOD_WORN, "bed_headboard")
-	_piece(out, Vector3(0, 0.47, 1.10), Vector3(width + 0.10, 0.40, 0.10), COLOR_WOOD, "bed_footboard")
+	_piece(out, Vector3(0, 0.55, -0.92), Vector3(width + 0.10, 0.46, 0.10), COLOR_WOOD_WORN, "bed_headboard")
+	_piece(out, Vector3(0, 0.47, 1.02), Vector3(width + 0.10, 0.40, 0.10), COLOR_WOOD, "bed_footboard")
 
 static func _build_wardrobe(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(-0.60, 1.02, 0), Vector3(0.06, 2.00, 0.56), COLOR_WOOD_DARK, "wardrobe_side")
@@ -262,7 +264,7 @@ static func _build_wardrobe(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(-0.29, 1.03, -0.285), Vector3(0.56, 1.82, 0.055), COLOR_WOOD_WORN, "wardrobe_door")
 	_piece(out, Vector3(0.29, 1.03, -0.285), Vector3(0.56, 1.82, 0.055), COLOR_WOOD_WORN, "wardrobe_door")
 	for x in [-0.07, 0.07]:
-		_piece(out, Vector3(x, 1.03, -0.326), Vector3(0.035, 0.13, 0.035), COLOR_METAL_WORN, "wardrobe_handle", "cylinder", false, false)
+		_piece(out, Vector3(x, 1.03, -0.326), Vector3(0.035, 0.13, 0.035), COLOR_METAL_WORN, "wardrobe_handle", "box", false, false)
 
 static func _build_drawer_unit(out: Array[Dictionary], width: float, height: float, bedside: bool) -> void:
 	var depth := 0.45 if bedside else 0.48
@@ -273,7 +275,7 @@ static func _build_drawer_unit(out: Array[Dictionary], width: float, height: flo
 		var drawer_y := height * (float(index) + 0.5) / float(drawer_count)
 		var drawer_h := height / float(drawer_count) - 0.035
 		_piece(out, Vector3(0, drawer_y, -depth * 0.5 - 0.006), Vector3(width - 0.12, drawer_h, 0.045), COLOR_WOOD_WORN, "drawer_front")
-		_piece(out, Vector3(0, drawer_y, -depth * 0.5 - 0.034), Vector3(0.11, 0.035, 0.035), COLOR_METAL_WORN, "drawer_handle", "cylinder", false, false)
+		_piece(out, Vector3(0, drawer_y, -depth * 0.5 - 0.034), Vector3(0.11, 0.035, 0.035), COLOR_METAL_WORN, "drawer_handle", "box", false, false)
 	for x in [-width * 0.37, width * 0.37]:
 		_piece(out, Vector3(x, 0.08, 0), Vector3(0.07, 0.16, 0.08), COLOR_WOOD_DARK, "cabinet_foot")
 
@@ -290,9 +292,9 @@ static func _build_bookcase(out: Array[Dictionary]) -> void:
 
 static func _build_sofa(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.34, 0.04), Vector3(1.68, 0.42, 0.66), COLOR_WOOD_DARK, "sofa_base")
-	_piece(out, Vector3(0, 0.77, 0.29), Vector3(1.72, 0.48, 0.16), COLOR_FABRIC, "sofa_back")
-	_piece(out, Vector3(-0.87, 0.55, 0), Vector3(0.16, 0.58, 0.78), COLOR_FABRIC, "sofa_arm")
-	_piece(out, Vector3(0.87, 0.55, 0), Vector3(0.16, 0.58, 0.78), COLOR_FABRIC, "sofa_arm")
+	_piece(out, Vector3(0, 0.72, 0.29), Vector3(1.72, 0.36, 0.16), COLOR_FABRIC, "sofa_back")
+	_piece(out, Vector3(-0.87, 0.52, 0), Vector3(0.16, 0.50, 0.78), COLOR_FABRIC, "sofa_arm")
+	_piece(out, Vector3(0.87, 0.52, 0), Vector3(0.16, 0.50, 0.78), COLOR_FABRIC, "sofa_arm")
 	_piece(out, Vector3(-0.43, 0.57, -0.04), Vector3(0.78, 0.18, 0.56), COLOR_FABRIC_LIGHT, "sofa_cushion")
 	_piece(out, Vector3(0.43, 0.57, -0.04), Vector3(0.78, 0.18, 0.56), COLOR_FABRIC_LIGHT, "sofa_cushion")
 	for x in [-0.72, 0.72]:
@@ -303,7 +305,7 @@ static func _build_kitchen_cabinet(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.84, 0), Vector3(1.10, 0.08, 0.55), COLOR_WOOD_WORN, "kitchen_counter")
 	for x in [-0.26, 0.26]:
 		_piece(out, Vector3(x, 0.43, -0.257), Vector3(0.46, 0.66, 0.045), COLOR_PAINT_BLUE, "kitchen_door")
-		_piece(out, Vector3(x + 0.16, 0.43, -0.29), Vector3(0.025, 0.11, 0.025), COLOR_METAL_WORN, "kitchen_handle", "cylinder", false, false)
+		_piece(out, Vector3(x + 0.16, 0.43, -0.29), Vector3(0.025, 0.11, 0.025), COLOR_METAL_WORN, "kitchen_handle", "box", false, false)
 	for x in [-0.42, 0.42]:
 		_piece(out, Vector3(x, 0.08, 0.18), Vector3(0.08, 0.16, 0.08), COLOR_WOOD_DARK, "kitchen_foot")
 
@@ -312,7 +314,7 @@ static func _build_sink(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.83, 0), Vector3(0.62, 0.10, 0.52), COLOR_PORCELAIN, "sink_rim")
 	_piece(out, Vector3(0, 0.82, 0.035), Vector3(0.42, 0.12, 0.32), COLOR_ENAMEL, "sink_basin", "sphere")
 	_piece(out, Vector3(0.15, 0.99, 0.15), Vector3(0.045, 0.25, 0.045), COLOR_METAL, "faucet", "cylinder", false, false)
-	_piece(out, Vector3(0.08, 1.10, 0.15), Vector3(0.18, 0.045, 0.045), COLOR_METAL, "faucet_spout", "cylinder", false, false)
+	_piece(out, Vector3(0.08, 1.10, 0.15), Vector3(0.18, 0.045, 0.045), COLOR_METAL, "faucet_spout", "box", false, false)
 
 static func _build_toilet(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.20, 0.10), Vector3(0.32, 0.40, 0.40), COLOR_PORCELAIN, "toilet_pedestal", "cylinder")
@@ -320,16 +322,16 @@ static func _build_toilet(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.52, -0.035), Vector3(0.37, 0.045, 0.49), COLOR_ENAMEL, "toilet_seat", "sphere", false, false)
 	_piece(out, Vector3(0, 0.67, 0.34), Vector3(0.40, 0.37, 0.20), COLOR_PORCELAIN, "toilet_tank")
 	_piece(out, Vector3(0, 0.87, 0.34), Vector3(0.44, 0.05, 0.24), COLOR_ENAMEL, "toilet_tank_lid")
-	_piece(out, Vector3(0.18, 0.68, 0.225), Vector3(0.05, 0.025, 0.03), COLOR_METAL_WORN, "toilet_flush", "cylinder", false, false)
+	_piece(out, Vector3(0.18, 0.68, 0.225), Vector3(0.05, 0.025, 0.03), COLOR_METAL_WORN, "toilet_flush", "box", false, false)
 
 static func _build_stove(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.40, 0), Vector3(0.72, 0.80, 0.66), COLOR_METAL, "stove_body")
 	_piece(out, Vector3(0, 0.39, -0.337), Vector3(0.42, 0.40, 0.045), COLOR_METAL_WORN, "stove_door")
-	_piece(out, Vector3(0, 0.60, -0.37), Vector3(0.12, 0.035, 0.025), COLOR_METAL, "stove_handle", "cylinder", false, false)
+	_piece(out, Vector3(0, 0.60, -0.37), Vector3(0.12, 0.035, 0.025), COLOR_METAL, "stove_handle", "box", false, false)
 	for x in [-0.18, 0.18]:
 		_piece(out, Vector3(x, 0.84, -0.12), Vector3(0.20, 0.025, 0.20), COLOR_METAL_WORN, "stove_burner", "cylinder", false, false)
-	_piece(out, Vector3(0.22, 1.32, 0.16), Vector3(0.15, 0.96, 0.15), COLOR_METAL, "stove_pipe", "cylinder")
-	_piece(out, Vector3(0.22, 1.79, 0.16), Vector3(0.25, 0.08, 0.25), COLOR_METAL_WORN, "stove_pipe_cap", "cylinder")
+	_piece(out, Vector3(0.22, 1.16, 0.16), Vector3(0.15, 0.60, 0.15), COLOR_METAL, "stove_pipe", "cylinder")
+	_piece(out, Vector3(0.22, 1.44, 0.16), Vector3(0.25, 0.06, 0.25), COLOR_METAL_WORN, "stove_pipe_cap", "cylinder")
 
 static func _build_radiator(out: Array[Dictionary]) -> void:
 	_piece(out, Vector3(0, 0.31, 0), Vector3(0.78, 0.48, 0.13), COLOR_ENAMEL, "radiator_header")
@@ -337,4 +339,4 @@ static func _build_radiator(out: Array[Dictionary]) -> void:
 		var x := -0.36 + float(index) * 0.09
 		_piece(out, Vector3(x, 0.31, 0), Vector3(0.065, 0.58, 0.18), COLOR_PORCELAIN, "radiator_fin", "box", true, false)
 	_piece(out, Vector3(0, 0.07, 0), Vector3(0.70, 0.07, 0.16), COLOR_METAL_WORN, "radiator_feet")
-	_piece(out, Vector3(-0.50, 0.24, 0), Vector3(0.22, 0.045, 0.045), COLOR_METAL, "radiator_pipe", "cylinder", false, false)
+	_piece(out, Vector3(-0.46, 0.24, 0), Vector3(0.14, 0.045, 0.045), COLOR_METAL, "radiator_pipe", "box", false, false)
