@@ -194,12 +194,12 @@ func apply_video() -> void:
 	match quality:
 		0:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.scaling_3d_scale = 0.70
+			vp.scaling_3d_scale = 0.75
 		1:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.scaling_3d_scale = 0.86
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.scaling_3d_scale = 0.90
 		_:
-			vp.msaa_3d = Viewport.MSAA_4X
+			vp.msaa_3d = Viewport.MSAA_2X
 			vp.scaling_3d_scale = 1.0
 
 func apply_frame_limit() -> void:

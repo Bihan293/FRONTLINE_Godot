@@ -402,6 +402,10 @@ func _register_physics_ragdoll() -> void:
 	if oldest != null:
 		oldest._freeze_physics_ragdoll()
 
+var _cam_dist_timer: float = 0.0
+var _cached_cam_dist: float = 0.0
+var _lod_step_accum: float = 0.0
+
 func _process(delta: float) -> void:
 	if _skeleton == null:
 		return
@@ -409,6 +413,22 @@ func _process(delta: float) -> void:
 	if _is_ragdoll:
 		_process_ragdoll(delta)
 		return
+
+	# Дистанционный LOD для скелета (разгрузка CPU мобильных устройств)
+	_cam_dist_timer -= delta
+	if _cam_dist_timer <= 0.0:
+		_cam_dist_timer = 0.35 + randf_range(0.0, 0.1)
+		var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
+		_cached_cam_dist = global_position.distance_to(cam.global_position) if cam != null else 0.0
+
+	# При дистанции больше 40м троттлим расчет скелета до 30 кадров/с, больше 75м - до 15 кадров/с
+	if _cached_cam_dist > 40.0:
+		_lod_step_accum += delta
+		var min_interval := 0.066 if _cached_cam_dist > 75.0 else 0.033
+		if _lod_step_accum < min_interval:
+			return
+		delta = _lod_step_accum
+		_lod_step_accum = 0.0
 
 	var blend := 1.0 - exp(-smoothing * delta)
 	_idle_time += delta

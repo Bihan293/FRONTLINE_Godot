@@ -176,6 +176,8 @@ func _build_world() -> void:
 	sun.light_energy = 1.10
 	sun.shadow_enabled = GameSettings.shadows_enabled()
 	sun.directional_shadow_max_distance = GameSettings.shadow_distance()
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
 	# Построение блоков карты

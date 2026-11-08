@@ -66,20 +66,25 @@ func _physics_process(delta: float) -> void:
 		return
 	_face_velocity()
 
+static var _SHARED_MESH: BoxMesh = null
+static var _SHARED_MAT: StandardMaterial3D = null
+
 func _build_visual() -> void:
+	if _SHARED_MESH == null:
+		_SHARED_MESH = BoxMesh.new()
+		_SHARED_MESH.size = Vector3(0.010, 0.010, 0.36)
+	if _SHARED_MAT == null:
+		_SHARED_MAT = StandardMaterial3D.new()
+		_SHARED_MAT.albedo_color = Color(1.0, 0.78, 0.30)
+		_SHARED_MAT.emission_enabled = true
+		_SHARED_MAT.emission = Color(1.0, 0.55, 0.12)
+		_SHARED_MAT.emission_energy_multiplier = 0.55
+		_SHARED_MAT.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+
 	_visual = MeshInstance3D.new()
 	_visual.name = "VisibleBullet"
-	var mesh := BoxMesh.new()
-	# A compact tracer keeps the traveling round visible without reading as a laser beam.
-	mesh.size = Vector3(0.010, 0.010, 0.36)
-	_visual.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(1.0, 0.78, 0.30)
-	material.emission_enabled = true
-	material.emission = Color(1.0, 0.55, 0.12)
-	material.emission_energy_multiplier = 0.55
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_visual.material_override = material
+	_visual.mesh = _SHARED_MESH
+	_visual.material_override = _SHARED_MAT
 	_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_visual)
 
