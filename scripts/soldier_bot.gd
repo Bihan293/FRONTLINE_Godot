@@ -284,8 +284,16 @@ func _build_visuals() -> void:
 			return
 		# Храним нетронутый шаблон: у первого бота _ready() изменит позы костей.
 		_visual_template_cache[path] = template.duplicate() as Node3D
+	var t_dup := Time.get_ticks_usec()
 	_visual = template.duplicate() as Node3D
+	var t_add := Time.get_ticks_usec()
 	_pivot.add_child(_visual)
+	var t_ready := Time.get_ticks_usec()
+	if profile_build:
+		print("VIS duplicate=%.2f ready=%.2f" % [
+			float(t_add - t_dup) / 1000.0,
+			float(t_ready - t_add) / 1000.0
+		])
 	if _visual.has_method("set_motion"):
 		_proc = _visual as FRONTLINEProceduralSoldier
 	# QA-optimization: мелкие детали модели скрываем на дистанции — меньше draw calls.
@@ -309,9 +317,30 @@ func _create_visual_template(path: String, is_red: bool) -> Node3D:
 	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
 	if skeleton is Skeleton3D:
 		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
+		# После слияния в модели остаётся только скелет с одним skinned-мешем.
+		# Выкидываем пустую GLB-иерархию: duplicate() шаблона перестаёт
+		# копировать десятки служебных узлов и занимает доли миллисекунды.
+		var skeleton_parent := skeleton.get_parent()
+		if skeleton_parent != null and skeleton_parent != visual:
+			var skeleton_xform := skeleton.transform
+			skeleton_parent.remove_child(skeleton)
+			visual.add_child(skeleton)
+			skeleton.transform = skeleton_xform
+			skeleton_parent.free()
+		# Мобильный бюджет: на low/medium солдаты не пишут shadow pass,
+		# а дальний план отсекается по дистанции.
+		for mesh_node in visual.find_children("*", "MeshInstance3D", true, false):
+			var mesh_inst := mesh_node as MeshInstance3D
+			if mesh_inst == null:
+				continue
+			if GameSettings.quality <= 1:
+				mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mesh_inst.visibility_range_end = maxf(120.0, GameSettings.view_distance() * 0.9)
 		# Скрипт ставим до входа в дерево, чтобы его _ready() сразу увидел скелет.
 		visual.set_script(PROCEDURAL)
 	return visual
+
+static var _weapon_template_cache: Dictionary = {}
 
 func _build_weapon() -> void:
 	_gun_pivot = Node3D.new()
@@ -322,34 +351,28 @@ func _build_weapon() -> void:
 	var weapon_ids := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
 	var wid: String = weapon_ids[clampi(bot_weapon_index, 0, weapon_ids.size() - 1)]
 
-	if wid == "ak47":
-		var ak_mesh := WEAPON_MESHES.ak_mesh()
-		if ak_mesh != null:
-			_gun_mesh = MeshInstance3D.new()
-			_gun_mesh.mesh = ak_mesh
-			_gun_mesh.scale = Vector3.ONE * 0.95
-			_gun_mesh.rotation.y = PI
-			_gun_pivot.add_child(_gun_mesh)
-
-			_muzzle_node = Node3D.new()
-			_muzzle_node.position = WEAPON_MESHES.MUZZLE_LOCAL * 0.95
-			_muzzle_node.position.z = -_muzzle_node.position.z
-			_gun_pivot.add_child(_muzzle_node)
-	else:
-		var model: Node3D = WEAPON_MESHES.make_weapon(wid)
-		if model != null:
-			model.scale = Vector3.ONE * 0.95
-			_gun_pivot.add_child(model)
-			_muzzle_node = model.get_node_or_null("Muzzle") as Node3D
-			var meshes := model.find_children("*", "MeshInstance3D", true, false)
-			if not meshes.is_empty():
-				_gun_mesh = meshes[0] as MeshInstance3D
+	var template: Node3D = _weapon_template_cache.get(wid)
+	if template == null:
+		template = WEAPON_MESHES.make_weapon(wid)
+		if template == null:
+			push_error("FRONTLINE: cannot build bot weapon " + wid)
+			return
+		template.scale = Vector3.ONE * 0.95
+		_weapon_template_cache[wid] = template.duplicate() as Node3D
+	var model := template.duplicate() as Node3D
+	_gun_pivot.add_child(model)
+	_muzzle_node = model.get_node_or_null("Muzzle") as Node3D
+	var meshes := model.find_children("*", "MeshInstance3D", true, false)
+	if not meshes.is_empty():
+		_gun_mesh = meshes[0] as MeshInstance3D
 
 	if _muzzle_node == null:
 		_muzzle_node = Node3D.new()
 		_muzzle_node.position = Vector3(0.0, 0.05, -0.6)
 		_gun_pivot.add_child(_muzzle_node)
+	_build_muzzle_flash()
 
+func _build_muzzle_flash() -> void:
 	_muzzle_flash = MeshInstance3D.new()
 	var flash_sphere := SphereMesh.new()
 	flash_sphere.radius = 0.06

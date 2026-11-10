@@ -15,7 +15,7 @@ func _ready() -> void:
 
 	var bot_script: Script = load("res://scripts/soldier_bot.gd")
 	if bot_script != null:
-		bot_script.profile_build = true
+		bot_script.profile_build = "profile" in OS.get_cmdline_user_args()
 		var t0 := Time.get_ticks_usec()
 		var test_bot: Node3D = bot_script.new()
 		add_child(test_bot)
