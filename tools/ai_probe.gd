@@ -7,10 +7,14 @@ extends Node
 const BATTLEFIELD_SCENE := "res://scenes/Battlefield.tscn"
 
 func _ready() -> void:
+	var squad := 7
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("squad="):
+			squad = clampi(int(arg.substr(6)), 4, 14)
 	get_tree().set_meta("selected_map", "BATTLEFIELD")
 	get_tree().set_meta("selected_mode", "CONQUEST")
 	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("match_squad_size", 7)
+	get_tree().set_meta("match_squad_size", squad)
 	get_tree().set_meta("skip_deploy_screen", true)
 
 	var bot_script: Script = load("res://scripts/soldier_bot.gd")
@@ -38,7 +42,11 @@ func _ready() -> void:
 		starts[bot] = bot.global_position
 
 	var elapsed := 0.0
-	while elapsed < 40.0:
+	var duration := 40.0
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("seconds="):
+			duration = clampf(float(arg.substr(8)), 4.0, 120.0)
+	while elapsed < duration:
 		await get_tree().create_timer(2.0).timeout
 		elapsed += 2.0
 		var bots := get_tree().get_nodes_in_group("bots")
