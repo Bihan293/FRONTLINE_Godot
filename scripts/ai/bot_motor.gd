@@ -117,6 +117,10 @@ func invalidate_route() -> void:
 	_route_repath_timer = 0.0
 	_route_has_attempted = false
 
+func invalidate_avoid_cache() -> void:
+	_avoid_timer = 0.0
+	_avoid_in = Vector3.ZERO
+
 func _closest_waypoint_index(here_pos: Vector3, path: PackedVector3Array) -> int:
 	var best := 0
 	var best_dist := INF

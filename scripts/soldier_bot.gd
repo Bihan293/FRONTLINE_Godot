@@ -12,7 +12,6 @@ const PERCEPTION = preload("res://scripts/ai/bot_perception.gd")
 const TUNING = preload("res://scripts/ai/bot_tuning.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
-const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
 const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 
@@ -21,7 +20,6 @@ const SPEED_WALK := 3.4
 const SPEED_SPRINT := 5.6
 const SPEED_CROUCH := 1.9
 const MAX_HEALTH := 100.0
-const MAG_SIZE := 30
 const WORLD_LAYER_MASK := 1 << 0
 const HITBOX_LAYER_MASK := 1 << 1
 const SOLDIER_LAYER_MASK := 1 << 2
@@ -31,12 +29,19 @@ const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 @export var soldier_name: String = "Soldier"
 @export var bot_weapon_index: int = -1
 
+var _combat := FRONTLINEBotCombat.new()
 var health: float = MAX_HEALTH
 var is_dead := false
 var stance := 0  # 0: stand, 1: crouch
-var ammo := MAG_SIZE
-var is_reloading := false
-var reload_timer := 0.0
+var ammo: int:
+	get: return _combat.ammo
+	set(value): _combat.ammo = value
+var is_reloading: bool:
+	get: return _combat.is_reloading
+	set(value): _combat.is_reloading = value
+var reload_timer: float:
+	get: return _combat.reload_timer
+	set(value): _combat.reload_timer = value
 var suppression := 0.0
 var grenades := 1
 var grenade_cooldown := randf_range(8.0, 20.0)
@@ -55,8 +60,12 @@ var current_target: Node3D:
 
 var _perception: FRONTLINEBotPerception
 var _motor := FRONTLINEBotMotor.new()
-var burst_count := 0
-var fire_cooldown := 0.0
+var burst_count: int:
+	get: return _combat.burst_count
+	set(value): _combat.burst_count = value
+var fire_cooldown: float:
+	get: return _combat.fire_cooldown
+	set(value): _combat.fire_cooldown = value
 
 # Тактический боевой ИИ (Dummy War Tactical Firefight)
 var target_acquisition_timer := 0.0
@@ -77,7 +86,6 @@ var _avoid_out := Vector3.ZERO
 var _avoid_front := PhysicsRayQueryParameters3D.new()
 var _avoid_left := PhysicsRayQueryParameters3D.new()
 var _avoid_right := PhysicsRayQueryParameters3D.new()
-var _fire_query := PhysicsRayQueryParameters3D.new()
 var _drone_timer := 0.0
 var _nearest_drone_cached: Node3D = null
 # QA-fix TASK-0022: тактическая «живость» — перебежки, приседания, разброс маршрутов.
@@ -180,8 +188,7 @@ func _ready() -> void:
 	_perception = PERCEPTION.new()
 	_perception.setup(self, randf())
 	_cache_map_data()
-	_init_fire_query()
-	fire_cooldown = randf_range(0.4, 1.2) * difficulty_reaction_mult
+	_combat.setup(bot_weapon_index, bot_role, difficulty_spread_mult, difficulty_reaction_mult)
 
 ## Данные карты не меняются во время матча — считаем один раз.
 func _cache_map_data() -> void:
@@ -200,11 +207,6 @@ func _cache_map_data() -> void:
 	else:
 		_sector_positions = PackedFloat32Array([-52.0, 0.0, 52.0])
 		_enemy_base_z = 56.0
-
-func _init_fire_query() -> void:
-	_fire_query.collision_mask = TUNING.LOS_MASK
-	_fire_query.collide_with_areas = true
-	_fire_query.collide_with_bodies = true
 
 func _build_body_collision() -> void:
 	var body_collision := CollisionShape3D.new()
@@ -290,6 +292,7 @@ func _update_animation(delta: float) -> void:
 
 ## Мягкое расталкивание союзников: боты не сбиваются в кучу в углах и проходах.
 func _update_ai(delta: float) -> void:
+	_combat.tick(delta)
 	# Подавление постепенно рассеивается с учетом сложности
 	if suppression > 0.0:
 		suppression = maxf(0.0, suppression - delta * 0.35 * difficulty_recovery_mult)
@@ -330,11 +333,7 @@ func _update_ai(delta: float) -> void:
 	# Перезарядка: оружие молчит, но боец продолжает видеть, слышать и двигаться.
 	if is_reloading:
 		ai_state = State.RELOAD
-		reload_timer -= delta
 		stance = 1
-		if reload_timer <= 0.0:
-			ammo = MAG_SIZE
-			is_reloading = false
 		_reload_movement(delta)
 		return
 
@@ -611,9 +610,8 @@ func _combat_behavior(delta: float) -> void:
 			_throw_bot_grenade(tpos)
 
 	# Стрельба очередями — только по видимой цели в пределах дальности оружия.
-	fire_cooldown -= delta
-	if fire_cooldown <= 0.0 and can_see and dist <= TUNING.engage_range(bot_weapon_index):
-		_shoot_burst()
+	if can_see and dist <= TUNING.engage_range(bot_weapon_index):
+		_combat.try_fire(self, true)
 
 func _throw_bot_grenade(target_pt: Vector3) -> void:
 	grenades -= 1
@@ -691,160 +689,6 @@ func _advance_behavior(delta: float) -> void:
 
 ## Процедурный обход препятствий (стен, заборов, мешков).
 ## Вызывается ровно один раз за кадр из _resolve_movement.
-func _muzzle_clear() -> bool:
-	if current_target == null or _visuals == null:
-		return true
-	var from := _visuals.muzzle_position()
-	var aim := _perception.fire_point()
-	var distance := from.distance_to(aim)
-	if distance < 0.1:
-		return true
-	_fire_query.from = from
-	_fire_query.to = aim
-	_fire_query.exclude = _get_self_collision_rids()
-	var hit := get_world_3d().direct_space_state.intersect_ray(_fire_query)
-	if hit.is_empty():
-		return true
-	var collider: Object = hit.get("collider")
-	if collider == current_target:
-		return true
-	if collider is Area3D and collider.has_meta("owner_actor"):
-		return collider.get_meta("owner_actor") == current_target
-	return false
-
-## Производит выстрел с учетом типа вооружения бота
-func _shoot_burst() -> void:
-	if ammo <= 0:
-		_start_reload()
-		return
-	if not _muzzle_clear():
-		fire_cooldown = 0.20
-		return
-
-	ammo -= 1
-	_fire_single_shot()
-	burst_count += 1
-
-	match bot_weapon_index:
-		2, 6:
-			burst_count = 0
-			fire_cooldown = randf_range(1.3, 2.1) * difficulty_reaction_mult
-		4:
-			burst_count = 0
-			fire_cooldown = randf_range(0.85, 1.4) * difficulty_reaction_mult
-		7:
-			burst_count = 0
-			fire_cooldown = randf_range(3.2, 4.8) * difficulty_reaction_mult
-		3:
-			if burst_count >= randi_range(1, 3):
-				burst_count = 0
-				fire_cooldown = randf_range(0.6, 1.2) * difficulty_reaction_mult
-			else:
-				fire_cooldown = 0.24
-		5:
-			var max_burst: int = randi_range(9, 15) if bot_role == "GUNNER" else randi_range(6, 10)
-			if burst_count >= max_burst:
-				burst_count = 0
-				fire_cooldown = randf_range(0.65, 1.3) * difficulty_reaction_mult
-			else:
-				fire_cooldown = 0.065
-		1:
-			if burst_count >= randi_range(4, 7):
-				burst_count = 0
-				fire_cooldown = randf_range(0.7, 1.5) * difficulty_reaction_mult
-			else:
-				fire_cooldown = 0.08
-		_:
-			if burst_count >= randi_range(3, 5):
-				burst_count = 0
-				fire_cooldown = randf_range(0.8, 1.8) * difficulty_reaction_mult
-			else:
-				fire_cooldown = 0.10
-
-func _fire_single_shot() -> void:
-	soldier_fired.emit(global_position, team_name)
-	var from := _visuals.muzzle_position()
-
-	const WID_NAMES := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
-	var wid: String = WID_NAMES[clampi(bot_weapon_index, 0, WID_NAMES.size() - 1)]
-
-	if _visuals != null:
-		_visuals.play_shot(from)
-
-	if _visuals != null:
-		_visuals.flash_muzzle()
-		_visuals.set_firing(true)
-
-	var target_pt := _perception.fire_point() if current_target != null else from - global_transform.basis.z * 40.0
-	# Реалистичный разброс человека (вместо лазерного 0.02)
-	var base_spread: float = 0.045 if bot_role == "SNIPER" else 0.068
-	base_spread += minf(float(burst_count) * 0.009, 0.048)
-	base_spread += suppression * 0.062
-	if Vector2(velocity.x, velocity.z).length() > 0.4:
-		base_spread += 0.028
-	if stance == 1:
-		base_spread *= 0.78
-	var spread: float = base_spread * difficulty_spread_mult
-	var shoot_dir := (target_pt - from).normalized()
-	shoot_dir = shoot_dir.rotated(Vector3.UP, randf_range(-spread, spread))
-	shoot_dir = shoot_dir.rotated(global_transform.basis.x, randf_range(-spread, spread))
-
-	if bot_weapon_index == 7:
-		var rocket_scene = preload("res://scripts/rocket_projectile.gd")
-		var rocket = rocket_scene.new()
-		get_parent().add_child(rocket)
-		rocket.launch(from, shoot_dir, soldier_name, team_name)
-		return
-
-	# Выброс гильзы вправо
-	var casing_pos := global_position + Vector3(0, 1.3, 0)
-	var eject_dir := global_transform.basis.x * 2.2 + Vector3.UP * 1.5 - global_transform.basis.z * 0.4
-	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, eject_dir)
-
-	var bullet_range := 150.0
-	var to := from + shoot_dir * bullet_range
-	if _cached_player == null or not is_instance_valid(_cached_player):
-		_cached_player = get_tree().get_first_node_in_group("player") as Node3D
-	var player_node := _cached_player
-	if player_node != null and is_instance_valid(player_node) and "camera" in player_node and player_node.camera != null:
-		FRONTLINEAmbience.check_bullet_flyby(from, to, player_node.camera.global_position)
-
-	var bullet_speeds := [715.0, 380.0, 865.0, 253.0, 400.0, 488.0, 760.0, 48.0]
-	var bullet_speed: float = bullet_speeds[clampi(bot_weapon_index, 0, bullet_speeds.size() - 1)]
-	var damage_to_target := 20
-	var damage_to_player := 16
-	match bot_weapon_index:
-		2, 6:
-			damage_to_target = 46
-			damage_to_player = 40
-			damage_to_player = 48
-		4:
-			damage_to_target = 35
-			damage_to_player = 32
-		5:
-			damage_to_target = 18
-			damage_to_player = 16
-		1:
-			damage_to_target = 20
-			damage_to_player = 20
-	var world := get_parent()
-	if world != null and world.has_method("spawn_bullet_projectile"):
-		world.call("spawn_bullet_projectile", from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
-	elif world != null:
-		var bullet = BULLET_PROJECTILE_SCRIPT.new()
-		world.add_child(bullet)
-		bullet.configure(from, shoot_dir, bullet_speed, damage_to_target, bullet_range, soldier_name, team_name, self, damage_to_player)
-
-func _start_reload() -> void:
-	if is_reloading:
-		return
-	is_reloading = true
-	reload_timer = 2.4
-	stance = 1
-	_shout("ПЕРЕЗАРЯДКА!" if team_name.contains("RED") else "LADE NACH!", Color(0.3, 0.8, 1.0))
-	if _visuals != null:
-		_visuals.play_reload()
-
 func _handle_effects(delta: float) -> void:
 	if _visuals != null:
 		_visuals.update_effects(delta, true)
