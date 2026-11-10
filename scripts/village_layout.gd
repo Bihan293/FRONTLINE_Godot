@@ -1,56 +1,68 @@
 extends RefCounted
 class_name FRONTLINEVillageLayout
 
+const BUILDING_PACK = preload("res://scripts/tactical_buildings.gd")
+const FURNITURE_PACK = preload("res://scripts/tactical_furniture.gd")
+const STREET_PROP_PACK = preload("res://scripts/tactical_street_props.gd")
+
 ## Процедурная карта «ДЕРЕВНЯ» (VILLAGE) 180×150м в стиле Dummy War.
 ## Включает:
 ## - Центральная деревенская площадь с каменным колодцем (Сектор B: ПЛОЩАДЬ)
 ## - Старая церковь с колокольней и кладбищем (Сектор A: ЦЕРКОВЬ)
 ## - Ветряная мельница и амбар с сеновалом (Сектор C: МЕЛЬНИЦА)
-## - 6 деревенских домов с проёмами дверей и окон, печными трубами
-## - Бревенчатые и каменные заборы, стога сена, баррикады из мешков
+## - 6 детализированных жилых домов и 2 наблюдательные вышки
+## - Полевые уличные ассеты, стога сена, ограды и тактические укрытия
 ## - Базы Железного Легиона (юг) и Красного Фронта (север)
 
 const MAP_WIDTH := 180.0
 const MAP_DEPTH := 150.0
+const LANDSCAPE_CELLS_X := 90
+const LANDSCAPE_CELLS_Z := 75
+static var _terrain_noise_cache: Array[FastNoiseLite] = []
+static var _village_asset_cache: Array[Dictionary] = []
+static var _building_box_cache: Dictionary = {}
 
 static func spawns_iron() -> Array[Vector3]:
 	return [
-		Vector3(-24.0, 0.4, 62.0),
-		Vector3(-8.0, 0.4, 65.0),
-		Vector3(0.0, 0.4, 68.0),
-		Vector3(12.0, 0.4, 65.0),
-		Vector3(26.0, 0.4, 62.0),
+		_spawn_point(-24.0, 62.0),
+		_spawn_point(-8.0, 65.0),
+		_spawn_point(0.0, 68.0),
+		_spawn_point(12.0, 65.0),
+		_spawn_point(26.0, 62.0),
 	]
 
 static func spawns_red() -> Array[Vector3]:
 	return [
-		Vector3(-24.0, 0.4, -62.0),
-		Vector3(-8.0, 0.4, -65.0),
-		Vector3(0.0, 0.4, -68.0),
-		Vector3(12.0, 0.4, -65.0),
-		Vector3(26.0, 0.4, -62.0),
+		_spawn_point(-24.0, -62.0),
+		_spawn_point(-8.0, -65.0),
+		_spawn_point(0.0, -68.0),
+		_spawn_point(12.0, -65.0),
+		_spawn_point(26.0, -62.0),
 	]
+
+static func _spawn_point(x: float, z: float) -> Vector3:
+	return Vector3(x, terrain_height_at(x, z) + 0.4, z)
 
 static func sectors() -> Array[Dictionary]:
 	return [
 		{
 			"name": "A",
 			"label": "ЦЕРКОВЬ",
-			"pos": Vector3(-45.0, 0.0, 0.0),
+			"pos": Vector3(-45.0, terrain_height_at(-45.0, 0.0), 0.0),
 			"radius": 14.0,
 			"owner": "NEUTRAL",
 		},
 		{
 			"name": "B",
 			"label": "ПЛОЩАДЬ",
-			"pos": Vector3(0.0, 0.0, 0.0),
+			"pos": Vector3(0.0, terrain_height_at(0.0, 0.0), 0.0),
 			"radius": 14.0,
 			"owner": "NEUTRAL",
 		},
 		{
 			"name": "C",
 			"label": "МЕЛЬНИЦА",
-			"pos": Vector3(45.0, 0.0, 0.0),
+			"pos": Vector3(45.0, terrain_height_at(45.0, 0.0), 0.0),
 			"radius": 14.0,
 			"owner": "NEUTRAL",
 		},
@@ -59,21 +71,122 @@ static func sectors() -> Array[Dictionary]:
 static func barrels() -> Array[Vector3]:
 	return [
 		# Склад у мельницы
-		Vector3(42.0, 0.0, -8.0),
-		Vector3(43.5, 0.0, -8.0),
+		_barrel_point(42.0, -8.0),
+		_barrel_point(43.5, -8.0),
 		# Двор церкви
-		Vector3(-48.0, 0.0, 6.0),
+		_barrel_point(-48.0, 6.0),
 		# Центральная площадь у повозок
-		Vector3(6.0, 0.0, -4.0),
+		_barrel_point(6.0, -4.0),
 		# Перекрёсток южного въезда
-		Vector3(-14.0, 0.0, 32.0),
+		_barrel_point(-14.0, 32.0),
 		# Перекрёсток северного въезда
-		Vector3(16.0, 0.0, -32.0),
+		_barrel_point(16.0, -32.0),
 		# База Легиона
-		Vector3(18.0, 0.0, 58.0),
+		_barrel_point(18.0, 58.0),
 		# База Красного Фронта
-		Vector3(-18.0, 0.0, -58.0),
+		_barrel_point(-18.0, -58.0),
 	]
+
+static func _barrel_point(x: float, z: float) -> Vector3:
+	return Vector3(x, terrain_height_at(x, z), z)
+
+static func terrain_height_at(x: float, z: float) -> float:
+	var noises := _make_terrain_noises()
+	var broad := noises[0].get_noise_2d(x, z) * 2.7
+	var detail := noises[1].get_noise_2d(x, z) * 0.38
+	var ridge := sin(x * 0.026 + z * 0.014) * cos(z * 0.031 - x * 0.009) * 0.62
+	var height := broad + detail + ridge
+
+	# Дороги, поселение и обе базы остаются ровными под существующей геометрией.
+	var flat_weight := 0.0
+	if absf(z) <= 76.0:
+		flat_weight = maxf(flat_weight, 1.0 - _smoothstep(5.0, 15.0, absf(x)))
+	if absf(x) <= 72.0:
+		flat_weight = maxf(flat_weight, 1.0 - _smoothstep(4.0, 14.0, absf(z)))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(0.0, 0.0), Vector2(17.0, 17.0), 6.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(-45.0, 0.0), Vector2(29.0, 18.0), 6.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(45.0, 0.0), Vector2(20.0, 21.0), 7.0))
+	for house in [Vector2(-20.0, -24.0), Vector2(20.0, -24.0), Vector2(-20.0, 24.0), Vector2(20.0, 24.0)]:
+		flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, house, Vector2(10.0, 9.0), 4.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(-68.0, 22.0), Vector2(9.0, 8.0), 4.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(70.0, -26.0), Vector2(9.0, 8.0), 4.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(-34.0, 60.0), Vector2(7.0, 7.0), 3.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(34.0, -60.0), Vector2(7.0, 7.0), 3.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(0.0, 60.0), Vector2(38.0, 16.0), 5.0))
+	flat_weight = maxf(flat_weight, _flat_zone_weight(x, z, Vector2(0.0, -60.0), Vector2(38.0, 16.0), 5.0))
+
+	# У самой границы оставляем ровную кромку под лесные завалы и коллизию карты.
+	var edge_distance := minf(MAP_WIDTH * 0.5 - absf(x), MAP_DEPTH * 0.5 - absf(z))
+	var edge_weight := 1.0 - _smoothstep(4.0, 14.0, edge_distance)
+	flat_weight = maxf(flat_weight, edge_weight)
+	return lerpf(height, 0.0, clampf(flat_weight, 0.0, 1.0))
+
+static func _make_terrain_noises() -> Array[FastNoiseLite]:
+	if not _terrain_noise_cache.is_empty():
+		return _terrain_noise_cache
+	var broad := FastNoiseLite.new()
+	broad.seed = 18411
+	broad.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	broad.frequency = 0.012
+	broad.fractal_octaves = 4
+	broad.fractal_lacunarity = 2.0
+	broad.fractal_gain = 0.48
+	var detail := FastNoiseLite.new()
+	detail.seed = 902
+	detail.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	detail.frequency = 0.045
+	detail.fractal_octaves = 2
+	_terrain_noise_cache = [broad, detail]
+	return _terrain_noise_cache
+
+static func _flat_zone_weight(x: float, z: float, center: Vector2, half_size: Vector2, fade: float) -> float:
+	var dx := maxf(absf(x - center.x) - half_size.x, 0.0)
+	var dz := maxf(absf(z - center.y) - half_size.y, 0.0)
+	return 1.0 - _smoothstep(0.0, fade, Vector2(dx, dz).length())
+
+static func _smoothstep(edge0: float, edge1: float, value: float) -> float:
+	var t := clampf((value - edge0) / (edge1 - edge0), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+static func create_landscape_mesh(cells_x: int = LANDSCAPE_CELLS_X, cells_z: int = LANDSCAPE_CELLS_Z) -> ArrayMesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var stride := cells_x + 1
+	for z_index in range(cells_z + 1):
+		var z := -MAP_DEPTH * 0.5 + MAP_DEPTH * float(z_index) / float(cells_z)
+		for x_index in range(cells_x + 1):
+			var x := -MAP_WIDTH * 0.5 + MAP_WIDTH * float(x_index) / float(cells_x)
+			tool.set_color(_landscape_vertex_color(x, z))
+			tool.set_uv(Vector2((x + MAP_WIDTH * 0.5) * 0.12, (z + MAP_DEPTH * 0.5) * 0.12))
+			tool.add_vertex(Vector3(x, terrain_height_at(x, z), z))
+	for z_index in range(cells_z):
+		for x_index in range(cells_x):
+			var a := z_index * stride + x_index
+			var b := a + 1
+			var c := a + stride
+			var d := c + 1
+			tool.add_index(a)
+			tool.add_index(c)
+			tool.add_index(d)
+			tool.add_index(a)
+			tool.add_index(d)
+			tool.add_index(b)
+	tool.generate_normals()
+	return tool.commit()
+
+static func _landscape_vertex_color(x: float, z: float) -> Color:
+	var noise := _make_terrain_noises()[1].get_noise_2d(x * 2.0, z * 2.0) * 0.035
+	var grass := Color(0.37, 0.40, 0.27).lightened(noise)
+	var road_distance := INF
+	if absf(z) <= 76.0:
+		road_distance = minf(road_distance, absf(x))
+	if absf(x) <= 72.0:
+		road_distance = minf(road_distance, absf(z))
+	if road_distance < 3.6:
+		return Color(0.30, 0.27, 0.21)
+	if road_distance < 6.5:
+		return grass.lerp(Color(0.30, 0.27, 0.21), 1.0 - (road_distance - 3.6) / 2.9)
+	return grass
 
 static func boxes() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -108,15 +221,7 @@ static func boxes() -> Array[Dictionary]:
 	_push(out, Vector3(1.2, 1.6, 0), Vector3(0.3, 1.4, 0.3), Color(0.32, 0.22, 0.14), true, "well_post")
 	_push(out, Vector3(0, 2.4, 0), Vector3(3.4, 0.3, 3.4), Color(0.35, 0.18, 0.12), true, "well_roof")
 
-	# Торговые ряды и деревянные телеги
-	_push(out, Vector3(-8.0, 0.6, -7.0), Vector3(4.5, 1.2, 2.2), Color(0.42, 0.28, 0.16), true, "market_stall")
-	_push(out, Vector3(8.0, 0.6, 7.0), Vector3(4.5, 1.2, 2.2), Color(0.42, 0.28, 0.16), true, "market_stall")
-	_push(out, Vector3(-9.0, 0.5, 8.0), Vector3(3.2, 1.0, 1.8), Color(0.36, 0.24, 0.14), true, "cart")
-	_push(out, Vector3(9.0, 0.5, -8.0), Vector3(3.2, 1.0, 1.8), Color(0.36, 0.24, 0.14), true, "cart")
-
-	# Укрытия из мешков с песком вокруг площади
-	_push(out, Vector3(-5.0, 0.5, -12.0), Vector3(6.0, 1.0, 1.0), Color(0.50, 0.45, 0.32), true, "sandbag")
-	_push(out, Vector3(5.0, 0.5, 12.0), Vector3(6.0, 1.0, 1.0), Color(0.50, 0.45, 0.32), true, "sandbag")
+	# Старые коробочные прилавки, телеги и разрозненные мешки на площади удалены.
 
 	# -------------------------------------------------------------------------
 	# 3. СЕКТОР A: ЦЕРКОВЬ С КОЛОКОЛЬНЕЙ И КЛАДБИЩЕМ (X = -45, Z = 0)
@@ -185,41 +290,12 @@ static func boxes() -> Array[Dictionary]:
 	_push(out, farm_pos + Vector3(16.0, 0.55, 0), Vector3(0.24, 1.10, 34.0), Color(0.38, 0.28, 0.18), true, "wood_fence")
 
 	# -------------------------------------------------------------------------
-	# 5. ДЕТАЛЬНЫЕ ЖИЛЫЕ ДОМА ДЕРЕВНИ С ОКНАМИ ДЛЯ ПАРКУРА, КРЫЛЬЦОМ И УКРЫТИЯМИ
-	# -------------------------------------------------------------------------
-	var houses := [
-		# Северо-западный дом (X = -20, Z = -22, вход на юг к дороге)
-		{"pos": Vector3(-20.0, 0.0, -22.0), "size": Vector3(10.0, 3.8, 8.0), "front_z": 1.0},
-		# Северо-восточный дом (X = 20, Z = -22, вход на юг к дороге)
-		{"pos": Vector3(20.0, 0.0, -22.0), "size": Vector3(10.0, 3.8, 8.0), "front_z": 1.0},
-		# Юго-западный дом (X = -20, Z = 22, вход на север к дороге)
-		{"pos": Vector3(-20.0, 0.0, 22.0), "size": Vector3(10.0, 3.8, 8.0), "front_z": -1.0},
-		# Юго-восточный дом (X = 20, Z = 22, вход на север к дороге)
-		{"pos": Vector3(20.0, 0.0, 22.0), "size": Vector3(10.0, 3.8, 8.0), "front_z": -1.0},
-		# Западный дом у церкви (X = -65, Z = 18, вход на север)
-		{"pos": Vector3(-65.0, 0.0, 18.0), "size": Vector3(9.2, 3.6, 7.6), "front_z": -1.0},
-		# Восточный дом у фермы (X = 65, Z = -18, вход на юг)
-		{"pos": Vector3(65.0, 0.0, -18.0), "size": Vector3(9.2, 3.6, 7.6), "front_z": 1.0},
-	]
-
-	for h in houses:
-		_build_cottage(out, h.pos, h.size, float(h.front_z))
-
-	# -------------------------------------------------------------------------
 	# 6. ЮЖНЫЙ ВОЕННЫЙ ЛАГЕРЬ: IRON LEGION (Z = 50..70)
 	# -------------------------------------------------------------------------
 	var iron_base := Vector3(0.0, 0.0, 60.0)
 	# Командная армейская палатка (брезент цвета фельдграу)
 	_push(out, iron_base + Vector3(0, 1.8, 0), Vector3(12.0, 3.6, 8.0), Color(0.28, 0.32, 0.30), true, "hq_tent")
 	_push(out, iron_base + Vector3(0, 3.8, 0), Vector3(12.4, 0.6, 8.4), Color(0.24, 0.28, 0.26), true, "hq_roof")
-
-	# Сторожевая деревянная вышка
-	_push(out, iron_base + Vector3(-20.0, 3.0, 0), Vector3(3.6, 6.0, 3.6), Color(0.32, 0.24, 0.16), true, "watchtower")
-	_push(out, iron_base + Vector3(-20.0, 6.4, 0), Vector3(4.2, 1.0, 4.2), Color(0.24, 0.18, 0.12), true, "tower_platform")
-
-	# Баррикады и мешки с песком южного рубежа
-	for x in [-32.0, -14.0, 14.0, 32.0]:
-		_push(out, iron_base + Vector3(x, 0.5, -8.0), Vector3(8.0, 1.0, 1.2), Color(0.48, 0.43, 0.31), true, "sandbag")
 
 	# -------------------------------------------------------------------------
 	# 7. СЕВЕРНЫЙ ВОЕННЫЙ ЛАГЕРЬ: RED FRONT (Z = -50..-70)
@@ -228,14 +304,6 @@ static func boxes() -> Array[Dictionary]:
 	# Полевой штабной блиндаж (брёвна и накаты земли)
 	_push(out, red_base + Vector3(0, 1.6, 0), Vector3(12.0, 3.2, 8.0), Color(0.34, 0.24, 0.17), true, "hq_bunker")
 	_push(out, red_base + Vector3(0, 3.5, 0), Vector3(12.6, 0.8, 8.6), Color(0.26, 0.20, 0.14), true, "bunker_earth")
-
-	# Наблюдательный пункт
-	_push(out, red_base + Vector3(20.0, 3.0, 0), Vector3(3.6, 6.0, 3.6), Color(0.32, 0.24, 0.16), true, "watchtower")
-	_push(out, red_base + Vector3(20.0, 6.4, 0), Vector3(4.2, 1.0, 4.2), Color(0.24, 0.18, 0.12), true, "tower_platform")
-
-	# Баррикады и мешки северного рубежа
-	for x in [-32.0, -14.0, 14.0, 32.0]:
-		_push(out, red_base + Vector3(x, 0.5, 8.0), Vector3(8.0, 1.0, 1.2), Color(0.48, 0.43, 0.31), true, "sandbag")
 
 	# -------------------------------------------------------------------------
 	# 8. ВНЕШНЯЯ ГРАНИЦА КАРТЫ (непроходимые лесные завалы и скалы)
@@ -249,123 +317,194 @@ static func boxes() -> Array[Dictionary]:
 	# Южная стена (Z = 75)
 	_push(out, Vector3(0, 4.0, 75), Vector3(184, 8, 4), Color(0.22, 0.26, 0.18), true, "forest_wall")
 
+	# Новые детализированные дома, меблировка и полевые ассеты.
+	out.append_array(_village_asset_boxes())
+
 	return out
 
-static func _build_cottage(out: Array[Dictionary], hp: Vector3, hs: Vector3, front_z_dir: float) -> void:
-	var wall_col := Color(0.35, 0.25, 0.16)
-	var trim_col := Color(0.25, 0.17, 0.11)
-	var roof_col := Color(0.24, 0.16, 0.12)
-	var brick_col := Color(0.48, 0.22, 0.18)
-	var floor_col := Color(0.30, 0.22, 0.14)
-	var cover_col := Color(0.32, 0.20, 0.12)
-	var sandbag_col := Color(0.50, 0.45, 0.32)
-	var fence_col := Color(0.40, 0.30, 0.20)
+static func _village_building_sites() -> Array[Dictionary]:
+	return [
+		{"position": Vector3(-20.0, 0.0, -24.0), "type": "house_2story", "rotation": 0.0},
+		{"position": Vector3(20.0, 0.0, -24.0), "type": "house_1story", "rotation": 0.0},
+		{"position": Vector3(-20.0, 0.0, 24.0), "type": "house_ruin_destroyed", "rotation": 180.0},
+		{"position": Vector3(20.0, 0.0, 24.0), "type": "house_l_shaped_villa", "rotation": 180.0},
+		{"position": Vector3(-68.0, 0.0, 22.0), "type": "house_2story", "rotation": 180.0},
+		{"position": Vector3(70.0, 0.0, -26.0), "type": "house_1story", "rotation": 0.0},
+		{"position": Vector3(-34.0, 0.0, 60.0), "type": "house_checkpoint_tower", "rotation": 0.0},
+		{"position": Vector3(34.0, 0.0, -60.0), "type": "house_checkpoint_tower", "rotation": 180.0}
+	]
 
-	var fz: float = hp.z + front_z_dir * (hs.z * 0.5 - 0.18)
-	var bz: float = hp.z - front_z_dir * (hs.z * 0.5 - 0.18)
-	var wx: float = hp.x - hs.x * 0.5 + 0.18
-	var ex: float = hp.x + hs.x * 0.5 - 0.18
+static func _village_prop_sites() -> Array[Dictionary]:
+	var placements: Array[Dictionary] = [
+		{"type": "wooden_utility_pole", "x": -9.0, "z": -42.0, "rotation": 0.0},
+		{"type": "wooden_utility_pole", "x": 9.0, "z": -42.0, "rotation": 0.0},
+		{"type": "wooden_utility_pole", "x": -9.0, "z": 42.0, "rotation": 0.0},
+		{"type": "wooden_utility_pole", "x": 9.0, "z": 42.0, "rotation": 0.0},
+		{"type": "road_sign_direction", "x": 8.5, "z": -18.0, "rotation": 0.0},
+		{"type": "road_sign_yield", "x": -8.5, "z": 18.0, "rotation": 180.0},
+		{"type": "bus_stop_shelter", "x": 10.0, "z": -51.0, "rotation": 90.0},
+		{"type": "burnt_car_sedan", "x": -25.0, "z": 0.0, "rotation": 0.0},
+		{"type": "military_truck_wreck", "x": 30.0, "z": 0.0, "rotation": 0.0},
+		{"type": "ammo_crate_stack", "x": -62.0, "z": -19.0, "rotation": 90.0},
+		{"type": "sandbag_wall_straight", "x": -20.0, "z": 15.0, "rotation": 0.0},
+		{"type": "sandbag_wall_straight", "x": 20.0, "z": -15.0, "rotation": 0.0},
+		{"type": "sandbag_firing_nest", "x": -36.0, "z": 48.0, "rotation": 0.0},
+		{"type": "sandbag_firing_nest", "x": 36.0, "z": -48.0, "rotation": 180.0},
+		{"type": "concrete_pipe_segment", "x": 39.0, "z": 31.0, "rotation": 90.0}
+	]
+	for placement in placements:
+		var x: float = placement.x
+		var z: float = placement.z
+		placement["position"] = Vector3(x, terrain_height_at(x, z), z)
+	return placements
 
-	# 1. ФАСАД С ДВЕРЬЮ И ОКНОМ ДЛЯ ПАРКУРА
-	# Левый глухой простенок
-	_push(out, Vector3(hp.x - 2.8, hs.y * 0.5, fz), Vector3(3.4, hs.y, 0.35), wall_col, true, "house_wall")
-	# Дверной проём (ширина 1.4 м, высота 2.2 м) + перемычка над дверью
-	_push(out, Vector3(hp.x - 0.4, 2.2 + (hs.y - 2.2) * 0.5, fz), Vector3(1.4, hs.y - 2.2, 0.35), wall_col, true, "door_lintel")
-	# Межоконный простенок
-	_push(out, Vector3(hp.x + 0.9, hs.y * 0.5, fz), Vector3(1.2, hs.y, 0.35), wall_col, true, "house_wall")
-	# Фасадное окно для паркура: подоконник 0.88 м, открытый проём 1.22 м, перемычка
-	_push(out, Vector3(hp.x + 2.2, 0.44, fz), Vector3(1.4, 0.88, 0.35), wall_col, true, "window_sill")
-	_push(out, Vector3(hp.x + 2.2, 0.88, fz), Vector3(1.6, 0.08, 0.45), trim_col, true, "window_sill_board")
-	_push(out, Vector3(hp.x + 2.2, 2.10 + (hs.y - 2.10) * 0.5, fz), Vector3(1.4, hs.y - 2.10, 0.35), wall_col, true, "window_lintel")
-	_push(out, Vector3(hp.x + 2.2, 1.49, fz + front_z_dir * 0.19), Vector3(1.5, 1.25, 0.04), trim_col, false, "window_frame")
-	_push(out, Vector3(hp.x + 3.1, 1.49, fz + front_z_dir * 0.19), Vector3(0.45, 1.15, 0.04), trim_col, false, "shutter")
-	# Правый угол фасада
-	_push(out, Vector3(hp.x + 4.0, hs.y * 0.5, fz), Vector3(2.2, hs.y, 0.35), wall_col, true, "house_wall")
+static func _village_asset_boxes() -> Array[Dictionary]:
+	if not _village_asset_cache.is_empty():
+		return _village_asset_cache
+	var all_boxes: Array[Dictionary] = []
+	for site in _village_building_sites():
+		for box in _site_geometry_boxes(site):
+			var tagged := box.duplicate()
+			tagged["kind"] = "village_asset"
+			all_boxes.append(tagged)
+	for placement in _village_prop_sites():
+		var boxes := STREET_PROP_PACK.get_prop_boxes(str(placement.type), placement.position, float(placement.rotation))
+		for box in boxes:
+			var tagged := box.duplicate()
+			tagged["kind"] = "village_asset"
+			all_boxes.append(tagged)
+	_village_asset_cache = all_boxes
+	return _village_asset_cache
 
-	# 2. ЗАДНЯЯ СТЕНА С ТЫЛЬНЫМ ОКНОМ ДЛЯ ПАРКУРА
-	_push(out, Vector3(hp.x - 2.5, hs.y * 0.5, bz), Vector3(4.0, hs.y, 0.35), wall_col, true, "house_wall")
-	_push(out, Vector3(hp.x + 0.2, 0.44, bz), Vector3(1.4, 0.88, 0.35), wall_col, true, "window_sill")
-	_push(out, Vector3(hp.x + 0.2, 0.88, bz), Vector3(1.6, 0.08, 0.45), trim_col, true, "window_sill_board")
-	_push(out, Vector3(hp.x + 0.2, 2.10 + (hs.y - 2.10) * 0.5, bz), Vector3(1.4, hs.y - 2.10, 0.35), wall_col, true, "window_lintel")
-	_push(out, Vector3(hp.x + 0.2, 1.49, bz - front_z_dir * 0.19), Vector3(1.5, 1.25, 0.04), trim_col, false, "window_frame")
-	_push(out, Vector3(hp.x + 3.1, hs.y * 0.5, bz), Vector3(4.4, hs.y, 0.35), wall_col, true, "house_wall")
+static func _site_geometry_boxes(site: Dictionary) -> Array[Dictionary]:
+	var position: Vector3 = site.position
+	var type_name: String = site.type
+	var rotation: float = site.rotation
+	var cache_key := "%s:%s:%s" % [str(position), type_name, str(rotation)]
+	if _building_box_cache.has(cache_key):
+		return _building_box_cache[cache_key]
+	var origin := Vector3(position.x, terrain_height_at(position.x, position.z), position.z)
+	var boxes := BUILDING_PACK.get_building_boxes(type_name, origin, rotation)
+	for item in _furniture_placements(type_name):
+		var local: Vector3 = item.position
+		var item_origin := _rotate_local_offset(origin, local, rotation)
+		boxes.append_array(FURNITURE_PACK.get_furniture_boxes(str(item.type), item_origin, rotation))
+	_building_box_cache[cache_key] = boxes
+	return boxes
 
-	# 3. БОКОВЫЕ СТЕНЫ (ЗАПАД И ВОСТОК) С БОКОВЫМИ ОКНАМИ
-	# Западная стена с окном на улицу
-	_push(out, Vector3(wx, hs.y * 0.5, hp.z - 2.2), Vector3(0.35, hs.y, 2.8), wall_col, true, "house_wall")
-	_push(out, Vector3(wx, 0.44, hp.z), Vector3(0.35, 0.88, 1.4), wall_col, true, "window_sill")
-	_push(out, Vector3(wx, 0.88, hp.z), Vector3(0.45, 0.08, 1.6), trim_col, true, "window_sill_board")
-	_push(out, Vector3(wx, 2.10 + (hs.y - 2.10) * 0.5, hp.z), Vector3(0.35, hs.y - 2.10, 1.4), wall_col, true, "window_lintel")
-	_push(out, Vector3(wx - 0.19, 1.49, hp.z), Vector3(0.04, 1.25, 1.5), trim_col, false, "window_frame")
-	_push(out, Vector3(wx, hs.y * 0.5, hp.z + 2.2), Vector3(0.35, hs.y, 2.8), wall_col, true, "house_wall")
+static func _furniture_placements(building_type: String) -> Array[Dictionary]:
+	match building_type:
+		"house_1story":
+			return [
+				{"type": "dining_table", "position": Vector3(-3.45, 0.24, 0.0)},
+				{"type": "dining_chair", "position": Vector3(-3.45, 0.24, -1.25)},
+				{"type": "dining_chair", "position": Vector3(-3.45, 0.24, 1.25)},
+				{"type": "wood_stove", "position": Vector3(3.60, 0.24, -1.50)},
+				{"type": "single_bed", "position": Vector3(3.50, 0.24, 1.70)}
+			]
+		"house_2story":
+			return [
+				{"type": "sofa", "position": Vector3(-3.10, 0.24, 2.65)},
+				{"type": "dining_table", "position": Vector3(3.10, 0.24, 2.65)},
+				{"type": "kitchen_cabinet", "position": Vector3(-3.35, 0.24, -3.10)},
+				{"type": "single_bed", "position": Vector3(3.10, 0.24, -2.80)},
+				{"type": "wardrobe", "position": Vector3(4.75, 0.24, -3.75)}
+			]
+		_:
+			return []
 
-	# Восточная стена с окном во двор
-	_push(out, Vector3(ex, hs.y * 0.5, hp.z - 2.2), Vector3(0.35, hs.y, 2.8), wall_col, true, "house_wall")
-	_push(out, Vector3(ex, 0.44, hp.z), Vector3(0.35, 0.88, 1.4), wall_col, true, "window_sill")
-	_push(out, Vector3(ex, 0.88, hp.z), Vector3(0.45, 0.08, 1.6), trim_col, true, "window_sill_board")
-	_push(out, Vector3(ex, 2.10 + (hs.y - 2.10) * 0.5, hp.z), Vector3(0.35, hs.y - 2.10, 1.4), wall_col, true, "window_lintel")
-	_push(out, Vector3(ex + 0.19, 1.49, hp.z), Vector3(0.04, 1.25, 1.5), trim_col, false, "window_frame")
-	_push(out, Vector3(ex, hs.y * 0.5, hp.z + 2.2), Vector3(0.35, hs.y, 2.8), wall_col, true, "house_wall")
+static func _rotate_local_offset(origin: Vector3, local: Vector3, rotation_deg: float) -> Vector3:
+	var angle := deg_to_rad(rotation_deg)
+	return Vector3(
+		origin.x + local.x * cos(angle) - local.z * sin(angle),
+		origin.y + local.y,
+		origin.z + local.x * sin(angle) + local.z * cos(angle)
+	)
 
-	# 4. ПАРАДНОЕ КРЫЛЬЦО СО СТУПЕНЬКАМИ И НАВЕСОМ
-	# Ступени крыльца (высота 0.18 м и 0.36 м)
-	_push(out, Vector3(hp.x - 0.4, 0.09, fz + front_z_dir * 1.05), Vector3(1.8, 0.18, 0.45), trim_col, true, "porch_step")
-	_push(out, Vector3(hp.x - 0.4, 0.18, fz + front_z_dir * 0.65), Vector3(1.8, 0.36, 0.45), trim_col, true, "porch_step")
-	_push(out, Vector3(hp.x - 0.4, 0.21, fz + front_z_dir * 0.25), Vector3(2.2, 0.42, 0.50), trim_col, true, "porch_deck")
-	# Деревянные столбы крыльца
-	_push(out, Vector3(hp.x - 1.3, 1.35, fz + front_z_dir * 0.95), Vector3(0.18, 2.7, 0.18), trim_col, true, "porch_post")
-	_push(out, Vector3(hp.x + 0.5, 1.35, fz + front_z_dir * 0.95), Vector3(0.18, 2.7, 0.18), trim_col, true, "porch_post")
-	# Навес крыльца со скатом
-	_push(out, Vector3(hp.x - 0.4, 2.75, fz + front_z_dir * 0.60), Vector3(2.4, 0.30, 1.4), roof_col, true, "porch_roof")
+static func add_tactical_assets(parent: Node3D, with_collision: bool = true) -> void:
+	for site in _village_building_sites():
+		var type_name: String = site.type
+		var node_name := "Village_" + type_name.capitalize().replace("_", "")
+		_add_asset_batch(parent, node_name, _site_geometry_boxes(site), with_collision, true)
+	var props: Array[Dictionary] = []
+	for placement in _village_prop_sites():
+		props.append_array(STREET_PROP_PACK.get_prop_boxes(str(placement.type), placement.position, float(placement.rotation)))
+	_add_asset_batch(parent, "VillageStreetAssets", props, with_collision, false)
 
-	# 5. КРЫША С ВЫНОСОМ И КАРНИЗАМИ
-	_push(out, Vector3(hp.x, hs.y + 0.45, hp.z), Vector3(hs.x + 1.3, 0.9, hs.z + 1.3), roof_col, true, "house_roof")
-	_push(out, Vector3(hp.x, hs.y + 1.05, hp.z), Vector3(hs.x + 0.8, 0.4, 0.3), trim_col, false, "attic_pediment")
+static func _add_asset_batch(parent: Node3D, node_name: String, boxes: Array[Dictionary], with_collision: bool, cast_shadows: bool) -> void:
+	if boxes.is_empty():
+		return
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var collision_faces := PackedVector3Array()
+	for box in boxes:
+		_append_asset_box(surface, collision_faces, box.pos, box.size, box.color, with_collision and bool(box.get("solid", true)))
+	var mesh := surface.commit()
+	if mesh != null:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color.WHITE
+		material.vertex_color_use_as_albedo = true
+		material.vertex_color_is_srgb = true
+		material.roughness = 0.94
+		var instance := MeshInstance3D.new()
+		instance.name = node_name
+		instance.mesh = mesh
+		instance.material_override = material
+		if not cast_shadows:
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(instance)
+	if with_collision and not collision_faces.is_empty():
+		var body := StaticBody3D.new()
+		body.name = node_name + "Collision"
+		var collision := CollisionShape3D.new()
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_backface_collision_enabled(true)
+		shape.set_faces(collision_faces)
+		collision.shape = shape
+		body.add_child(collision)
+		parent.add_child(body)
 
-	# 6. КИРПИЧНАЯ РУССКАЯ ПЕЧЬ И ТРУБА
-	_push(out, Vector3(hp.x - hs.x * 0.25, 0.7, hp.z - front_z_dir * hs.z * 0.15), Vector3(1.6, 1.4, 1.6), brick_col, true, "stove_base")
-	_push(out, Vector3(hp.x - hs.x * 0.25, hs.y * 0.5 + 1.0, hp.z - front_z_dir * hs.z * 0.15), Vector3(0.85, hs.y + 1.8, 0.85), brick_col, true, "chimney")
-	_push(out, Vector3(hp.x - hs.x * 0.25, hs.y + 1.9, hp.z - front_z_dir * hs.z * 0.15), Vector3(1.05, 0.20, 1.05), brick_col, true, "chimney_cap")
+static func _append_asset_box(surface: SurfaceTool, collision_faces: PackedVector3Array, center: Vector3, size: Vector3, color: Color, collidable: bool) -> void:
+	var half := size * 0.5
+	var x0 := center.x - half.x
+	var x1 := center.x + half.x
+	var y0 := center.y - half.y
+	var y1 := center.y + half.y
+	var z0 := center.z - half.z
+	var z1 := center.z + half.z
+	_add_asset_quad(surface, collision_faces, Vector3(x0, y0, z0), Vector3(x0, y0, z1), Vector3(x0, y1, z1), Vector3(x0, y1, z0), Vector3.LEFT, color, collidable)
+	_add_asset_quad(surface, collision_faces, Vector3(x1, y0, z1), Vector3(x1, y0, z0), Vector3(x1, y1, z0), Vector3(x1, y1, z1), Vector3.RIGHT, color, collidable)
+	_add_asset_quad(surface, collision_faces, Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y0, z1), Vector3(x0, y0, z1), Vector3.DOWN, color, collidable)
+	_add_asset_quad(surface, collision_faces, Vector3(x0, y1, z1), Vector3(x1, y1, z1), Vector3(x1, y1, z0), Vector3(x0, y1, z0), Vector3.UP, color, collidable)
+	_add_asset_quad(surface, collision_faces, Vector3(x0, y0, z1), Vector3(x1, y0, z1), Vector3(x1, y1, z1), Vector3(x0, y1, z1), Vector3.BACK, color, collidable)
+	_add_asset_quad(surface, collision_faces, Vector3(x1, y0, z0), Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3.FORWARD, color, collidable)
 
-	# 7. ВНУТРЕННИЙ ИНТЕРЬЕР И УКРЫТИЯ
-	# Дощатый пол
-	_push(out, Vector3(hp.x, 0.02, hp.z), Vector3(hs.x - 0.8, 0.04, hs.z - 0.8), floor_col, false, "house_floor")
-	# Массивный деревянный стол (высота 0.85 м - укрытие и перепрыгивание)
-	_push(out, Vector3(hp.x + hs.x * 0.20, 0.425, hp.z + front_z_dir * hs.z * 0.05), Vector3(2.0, 0.85, 1.0), cover_col, true, "table")
-	# Сундук со снаряжением в углу
-	_push(out, Vector3(hp.x + hs.x * 0.35, 0.425, hp.z - front_z_dir * hs.z * 0.30), Vector3(1.1, 0.85, 0.8), cover_col, true, "chest")
-	# Мешки с песком под фасадным окном (огневая позиция внутри комнаты)
-	_push(out, Vector3(hp.x + 2.2, 0.34, fz - front_z_dir * 0.45), Vector3(1.4, 0.68, 0.5), sandbag_col, true, "sandbag")
-
-	# 8. ДЕРЕВЯННЫЙ ЗАБОР ПАЛИСАДНИКА (ШТАКЕТНИК ВЫСОТОЙ 1.08 М - ПАРКУРНЫЙ!)
-	var fence_z: float = fz + front_z_dir * 3.6
-	var yard_w: float = hs.x + 4.0
-	# Передний заборчик с проходом калитки (проход 2.2 м по центру)
-	_push(out, Vector3(hp.x - yard_w * 0.28, 0.54, fence_z), Vector3(yard_w * 0.44, 1.08, 0.20), fence_col, true, "picket_fence")
-	_push(out, Vector3(hp.x + yard_w * 0.28, 0.54, fence_z), Vector3(yard_w * 0.44, 1.08, 0.20), fence_col, true, "picket_fence")
-	# Столбики калитки
-	_push(out, Vector3(hp.x - 1.15, 0.61, fence_z), Vector3(0.24, 1.22, 0.24), trim_col, true, "fence_post")
-	_push(out, Vector3(hp.x + 1.15, 0.61, fence_z), Vector3(0.24, 1.22, 0.24), trim_col, true, "fence_post")
-	# Боковые заборы усадьбы (соединяются с домом)
-	var side_len: float = 3.6
-	_push(out, Vector3(hp.x - yard_w * 0.5, 0.54, fz + front_z_dir * (side_len * 0.5)), Vector3(0.20, 1.08, side_len), fence_col, true, "picket_fence")
-	_push(out, Vector3(hp.x + yard_w * 0.5, 0.54, fz + front_z_dir * (side_len * 0.5)), Vector3(0.20, 1.08, side_len), fence_col, true, "picket_fence")
+static func _add_asset_quad(surface: SurfaceTool, collision_faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3, normal: Vector3, color: Color, collidable: bool) -> void:
+	surface.set_normal(normal)
+	surface.set_color(color)
+	surface.set_uv(Vector2(0.0, 0.0))
+	surface.add_vertex(a)
+	surface.set_uv(Vector2(1.0, 0.0))
+	surface.add_vertex(b)
+	surface.set_uv(Vector2(1.0, 1.0))
+	surface.add_vertex(c)
+	surface.set_uv(Vector2(0.0, 0.0))
+	surface.add_vertex(a)
+	surface.set_uv(Vector2(1.0, 1.0))
+	surface.add_vertex(c)
+	surface.set_uv(Vector2(0.0, 1.0))
+	surface.add_vertex(d)
+	if collidable:
+		collision_faces.append_array([a, b, c, a, c, d])
 
 ## Крупные несущие конструкции, отбрасывающие тени на карте.
 ## Мелкие декорации, штакетники, рамы, ставни, ступени, мебель и осыпи
 ## отключают отбрасывание теней, экономя более 50% теневых draw calls на мобильных GPU.
 const SHADOW_TAGS := {
-	"house_wall": true,
-	"house_roof": true,
-	"attic_pediment": true,
-	"door_lintel": true,
-	"window_lintel": true,
 	"church_hall": true,
 	"church_roof": true,
 	"bell_tower": true,
 	"tower_roof": true,
-	"watchtower": true,
-	"tower_platform": true,
 	"windmill_tower": true,
 	"windmill_cap": true,
 	"barn_wall": true,

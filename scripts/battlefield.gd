@@ -210,9 +210,15 @@ func _build_world() -> void:
 	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
 	if map_name == "COUNTRYSIDE":
 		COUNTRYSIDE_LAYOUT.add_world(self, true, true)
+	elif map_name == "VILLAGE":
+		VILLAGE_LAYOUT.add_tactical_assets(self, true)
 	for box in layout.boxes():
 		var kind := str(box.get("kind", ""))
-		if map_name == "COUNTRYSIDE" and kind == "tree_obstacle":
+		# CountrysideLayout batches its trees, buildings, furniture and street
+		# props directly. Its boxes() list is only the bot-navigation obstacle set.
+		if map_name == "COUNTRYSIDE":
+			continue
+		if map_name == "VILLAGE" and kind == "village_asset":
 			continue
 		if kind == "terrain" or kind == "ground":
 			_build_diggable_ground(box)

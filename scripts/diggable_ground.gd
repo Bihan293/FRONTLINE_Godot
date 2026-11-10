@@ -13,20 +13,23 @@ const CHUNK_CELLS := 16
 var terrain_size := Vector2(90.0, 90.0)
 var cell_size := 2.0
 var surface_material: Material
+var height_sampler := Callable()
 var _terrain_material: Material
 var _cells_x := 0
 var _cells_z := 0
 var _cell_width := 0.0
 var _cell_depth := 0.0
 var _levels := PackedInt32Array()
+var _base_heights := PackedFloat32Array()
 var _chunks: Dictionary = {}
 var _pending_chunks: Dictionary = {}
 var _rebuild_queued := false
 
-func configure(size: Vector2, tile_size: float, material: Material) -> void:
+func configure(size: Vector2, tile_size: float, material: Material, sampler: Callable = Callable()) -> void:
 	terrain_size = size
 	cell_size = maxf(1.0, tile_size)
 	surface_material = material
+	height_sampler = sampler
 
 func _ready() -> void:
 	add_to_group("diggable_ground")
@@ -38,6 +41,13 @@ func _ready() -> void:
 	_cell_depth = terrain_size.y / float(_cells_z)
 	_levels.resize(_cells_x * _cells_z)
 	_levels.fill(0)
+	_base_heights.resize((_cells_x + 1) * (_cells_z + 1))
+	for z in range(_cells_z + 1):
+		for x in range(_cells_x + 1):
+			var local_x := -terrain_size.x * 0.5 + float(x) * _cell_width
+			var local_z := -terrain_size.y * 0.5 + float(z) * _cell_depth
+			var base_height := float(height_sampler.call(local_x, local_z)) if height_sampler.is_valid() else 0.0
+			_base_heights[_base_index(x, z)] = base_height
 	if surface_material != null:
 		_terrain_material = surface_material.duplicate() as Material
 		var base_material := _terrain_material as BaseMaterial3D
@@ -82,7 +92,7 @@ func surface_height_at(world_position: Vector3) -> float:
 	var cell := _cell_at(world_position)
 	if cell.x < 0 or cell.y < 0:
 		return global_position.y
-	return global_position.y + _height_for_level(_levels[_index(cell.x, cell.y)])
+	return global_position.y + _base_height_for_cell(cell.x, cell.y) + _height_for_level(_levels[_index(cell.x, cell.y)])
 
 func clamp_to_map(world_position: Vector3, margin := 0.35) -> Vector3:
 	var local := to_local(world_position)
@@ -102,6 +112,17 @@ func _cell_at(world_position: Vector3) -> Vector2i:
 
 func _index(x: int, z: int) -> int:
 	return z * _cells_x + x
+
+func _base_index(x: int, z: int) -> int:
+	return z * (_cells_x + 1) + x
+
+func _base_height_for_cell(x: int, z: int) -> float:
+	return (
+		_base_heights[_base_index(x, z)]
+		+ _base_heights[_base_index(x + 1, z)]
+		+ _base_heights[_base_index(x, z + 1)]
+		+ _base_heights[_base_index(x + 1, z + 1)]
+	) * 0.25
 
 func _height_for_level(level: int) -> float:
 	return float(level) * (DIG_STEP if level < 0 else BERM_STEP)
@@ -156,29 +177,31 @@ func _rebuild_chunk(chunk: Vector2i) -> void:
 	for z in range(start_z, end_z):
 		for x in range(start_x, end_x):
 			var level := _levels[_index(x, z)]
-			var y := _height_for_level(level)
+			var level_offset := _height_for_level(level)
 			var x0 := -terrain_size.x * 0.5 + float(x) * _cell_width
 			var x1 := x0 + _cell_width
 			var z0 := -terrain_size.y * 0.5 + float(z) * _cell_depth
 			var z1 := z0 + _cell_depth
-			var p00 := Vector3(x0, y, z0)
-			var p10 := Vector3(x1, y, z0)
-			var p01 := Vector3(x0, y, z1)
-			var p11 := Vector3(x1, y, z1)
+			var base00 := _base_heights[_base_index(x, z)]
+			var base10 := _base_heights[_base_index(x + 1, z)]
+			var base01 := _base_heights[_base_index(x, z + 1)]
+			var base11 := _base_heights[_base_index(x + 1, z + 1)]
+			var p00 := Vector3(x0, base00 + level_offset, z0)
+			var p10 := Vector3(x1, base10 + level_offset, z0)
+			var p01 := Vector3(x0, base01 + level_offset, z1)
+			var p11 := Vector3(x1, base11 + level_offset, z1)
 			_add_triangle(surface, p00, p01, p11)
 			_add_triangle(surface, p00, p11, p10)
 			if x + 1 < _cells_x:
 				var right_level := _levels[_index(x + 1, z)]
 				if right_level != level:
-					var low := minf(y, _height_for_level(right_level))
-					var high := maxf(y, _height_for_level(right_level))
-					_add_wall(surface, Vector3(x1, low, z0), Vector3(x1, low, z1), Vector3(x1, high, z1), Vector3(x1, high, z0))
+					var right_offset := _height_for_level(right_level)
+					_add_wall(surface, p10, p11, Vector3(x1, base11 + right_offset, z1), Vector3(x1, base10 + right_offset, z0))
 			if z + 1 < _cells_z:
 				var far_level := _levels[_index(x, z + 1)]
 				if far_level != level:
-					var low_z := minf(y, _height_for_level(far_level))
-					var high_z := maxf(y, _height_for_level(far_level))
-					_add_wall(surface, Vector3(x0, low_z, z1), Vector3(x1, low_z, z1), Vector3(x1, high_z, z1), Vector3(x0, high_z, z1))
+					var far_offset := _height_for_level(far_level)
+					_add_wall(surface, p01, p11, Vector3(x1, base11 + far_offset, z1), Vector3(x0, base01 + far_offset, z1))
 	surface.generate_normals()
 	var terrain_mesh := surface.commit()
 	mesh_instance.mesh = terrain_mesh

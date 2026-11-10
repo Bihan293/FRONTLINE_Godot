@@ -1,8 +1,12 @@
 extends RefCounted
 class_name FRONTLINECountrysideLayout
 
-## Проработанная основа новой карты: рельеф, грунтовые улицы, поля,
-## лесополосы и размеченные места будущих домов. Зданий и уличных props нет.
+const BUILDING_PACK = preload("res://scripts/tactical_buildings.gd")
+const FURNITURE_PACK = preload("res://scripts/tactical_furniture.gd")
+const STREET_PROP_PACK = preload("res://scripts/tactical_street_props.gd")
+const COMMERCIAL_PROP_PACK = preload("res://scripts/tactical_commercial_props.gd")
+
+## Сельская карта с рельефом, лесополосами, жилым кварталом и открытым полем.
 
 const MAP_WIDTH := 216.0
 const MAP_DEPTH := 168.0
@@ -15,6 +19,8 @@ const PLOT_Z := [-42.0, -14.0, 14.0, 42.0]
 const STREET_X := [-58.0, -30.0, -2.0, 26.0, 54.0]
 const STREET_Z := [-56.0, -28.0, 0.0, 28.0, 56.0]
 static var _height_noise_cache: Array[FastNoiseLite] = []
+static var _city_geometry_cache: Array[Dictionary] = []
+static var _site_geometry_cache: Dictionary = {}
 
 static func map_dimensions() -> Vector2:
 	return Vector2(MAP_WIDTH, MAP_DEPTH)
@@ -27,7 +33,8 @@ static func get_building_plots() -> Array[Dictionary]:
 			plots.append({
 				"name": "PLOT_%02d" % index,
 				"position": Vector3(x, height_at(x, z), z),
-				"size": Vector3(PLOT_SIZE.x, 0.0, PLOT_SIZE.y)
+				"size": Vector3(PLOT_SIZE.x, 0.0, PLOT_SIZE.y),
+				"occupied": _plot_has_building(x, z)
 			})
 			index += 1
 	return plots
@@ -51,8 +58,8 @@ static func sectors() -> Array[Dictionary]:
 		{"name": "C", "label": "ПОЛЯНА", "pos": Vector3(72.0, height_at(72.0, 0.0), 0.0), "radius": 16.0, "owner": "NEUTRAL"},
 	]
 
-## Возвращает деревья также как навигационные препятствия для ботов.
-## battlefield.gd создаёт визуализацию и физику пачкой через add_world().
+## Возвращает деревья и городские объекты как препятствия для навигации ботов.
+## Визуализация и физика создаются пачками через add_world().
 static func boxes() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for tree in _tree_locations():
@@ -68,6 +75,7 @@ static func boxes() -> Array[Dictionary]:
 			"kind": "tree_obstacle",
 			"cast_shadow": false
 		})
+	out.append_array(_city_geometry_boxes())
 	return out
 
 static func height_at(x: float, z: float) -> float:
@@ -161,8 +169,7 @@ static func _plot_distance(x: float, z: float) -> float:
 			best = minf(best, Vector2(dx, dz).length())
 	return best
 
-## Создаёт один низкополигональный рельеф с коллизией, травой,
-## лесополосами и 16 пустыми размеченными участками.
+## Создаёт рельеф, траву, лесополосы, жилой квартал и его физику.
 static func add_world(parent: Node3D, with_collision: bool = true, detailed: bool = true) -> void:
 	var root := Node3D.new()
 	root.name = "CountrysideLandscape"
@@ -190,6 +197,87 @@ static func add_world(parent: Node3D, with_collision: bool = true, detailed: boo
 	_add_forest(root, noises[0], noises[1], with_collision)
 	_add_grass(root, noises[0], noises[1], detailed)
 	_add_building_plot_marks(root, noises[0], noises[1])
+	_add_city_geometry(root, with_collision)
+
+static func _add_city_geometry(parent: Node3D, with_collision: bool) -> void:
+	for site in _building_sites():
+		var type_name: String = site.type
+		var label := type_name.capitalize().replace("_", "")
+		_add_box_batch(parent, "City_" + label, _site_geometry_boxes(site), with_collision, true)
+	var props: Array[Dictionary] = []
+	for placement in _street_prop_placements():
+		props.append_array(STREET_PROP_PACK.get_prop_boxes(str(placement.type), placement.position, float(placement.rotation)))
+	_add_box_batch(parent, "CityStreetProps", props, with_collision, false)
+
+static func _add_box_batch(parent: Node3D, node_name: String, boxes: Array[Dictionary], with_collision: bool, cast_shadows: bool) -> void:
+	if boxes.is_empty():
+		return
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var collision_faces := PackedVector3Array()
+	for box in boxes:
+		var center: Vector3 = box.pos
+		var size: Vector3 = box.size
+		var color: Color = box.color
+		var solid := bool(box.get("solid", true))
+		_append_box_faces(tool, collision_faces, center, size, color, with_collision and solid)
+	var mesh := tool.commit()
+	if mesh != null:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color.WHITE
+		material.vertex_color_use_as_albedo = true
+		material.vertex_color_is_srgb = true
+		material.roughness = 0.94
+		var instance := MeshInstance3D.new()
+		instance.name = node_name
+		instance.mesh = mesh
+		instance.material_override = material
+		if not cast_shadows:
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(instance)
+	if with_collision and not collision_faces.is_empty():
+		var body := StaticBody3D.new()
+		body.name = node_name + "Collision"
+		var collision := CollisionShape3D.new()
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(collision_faces)
+		collision.shape = shape
+		body.add_child(collision)
+		parent.add_child(body)
+
+static func _append_box_faces(tool: SurfaceTool, collision_faces: PackedVector3Array, center: Vector3, size: Vector3, color: Color, with_collision: bool) -> void:
+	var half := size * 0.5
+	var x0 := center.x - half.x
+	var x1 := center.x + half.x
+	var y0 := center.y - half.y
+	var y1 := center.y + half.y
+	var z0 := center.z - half.z
+	var z1 := center.z + half.z
+	# Keep flat normals for the box surfaces; each face has its own vertices.
+	_add_quad(tool, collision_faces, Vector3(x0, y0, z0), Vector3(x0, y0, z1), Vector3(x0, y1, z1), Vector3(x0, y1, z0), Vector3.LEFT, color, with_collision)
+	_add_quad(tool, collision_faces, Vector3(x1, y0, z1), Vector3(x1, y0, z0), Vector3(x1, y1, z0), Vector3(x1, y1, z1), Vector3.RIGHT, color, with_collision)
+	_add_quad(tool, collision_faces, Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y0, z1), Vector3(x0, y0, z1), Vector3.DOWN, color, with_collision)
+	_add_quad(tool, collision_faces, Vector3(x0, y1, z1), Vector3(x1, y1, z1), Vector3(x1, y1, z0), Vector3(x0, y1, z0), Vector3.UP, color, with_collision)
+	_add_quad(tool, collision_faces, Vector3(x0, y0, z1), Vector3(x1, y0, z1), Vector3(x1, y1, z1), Vector3(x0, y1, z1), Vector3.BACK, color, with_collision)
+	_add_quad(tool, collision_faces, Vector3(x1, y0, z0), Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3.FORWARD, color, with_collision)
+
+static func _add_quad(tool: SurfaceTool, collision_faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3, normal: Vector3, color: Color, with_collision: bool) -> void:
+	tool.set_normal(normal)
+	tool.set_color(color)
+	tool.set_uv(Vector2(0.0, 0.0))
+	tool.add_vertex(a)
+	tool.set_uv(Vector2(1.0, 0.0))
+	tool.add_vertex(b)
+	tool.set_uv(Vector2(1.0, 1.0))
+	tool.add_vertex(c)
+	tool.set_uv(Vector2(0.0, 0.0))
+	tool.add_vertex(a)
+	tool.set_uv(Vector2(1.0, 1.0))
+	tool.add_vertex(c)
+	tool.set_uv(Vector2(0.0, 1.0))
+	tool.add_vertex(d)
+	if with_collision:
+		collision_faces.append_array([a, b, c, a, c, d])
 
 static func _make_terrain_mesh(rolling: FastNoiseLite, detail: FastNoiseLite, cells_x: int, cells_z: int) -> ArrayMesh:
 	var tool := SurfaceTool.new()
@@ -234,10 +322,174 @@ static func _terrain_vertex_color(x: float, z: float, height: float, noise: Fast
 		return Color(0.32, 0.29, 0.23).lightened(variation)
 	if road < 5.4:
 		return grass.lerp(Color(0.32, 0.29, 0.23), 1.0 - (road - 3.6) / 1.8)
+	if _entrance_path_distance(x, z) < 2.0:
+		return Color(0.39, 0.36, 0.29).lightened(variation)
 	var plot := _plot_distance(x, z)
 	if plot < 1.1:
 		return Color(0.43, 0.40, 0.32).lightened(variation)
 	return grass
+
+static func _building_sites() -> Array[Dictionary]:
+	return [
+		{"x": -44.0, "z": -42.0, "type": "house_2story", "rotation": 0.0},
+		{"x": -16.0, "z": -42.0, "type": "house_ruin_destroyed", "rotation": 0.0},
+		{"x": 12.0, "z": -42.0, "type": "house_1story", "rotation": 0.0},
+		{"x": 40.0, "z": -42.0, "type": "house_barn_hangar", "rotation": 0.0},
+		{"x": -44.0, "z": -14.0, "type": "house_3story", "rotation": 0.0},
+		{"x": -16.0, "z": -14.0, "type": "house_l_shaped_villa", "rotation": 0.0},
+		{"x": 12.0, "z": -14.0, "type": "house_2story", "rotation": 0.0},
+		{"x": 40.0, "z": -14.0, "type": "building_supermarket", "rotation": 0.0},
+		{"x": -44.0, "z": 14.0, "type": "house_1story", "rotation": 180.0},
+		{"x": -16.0, "z": 14.0, "type": "house_5story", "rotation": 180.0},
+		{"x": 12.0, "z": 14.0, "type": "house_2story", "rotation": 180.0},
+		{"x": 40.0, "z": 14.0, "type": "building_hospital", "rotation": 180.0},
+		{"x": -44.0, "z": 42.0, "type": "house_checkpoint_tower", "rotation": 180.0},
+		{"x": -16.0, "z": 42.0, "type": "house_bunker_pillbox", "rotation": 180.0},
+		{"x": 12.0, "z": 42.0, "type": "house_3story", "rotation": 180.0}
+	]
+
+static func _plot_has_building(x: float, z: float) -> bool:
+	for site in _building_sites():
+		if is_equal_approx(float(site.x), x) and is_equal_approx(float(site.z), z):
+			return true
+	return false
+
+static func _entrance_path_distance(x: float, z: float) -> float:
+	var best := INF
+	for site in _building_sites():
+		var site_x: float = site.x
+		var site_z: float = site.z
+		var info := BUILDING_PACK.get_building_info(str(site.type))
+		var half_depth := float(info.get("length", 9.0)) * 0.5
+		var direction := -1.0 if float(site.rotation) > 90.0 else 1.0
+		var door_z := site_z + direction * (half_depth + 0.25)
+		var road_z: float = STREET_Z[0]
+		var road_delta := INF
+		for candidate in STREET_Z:
+			var delta := absf(float(candidate) - site_z)
+			if delta < road_delta:
+				road_delta = delta
+				road_z = candidate
+		best = minf(best, _distance_to_segment(x, z, Vector2(site_x, door_z), Vector2(site_x, road_z)))
+	return best
+
+static func _site_origin(site: Dictionary) -> Vector3:
+	var x: float = site.x
+	var z: float = site.z
+	return Vector3(x, height_at(x, z), z)
+
+static func _local_to_world(origin: Vector3, local: Vector3, rotation_deg: float) -> Vector3:
+	var radians := deg_to_rad(rotation_deg)
+	return Vector3(
+		origin.x + local.x * cos(radians) - local.z * sin(radians),
+		origin.y + local.y,
+		origin.z + local.x * sin(radians) + local.z * cos(radians)
+	)
+
+static func _site_geometry_boxes(site: Dictionary) -> Array[Dictionary]:
+	var type_name: String = site.type
+	var rotation: float = site.rotation
+	var cache_key := "%s:%s:%s" % [str(site.x), str(site.z), type_name]
+	if _site_geometry_cache.has(cache_key):
+		return _site_geometry_cache[cache_key]
+	var origin := _site_origin(site)
+	var out := BUILDING_PACK.get_building_boxes(type_name, origin, rotation)
+	var floor_y := 0.34 if type_name.begins_with("building_") else 0.24
+	for item in _furniture_placements(type_name):
+		var local_pos: Vector3 = item.position
+		var item_origin := _local_to_world(origin, local_pos, rotation)
+		out.append_array(FURNITURE_PACK.get_furniture_boxes(str(item.type), item_origin, rotation))
+	for item in _commercial_placements(type_name):
+		var local_pos: Vector3 = item.position
+		local_pos.y = floor_y
+		var item_origin := _local_to_world(origin, local_pos, rotation)
+		out.append_array(COMMERCIAL_PROP_PACK.get_prop_boxes(str(item.type), item_origin, rotation))
+	_site_geometry_cache[cache_key] = out
+	return out
+
+static func _furniture_placements(building_type: String) -> Array[Dictionary]:
+	match building_type:
+		"house_1story":
+			return [
+				{"type": "dining_table", "position": Vector3(-3.45, 0.24, 0.0)},
+				{"type": "dining_chair", "position": Vector3(-3.45, 0.24, -1.25)},
+				{"type": "dining_chair", "position": Vector3(-3.45, 0.24, 1.25)},
+				{"type": "wood_stove", "position": Vector3(3.60, 0.24, -1.50)},
+				{"type": "bedside_cabinet", "position": Vector3(3.65, 0.24, 1.65)}
+			]
+		"house_2story":
+			return [
+				{"type": "sofa", "position": Vector3(-3.10, 0.24, 2.65)},
+				{"type": "dining_table", "position": Vector3(3.10, 0.24, 2.65)},
+				{"type": "kitchen_cabinet", "position": Vector3(-3.35, 0.24, -3.10)},
+				{"type": "single_bed", "position": Vector3(3.10, 0.24, -2.80)},
+				{"type": "wardrobe", "position": Vector3(4.75, 0.24, -3.75)}
+			]
+		_:
+			return []
+
+static func _commercial_placements(building_type: String) -> Array[Dictionary]:
+	match building_type:
+		"building_supermarket":
+			return [
+				{"type": "supermarket_shelf_aisle", "position": Vector3(-6.2, 0.0, 2.5)},
+				{"type": "supermarket_shelf_aisle", "position": Vector3(-2.1, 0.0, 2.5)},
+				{"type": "supermarket_shelf_aisle", "position": Vector3(2.1, 0.0, 2.5)},
+				{"type": "supermarket_shelf_aisle", "position": Vector3(6.2, 0.0, 2.5)},
+				{"type": "cash_register_counter", "position": Vector3(-3.7, 0.0, 6.4)},
+				{"type": "cash_register_counter", "position": Vector3(3.7, 0.0, 6.4)},
+				{"type": "commercial_refrigerator_drink", "position": Vector3(-8.4, 0.0, -4.6)},
+				{"type": "shopping_cart_nest", "position": Vector3(8.2, 0.0, 6.1)}
+			]
+		"building_hospital":
+			return [
+				{"type": "hospital_reception_desk", "position": Vector3(0.0, 0.0, 5.4)},
+				{"type": "hospital_gurney_bed", "position": Vector3(-8.2, 0.0, 5.6)},
+				{"type": "hospital_gurney_bed", "position": Vector3(8.2, 0.0, 5.6)},
+				{"type": "medical_screen_divider", "position": Vector3(-8.2, 0.0, 2.8)},
+				{"type": "medicine_glass_cabinet", "position": Vector3(8.8, 0.0, -5.2)},
+				{"type": "fire_hose_cabinet", "position": Vector3(10.5, 0.0, 0.0)}
+			]
+		_:
+			return []
+
+static func _street_prop_placements() -> Array[Dictionary]:
+	var placements: Array[Dictionary] = [
+		{"type": "street_lantern_single", "x": -34.0, "z": -28.0, "rotation": 0.0},
+		{"type": "street_lantern_single", "x": -34.0, "z": 28.0, "rotation": 0.0},
+		{"type": "street_lantern_single", "x": 22.0, "z": -28.0, "rotation": 0.0},
+		{"type": "street_lantern_single", "x": 22.0, "z": 28.0, "rotation": 0.0},
+		{"type": "road_sign_direction", "x": -30.0, "z": -8.0, "rotation": 90.0},
+		{"type": "road_sign_stop", "x": 54.0, "z": 0.0, "rotation": 0.0},
+		{"type": "bus_stop_shelter", "x": -34.5, "z": 4.0, "rotation": 90.0},
+		{"type": "burnt_car_sedan", "x": -30.0, "z": 0.0, "rotation": 90.0},
+		{"type": "military_truck_wreck", "x": 30.0, "z": -28.0, "rotation": 0.0},
+		{"type": "burnt_car_van", "x": 26.0, "z": 28.0, "rotation": 90.0},
+		{"type": "sandbag_wall_straight", "x": -58.0, "z": 3.5, "rotation": 0.0},
+		{"type": "sandbag_wall_corner", "x": 54.0, "z": -4.0, "rotation": 90.0},
+		{"type": "sandbag_firing_nest", "x": -58.0, "z": -28.0, "rotation": 0.0},
+		{"type": "concrete_jersey_barrier", "x": -2.0, "z": 28.0, "rotation": 90.0},
+		{"type": "ammo_crate_stack", "x": -55.0, "z": 28.0, "rotation": 0.0},
+		{"type": "oil_barrel_cluster", "x": 52.0, "z": -28.0, "rotation": 0.0},
+		{"type": "metal_dumpster", "x": 32.0, "z": -23.5, "rotation": 90.0},
+		{"type": "street_trash_can", "x": -27.0, "z": 27.0, "rotation": 0.0},
+		{"type": "fire_hydrant", "x": 22.5, "z": 4.8, "rotation": 0.0},
+		{"type": "tire_stack", "x": -52.0, "z": 3.0, "rotation": 90.0}
+	]
+	for placement in placements:
+		placement["position"] = Vector3(float(placement.x), height_at(float(placement.x), float(placement.z)), float(placement.z))
+	return placements
+
+static func _city_geometry_boxes() -> Array[Dictionary]:
+	if not _city_geometry_cache.is_empty():
+		return _city_geometry_cache
+	var all_boxes: Array[Dictionary] = []
+	for site in _building_sites():
+		all_boxes.append_array(_site_geometry_boxes(site))
+	for placement in _street_prop_placements():
+		all_boxes.append_array(STREET_PROP_PACK.get_prop_boxes(str(placement.type), placement.position, float(placement.rotation)))
+	_city_geometry_cache = all_boxes
+	return _city_geometry_cache
 
 static func _color_offset(color: Color, amount: float) -> Color:
 	return Color(
@@ -449,6 +701,8 @@ static func _add_building_plot_marks(parent: Node3D, rolling: FastNoiseLite, det
 	var outline_transforms: Array[Transform3D] = []
 	var stake_transforms: Array[Transform3D] = []
 	for plot in get_building_plots():
+		if bool(plot.occupied):
+			continue
 		var x: float = plot.position.x
 		var z: float = plot.position.z
 		var y := _height_at(x, z, rolling, detail)

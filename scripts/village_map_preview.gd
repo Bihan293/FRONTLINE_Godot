@@ -75,8 +75,22 @@ func _build_world_preview() -> void:
 	sun.light_energy = 1.1
 	sun.shadow_enabled = false
 	world_root.add_child(sun)
+	var terrain_instance := MeshInstance3D.new()
+	terrain_instance.name = "RollingVillageGround"
+	terrain_instance.mesh = LAYOUT.create_landscape_mesh()
+	var terrain_material := StandardMaterial3D.new()
+	terrain_material.albedo_color = Color.WHITE
+	terrain_material.vertex_color_use_as_albedo = true
+	terrain_material.roughness = 1.0
+	terrain_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	terrain_instance.material_override = terrain_material
+	terrain_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world_root.add_child(terrain_instance)
+	LAYOUT.add_tactical_assets(world_root, false)
 
 	for data in LAYOUT.boxes():
+		if str(data.get("kind", "")) in ["ground", "village_asset"]:
+			continue
 		var mesh_instance := MeshInstance3D.new()
 		var box_mesh := BoxMesh.new()
 		box_mesh.size = data.size
