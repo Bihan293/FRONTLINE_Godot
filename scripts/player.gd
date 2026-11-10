@@ -260,10 +260,9 @@ func _build_weapon() -> void:
 	camera.add_child(drone_controller_anchor)
 	weapon_root = Node3D.new()
 	weapon_root.name = "ViewModel"
-	weapon_root.position = Vector3(0.24, -0.22, -0.58)
-	# 0.9 — оружие реального размера. Раньше 0.5 делало автомат «игрушечным»,
-	# а кисти рук оставались полноразмерными.
-	weapon_root.scale = Vector3.ONE * 0.90
+	weapon_root.position = Vector3(0.24, -0.23, -0.60)
+	# 0.72 — оружие читается реальным, но не занимает пол-экрана.
+	weapon_root.scale = Vector3.ONE * 0.72
 	weapon_base = weapon_root.position
 	camera.add_child(weapon_root)
 	weapon_mount = Node3D.new()
@@ -379,39 +378,8 @@ func _init_weapon_inventory() -> void:
 		ammo_by_weapon.append(int(definition.mag))
 		reserve_by_weapon.append(int(definition.reserve))
 
-	player_role = str(get_tree().get_meta("selected_role", "ASSAULT"))
-	match player_role:
-		"SNIPER":
-			role_primary_weapon_index = 6 # Kar98k
-			role_weapon_indices = [6, 3]
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-		"ANTI_TANK":
-			role_primary_weapon_index = 7 # Panzerfaust
-			role_weapon_indices = [7, 5, 3]
-			grenades = 1
-			smoke_grenades = 1
-			medkits = 2
-		"MEDIC":
-			role_primary_weapon_index = 1 # MP-40
-			role_weapon_indices = [1, 3]
-			grenades = 2
-			smoke_grenades = 2
-			medkits = 5
-		"RADIO_OPERATOR":
-			role_primary_weapon_index = 5 # PPSh-41
-			role_weapon_indices = [5, 3]
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-		_:
-			player_role = "ASSAULT"
-			role_primary_weapon_index = 0 # AK-47
-			role_weapon_indices = [0, 3]
-			grenades = 3
-			smoke_grenades = 2
-			medkits = 2
+	player_role = _normalize_role(str(get_tree().get_meta("selected_role", "ASSAULT")))
+	_configure_role_loadout(player_role)
 
 	# Пресет снаряжения, выбранный на экране развёртывания.
 	match str(get_tree().get_meta("selected_loadout", "BALANCED")):
@@ -424,8 +392,8 @@ func _init_weapon_inventory() -> void:
 
 	# Ручная настройка на экране спавна: оружие и количество снаряжения.
 	var chosen_primary := int(get_tree().get_meta("selected_primary", -1))
-	if chosen_primary >= 0 and role_weapon_indices.has(chosen_primary):
-		role_primary_weapon_index = chosen_primary
+	if chosen_primary >= 0 and chosen_primary < WEAPON_DEFS.size():
+		_set_primary_slot(chosen_primary)
 	var chosen_grenades := int(get_tree().get_meta("selected_grenades", -1))
 	if chosen_grenades >= 0:
 		grenades = chosen_grenades
@@ -443,6 +411,77 @@ func _init_weapon_inventory() -> void:
 	last_primary_weapon_index = role_primary_weapon_index
 	ammo = ammo_by_weapon[current_weapon_index]
 	reserve_ammo = reserve_by_weapon[current_weapon_index]
+
+func _normalize_role(role: String) -> String:
+	match role:
+		"SNIPER", "ANTI_TANK", "MEDIC", "RADIO_OPERATOR":
+			return role
+		_:
+			return "ASSAULT"
+
+## Единственное место, где задаются роль, оружие и стартовое снаряжение.
+func _configure_role_loadout(role: String) -> void:
+	player_role = _normalize_role(role)
+	match player_role:
+		"SNIPER":
+			role_primary_weapon_index = 6
+			role_weapon_indices = [6, SIDEARM_INDEX]
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = false
+		"ANTI_TANK":
+			role_primary_weapon_index = 7
+			role_weapon_indices = [7, 4, SIDEARM_INDEX]
+			grenades = 1
+			smoke_grenades = 1
+			medkits = 2
+			drone_charge_available = false
+		"MEDIC":
+			role_primary_weapon_index = 1
+			role_weapon_indices = [1, SIDEARM_INDEX]
+			grenades = 2
+			smoke_grenades = 2
+			medkits = 5
+			drone_charge_available = false
+		"RADIO_OPERATOR":
+			role_primary_weapon_index = 5
+			role_weapon_indices = [5, SIDEARM_INDEX]
+			grenades = 1
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = true
+		_:
+			player_role = "ASSAULT"
+			role_primary_weapon_index = 0
+			role_weapon_indices = [0, SIDEARM_INDEX]
+			grenades = 3
+			smoke_grenades = 2
+			medkits = 2
+			drone_charge_available = false
+
+func _set_primary_slot(index: int) -> void:
+	if index < 0 or index >= WEAPON_DEFS.size():
+		return
+	role_primary_weapon_index = index
+	role_weapon_indices = [index]
+	if index != SIDEARM_INDEX:
+		role_weapon_indices.append(SIDEARM_INDEX)
+
+## Публичный вход для экрана деплоя: роль и основное оружие переносятся
+## между смертями, а не сбрасываются на ASSAULT.
+func apply_loadout(role: String, primary_index: int) -> void:
+	_configure_role_loadout(role)
+	if primary_index >= 0 and primary_index < WEAPON_DEFS.size():
+		_set_primary_slot(primary_index)
+	current_weapon_index = role_primary_weapon_index
+	last_primary_weapon_index = role_primary_weapon_index
+	ammo = ammo_by_weapon[current_weapon_index]
+	reserve_ammo = reserve_by_weapon[current_weapon_index]
+	is_shovel_equipped = false
+	_equip_weapon_visual()
+	_refresh_ammo()
+	_refresh_equipment()
 
 func _weapon_data() -> Dictionary:
 	return WEAPON_DEFS[current_weapon_index]
@@ -652,8 +691,8 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var upper := MeshInstance3D.new()
 	upper.name = "Upper"
 	var upper_mesh := CylinderMesh.new()
-	upper_mesh.top_radius = 0.058
-	upper_mesh.bottom_radius = 0.049
+	upper_mesh.top_radius = 0.052
+	upper_mesh.bottom_radius = 0.044
 	upper_mesh.height = 1.0
 	upper_mesh.radial_segments = 10
 	upper.mesh = upper_mesh
@@ -665,8 +704,8 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var forearm := MeshInstance3D.new()
 	forearm.name = "Forearm"
 	var forearm_mesh := CylinderMesh.new()
-	forearm_mesh.top_radius = 0.047
-	forearm_mesh.bottom_radius = 0.036
+	forearm_mesh.top_radius = 0.042
+	forearm_mesh.bottom_radius = 0.033
 	forearm_mesh.height = 1.0
 	forearm_mesh.radial_segments = 10
 	forearm.mesh = forearm_mesh
@@ -679,7 +718,7 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var palm := MeshInstance3D.new()
 	palm.name = "Palm"
 	var palm_mesh := BoxMesh.new()
-	palm_mesh.size = Vector3(0.062, 0.036, 0.10)
+	palm_mesh.size = Vector3(0.070, 0.040, 0.110)
 	palm.mesh = palm_mesh
 	palm.material_override = glove
 	palm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -688,7 +727,7 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var thumb := MeshInstance3D.new()
 	thumb.name = "Thumb"
 	var thumb_mesh := BoxMesh.new()
-	thumb_mesh.size = Vector3(0.022, 0.024, 0.050)
+	thumb_mesh.size = Vector3(0.026, 0.028, 0.055)
 	thumb.mesh = thumb_mesh
 	thumb.material_override = glove
 	thumb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -713,7 +752,7 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 		var finger := MeshInstance3D.new()
 		finger.name = "Finger%d" % finger_index
 		var finger_mesh := BoxMesh.new()
-		finger_mesh.size = Vector3(0.017, 0.020, 0.055)
+		finger_mesh.size = Vector3(0.019, 0.022, 0.060)
 		finger.mesh = finger_mesh
 		finger.material_override = glove
 		finger.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -738,12 +777,12 @@ func _update_view_arms() -> void:
 	# видно плечо -> локоть -> предплечье -> кисть, а не «парящие кисти».
 	var cam_xf := camera.global_transform
 	if wrist_left_marker != null and _view_arm_left != null:
-		var l_shoulder: Vector3 = cam_xf * Vector3(-0.22, -0.26, -0.02)
-		var l_pole: Vector3 = cam_xf.basis * Vector3(-0.55, -1.0, 0.05)
+		var l_shoulder: Vector3 = cam_xf * Vector3(-0.30, -0.28, -0.01)
+		var l_pole: Vector3 = cam_xf.basis * Vector3(-0.65, -1.0, 0.05)
 		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true, l_shoulder, l_pole)
 	if wrist_right_marker != null and _view_arm_right != null:
-		var r_shoulder: Vector3 = cam_xf * Vector3(0.22, -0.26, -0.02)
-		var r_pole: Vector3 = cam_xf.basis * Vector3(0.55, -1.0, 0.05)
+		var r_shoulder: Vector3 = cam_xf * Vector3(0.30, -0.28, -0.01)
+		var r_pole: Vector3 = cam_xf.basis * Vector3(0.65, -1.0, 0.05)
 		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false, r_shoulder, r_pole)
 
 func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, shoulder: Vector3, pole: Vector3) -> void:
@@ -920,9 +959,11 @@ func _update_acoustics(delta: float) -> void:
 			var target_factor := 1.0 if under_roof else 0.0
 			indoor_factor = lerpf(indoor_factor, target_factor, 0.45)
 
-func _play_player_shot_sfx(wid: String, default_pitch: float) -> void:
+func _play_player_shot_sfx(wid: String, _default_pitch: float) -> void:
 	var prof: Dictionary = COMBAT_AUDIO.WEAPON_PROFILES.get(wid, {})
-	var pitch: float = float(prof.get("pitch", default_pitch)) * randf_range(0.96, 1.04)
+	# Высота уже зашита в ресемплированный сэмпл банка; второй pitch-множитель
+	# делал звук мультяшным.
+	var pitch := randf_range(0.97, 1.03)
 	var vol: float = float(prof.get("vol", -2.0))
 	if indoor_factor > 0.35:
 		vol += indoor_factor * 1.5
@@ -1868,16 +1909,22 @@ func _nearest_enterable() -> Node3D:
 	if mounted_vehicle != null:
 		return null
 	var nearest: Node3D = null
-	var best_distance := 2.8
+	var best_score := INF
 	for node in get_tree().get_nodes_in_group("enterable_vehicles"):
 		var station := node as Node3D
 		if station == null or not is_instance_valid(station):
 			continue
 		if not station.has_method("can_enter") or not bool(station.call("can_enter", self)):
 			continue
+		var radius := 2.8
+		if station.has_method("interaction_radius"):
+			radius = float(station.call("interaction_radius"))
 		var distance := global_position.distance_to(station.global_position)
-		if distance < best_distance:
-			best_distance = distance
+		if distance > radius:
+			continue
+		var score := distance / maxf(radius, 0.1)
+		if score < best_score:
+			best_score = score
 			nearest = station
 	return nearest
 
@@ -2959,37 +3006,12 @@ func respawn() -> void:
 		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
 		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)
 
-	match player_role:
-		"SNIPER":
-			current_weapon_index = 6
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-			drone_charge_available = false
-		"ANTI_TANK":
-			current_weapon_index = 7
-			grenades = 1
-			smoke_grenades = 1
-			medkits = 2
-			drone_charge_available = false
-		"MEDIC":
-			current_weapon_index = 1
-			grenades = 2
-			smoke_grenades = 2
-			medkits = 5
-			drone_charge_available = false
-		"RADIO_OPERATOR":
-			current_weapon_index = 5
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-			drone_charge_available = true
-		_:
-			current_weapon_index = 0
-			grenades = 3
-			smoke_grenades = 2
-			medkits = 2
-			drone_charge_available = false
+	# Роль и основное оружие сохраняются; сбрасываются только патроны и снаряжение.
+	var chosen_primary := role_primary_weapon_index
+	_configure_role_loadout(player_role)
+	if chosen_primary >= 0 and chosen_primary < WEAPON_DEFS.size():
+		_set_primary_slot(chosen_primary)
+	current_weapon_index = role_primary_weapon_index
 
 	is_shovel_equipped = false
 	carried_soil = 0

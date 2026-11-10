@@ -144,7 +144,10 @@ var _cached_cam: Camera3D = null
 var _cached_player: Node3D = null
 var _label_update_timer: float = 0.0
 
+static var profile_build := false
+
 func _ready() -> void:
+	var t_build := Time.get_ticks_usec()
 	# Индивидуальный маршрут и ритм перебежек, чтобы отделение не шло «паровозиком».
 	_personal_offset_x = randf_range(-9.0, 9.0)
 	_bound_timer = randf_range(0.6, 2.2)
@@ -200,13 +203,26 @@ func _ready() -> void:
 		if (bot_weapon_index == 1 or bot_weapon_index == 4) and randf() < 0.35:
 			bot_role = "MEDIC"
 
+	var t_collide0 := Time.get_ticks_usec()
 	_build_body_collision()
+	var t_visual0 := Time.get_ticks_usec()
 	_build_visuals()
+	var t_weapon0 := Time.get_ticks_usec()
 	_build_weapon()
+	var t_rest0 := Time.get_ticks_usec()
 	_build_hitboxes()
 	_rebuild_self_rids()
 	_build_label()
 	_build_audio()
+	if profile_build:
+		var t_end := Time.get_ticks_usec()
+		print("BOT_BUILD collide=%.2f visual=%.2f weapon=%.2f rest=%.2f total=%.2f" % [
+			float(t_visual0 - t_collide0) / 1000.0,
+			float(t_weapon0 - t_visual0) / 1000.0,
+			float(t_rest0 - t_weapon0) / 1000.0,
+			float(t_end - t_rest0) / 1000.0,
+			float(t_end - t_build) / 1000.0
+		])
 
 	_perception = PERCEPTION.new()
 	_perception.setup(self, randf())
@@ -253,48 +269,49 @@ func _build_body_collision() -> void:
 	body_collision.position.y = capsule.height * 0.5
 	add_child(body_collision)
 
+static var _visual_template_cache: Dictionary = {}
+
 func _build_visuals() -> void:
 	_pivot = Node3D.new()
 	add_child(_pivot)
 
-	_visual = Node3D.new()
-	_visual.rotation.y = PI
-
 	var path := RED_SCENE if team_name.to_upper().contains("RED") else IRON_SCENE
-	var packed = load(path)
-	if packed == null:
-		push_error("FRONTLINE: cannot load soldier GLB " + path)
-		return
-	var model = packed.instantiate()
 	var is_red: bool = team_name.to_upper().contains("RED")
-	TACTICAL_GEAR.add_tactical_loadout(model, is_red, true)
-	_visual.add_child(model)
-
-	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
-	var has_rig := skeleton is Skeleton3D
-	if has_rig:
-		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
-		# Attach the procedural script before entering the tree so its _ready()
-		# can bind the skeleton built above. Setting the script after adding the
-		# visual to the live pivot leaves _skeleton null and disables animation/ragdoll.
-		_visual.set_script(PROCEDURAL)
+	var template: Node3D = _visual_template_cache.get(path)
+	if template == null:
+		template = _create_visual_template(path, is_red)
+		if template == null:
+			return
+		# Храним нетронутый шаблон: у первого бота _ready() изменит позы костей.
+		_visual_template_cache[path] = template.duplicate() as Node3D
+	_visual = template.duplicate() as Node3D
 	_pivot.add_child(_visual)
-	if has_rig:
+	if _visual.has_method("set_motion"):
 		_proc = _visual as FRONTLINEProceduralSoldier
 	# QA-optimization: мелкие детали модели скрываем на дистанции — меньше draw calls.
-	if GameSettings.quality == 0 and _visual != null:
-		for mesh_node in _visual.find_children("*", "MeshInstance3D", true, false):
-			var mesh_inst := mesh_node as MeshInstance3D
-			if mesh_inst == null or mesh_inst.mesh == null:
-				continue
-			var diag: float = mesh_inst.mesh.get_aabb().size.length()
-			if diag < 0.28:
-				mesh_inst.visibility_range_end = 26.0
-			elif diag < 0.60:
-				mesh_inst.visibility_range_end = 48.0
+	if GameSettings.quality == 0 and _proc != null:
 		_proc.set_t_pose_arms(false)
 		_proc.set_aiming(true)
 		_proc.set_motion(0.0, false)
+
+## Собирает модель один раз на фракцию. Повторные боты — дешёвый duplicate()
+## вместо загрузки GLB, снаряжения, рига и слияния меша.
+func _create_visual_template(path: String, is_red: bool) -> Node3D:
+	var visual := Node3D.new()
+	visual.rotation.y = PI
+	var packed = load(path)
+	if packed == null:
+		push_error("FRONTLINE: cannot load soldier GLB " + path)
+		return null
+	var model = packed.instantiate()
+	TACTICAL_GEAR.add_tactical_loadout(model, is_red, true)
+	visual.add_child(model)
+	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
+	if skeleton is Skeleton3D:
+		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
+		# Скрипт ставим до входа в дерево, чтобы его _ready() сразу увидел скелет.
+		visual.set_script(PROCEDURAL)
+	return visual
 
 func _build_weapon() -> void:
 	_gun_pivot = Node3D.new()
@@ -1118,7 +1135,7 @@ func _fire_single_shot() -> void:
 		if dist_sq <= max_dist * max_dist:
 			_sfx_shot.unit_size = float(prof.get("unit_size", 16.0))
 			_sfx_shot.max_distance = max_dist
-			_sfx_shot.pitch_scale = float(prof.get("pitch", 1.0)) * randf_range(0.95, 1.05)
+			_sfx_shot.pitch_scale = randf_range(0.96, 1.04)
 			_sfx_shot.volume_db = float(prof.get("vol", -2.0))
 			# QA-optimization: акустика пересчитывается 4 раза/с, а не на каждый
 			# выстрел — иначе 7 автоматчиков дают сотни рейкастов в секунду.

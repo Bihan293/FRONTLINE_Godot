@@ -20,9 +20,12 @@ const SPREAD := 0.012
 const YAW_LIMIT := 2.5
 const PITCH_LIMIT_MIN := -0.5
 const PITCH_LIMIT_MAX := 0.62
-const RAY_MASK := (1 << 0) | (1 << 1)
+const RAY_MASK := (1 << 0) | (1 << 1) | (1 << 2)
+const MAX_HEALTH := 220.0
 
 var occupant: Node3D = null
+var health := MAX_HEALTH
+var destroyed := false
 
 var _fire_cooldown := 0.0
 var _yaw: Node3D
@@ -32,10 +35,14 @@ var _flash: MeshInstance3D
 var _flash_time := 0.0
 var _sfx: AudioStreamPlayer3D
 var _seat_socket: Marker3D = null
+var _body_rid: RID
+var _exclude_rids: Array[RID] = []
 
 func _ready() -> void:
 	add_to_group("enterable_vehicles")
 	add_to_group("static_turrets")
+	add_to_group("damageable")
+	add_to_group("metal_targets")
 	_build_base()
 	_build_gun()
 	_sfx = AudioStreamPlayer3D.new()
@@ -49,13 +56,39 @@ func _ready() -> void:
 	add_child(_sfx)
 
 func can_enter(player: Node3D) -> bool:
-	if occupant != null or player == null:
+	if destroyed or occupant != null or player == null:
 		return false
 	if bool(player.get("is_dead")):
 		return false
 	if player.get("mounted_vehicle") != null or player.get("active_drone") != null:
 		return false
 	return true
+
+func interaction_radius() -> float:
+	return 2.4
+
+func receive_hit(damage: int, attacker_pos: Vector3, _region: String = "chest", _attacker_name: String = "Unknown") -> int:
+	if destroyed:
+		return 0
+	health -= float(damage)
+	if is_instance_valid(get_parent()):
+		HIT_EFFECTS.spawn_metal_sparks(get_parent(), attacker_pos, Vector3.UP)
+	if health <= 0.0:
+		_destroy()
+	return damage
+
+func _destroy() -> void:
+	destroyed = true
+	if occupant != null and is_instance_valid(occupant):
+		if occupant.has_method("_exit_vehicle"):
+			occupant.call("_exit_vehicle")
+		occupant = null
+	if is_instance_valid(get_parent()):
+		HIT_EFFECTS.spawn_explosion(get_parent(), global_position + Vector3.UP * 0.8, 0.8)
+	visible = false
+	set_process(false)
+	set_physics_process(false)
+	queue_free()
 
 func prompt_text(mobile: bool) -> String:
 	if occupant != null:
@@ -102,22 +135,24 @@ func tick_driver(player: Node3D, delta: float) -> void:
 
 ## Выстрел: пуля идёт из дульного среза в прицельную точку камеры.
 func try_fire(player: Node3D) -> bool:
-	if occupant != player or _fire_cooldown > 0.0:
+	if destroyed or occupant != player or _fire_cooldown > 0.0:
 		return false
 	var camera: Camera3D = player.get("camera")
-	if camera == null:
+	if camera == null or _muzzle == null:
 		return false
 	_fire_cooldown = FIRE_INTERVAL
 	var forward := -camera.global_transform.basis.z
 	var aim_end := camera.global_position + forward * BULLET_RANGE
 	var query := PhysicsRayQueryParameters3D.create(camera.global_position, aim_end)
 	query.collision_mask = RAY_MASK
-	query.exclude = [player.get_rid()]
-	query.collide_with_areas = false
+	query.exclude = [player.get_rid(), _body_rid]
+	query.collide_with_areas = true
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	var aim_point: Vector3 = hit.get("position", aim_end)
 	var origin := _muzzle.global_position
 	var direction := (aim_point - origin).normalized()
+	if direction.length_squared() < 0.01 or origin.distance_to(aim_point) < 1.0:
+		direction = forward.normalized()
 	var world := get_parent()
 	if world != null and world.has_method("spawn_bullet_projectile"):
 		world.call("spawn_bullet_projectile", origin, direction, BULLET_SPEED, BULLET_DAMAGE, BULLET_RANGE, "Player", team_name(), player)
@@ -161,6 +196,9 @@ func _build_base() -> void:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
+	body.set_meta("owner_actor", self)
+	_body_rid = body.get_rid()
+	_exclude_rids = [body.get_rid()]
 	add_child(body)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()

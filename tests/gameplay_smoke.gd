@@ -557,6 +557,11 @@ func _test_vehicles() -> void:
 	player.position = jeep.seat_position() + Vector3(0.0, 0.1, 0.0)
 	player.call("_enter_vehicle", jeep)
 	_check(player.get("mounted_vehicle") == jeep, "player did not enter the jeep")
+	var turret_bullets_before := get_tree().get_nodes_in_group("ballistic_bullets").size()
+	var jeep_fired: bool = bool(jeep.call("try_fire", player))
+	await get_tree().physics_frame
+	_check(jeep_fired, "jeep turret refused to fire")
+	_check(get_tree().get_nodes_in_group("ballistic_bullets").size() > turret_bullets_before, "jeep turret did not spawn a bullet")
 	jeep.set("throttle_override", 1.0)
 	jeep.set("steer_override", 0.0)
 	var start_z: float = jeep.global_position.z

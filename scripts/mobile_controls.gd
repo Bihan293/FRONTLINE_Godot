@@ -177,6 +177,7 @@ func _layout() -> Dictionary:
 	base["veh_left"] = vp + Vector2(-vr * 1.28, 0.0)
 	base["veh_right"] = vp + Vector2(vr * 1.28, 0.0)
 	base["veh_exit"] = vp + Vector2(0.0, 0.0)
+	base["veh_fire"] = Vector2(s.x - 95.0 * sc, s.y - 95.0 * sc)
 
 	_layout_cache = base
 	return base
@@ -234,9 +235,10 @@ func _touch_down(index: int, pos: Vector2) -> void:
 		return
 	var l := _layout()
 	if _vehicle_mode:
-		var vehicle_ids := ["veh_up", "veh_down", "veh_left", "veh_right", "veh_exit"]
+		var vehicle_ids := ["veh_up", "veh_down", "veh_left", "veh_right", "veh_exit", "veh_fire"]
 		for id in vehicle_ids:
-			if pos.distance_to(l[id]) <= _fire_radius() * 1.10:
+			var radius := _fire_radius() if id == "veh_fire" else _fire_radius() * 0.92
+			if pos.distance_to(l[id]) <= radius * 1.05:
 				_button_touches[index] = id
 				_active[id] = true
 				_apply_vehicle_button(id, true)
@@ -370,6 +372,9 @@ func _apply_vehicle_button(id: String, pressed: bool) -> void:
 			if pressed:
 				interact_pressed.emit()
 			return
+		"veh_fire":
+			fire_changed.emit(pressed)
+			return
 	if pressed:
 		var axes := Vector2(_vehicle_input.x, _vehicle_input.y)
 		if dir.x != 0.0:
@@ -417,6 +422,7 @@ func _draw() -> void:
 		_draw_button(l.veh_left, vr, "", "veh_left", Color.BLACK, font, 12)
 		_draw_button(l.veh_right, vr, "", "veh_right", Color.BLACK, font, 12)
 		_draw_button(l.veh_exit, vr * 0.80, "", "exit_vehicle", Color.BLACK, font, 9)
+		_draw_button(l.veh_fire, fr, "", "fire", Color.BLACK, font, 18)
 		return
 	if _drone_mode:
 		_draw_button(l.fire, fr, "", "detonate", Color.BLACK, font, 16)

@@ -1,325 +1,398 @@
 extends CanvasLayer
 class_name FRONTLINETacticalDeploy
 
-## Тактический экран деплоя и выбора спавнов (Overhead Tactical Spawn & Loadout Selector).
-## Позволяет игроку:
-## 1. Выбрать точку спавна (База или любой захваченный дружественный сектор A, B, C);
-## 2. Выбрать класс бойца (Штурмовик, Снайпер, Санитар, Бронебойщик, Пулеметчик);
-## 3. Выбрать снаряжение и деплоиться с плавной кинематографичной анимацией спуска камеры в бой.
+## Экран высадки: кликабельная карта сверху, отдельная панель LOADOUT,
+## одна кнопка «В БОЙ». Роль и основное оружие сохраняются между смертями.
 
 signal deployed(spawn_pos: Vector3, role_name: String, primary_index: int)
 
-var team_name: String = "IRON LEGION"
-var sector_data: Array = []
-var base_spawns: Array = []
-var selected_spawn: Vector3 = Vector3.ZERO
-var selected_spawn_name: String = "БАЗА"
-var selected_role: String = "ASSAULT"
-var selected_primary: int = 0
+const DEPLOY_MAP = preload("res://scripts/ui/deployment_map.gd")
 
-var _spawn_buttons: Array[Button] = []
-var _role_buttons: Dictionary = {}
-var _status_label: Label
-var _deploy_btn: Button
-var _next_btn: Button
-var _back_btn: Button
-var _spawn_panel: PanelContainer
-var _class_panel: PanelContainer
-var _top_label: Label
-var _step := 0
-var _root_container: Control
-
-const CLASSES = [
+const CLASSES := [
 	{
 		"role": "ASSAULT",
 		"name": "ШТУРМОВИК",
-		"primary": 0, # AK-47
-		"primary_name": "Автомат АК-47",
-		"desc": "Универсальный штурмовой боец: скорострельный автомат, гранаты Ф-1, дымовая шашка."
+		"primaries": [0, 1, 4],
+		"desc": "Универсальный боец: автомат, гранаты Ф-1, дымовая шашка."
 	},
 	{
 		"role": "SNIPER",
 		"name": "СНАЙПЕР",
-		"primary": 6, # Kar98k ZF-39 / Mosin
-		"primary_name": "Снайперская винтовка (ZF-39 / Мосина)",
-		"desc": "Точечное уничтожение целей на дальних дистанциях, оптический прицел, запасной пистолет M1911."
+		"primaries": [6, 2],
+		"desc": "Дальний бой и оптика; запасной M1911."
 	},
 	{
 		"role": "MEDIC",
 		"name": "САНИТАР",
-		"primary": 1, # MP-40 / PPSh
-		"primary_name": "Пистолет-пулемет (MP-40 / ППШ-41)",
-		"desc": "Быстрая маневренность, 5 полевых аптечек первой помощи для лечения себя и союзников."
+		"primaries": [1, 0],
+		"desc": "Пистолет-пулемёт и 5 полевых аптечек для себя и союзников."
 	},
 	{
 		"role": "ANTI_TANK",
 		"name": "БРОНЕБОЙЩИК",
-		"primary": 7, # Panzerfaust
-		"primary_name": "Панцерфауст / Дробовик",
-		"desc": "Тяжелая огневая мощь против техники, укреплений и скоплений пехоты."
+		"primaries": [7, 4],
+		"desc": "Панцерфауст против техники и укреплений, дробовик в запас."
 	},
 	{
 		"role": "RADIO_OPERATOR",
 		"name": "РАДИСТ",
-		"primary": 5, # PPSh-41
-		"primary_name": "ППШ-41 + FPV-дрон",
-		"desc": "Разведка и подрыв с кабельного FPV-дрона, дымовая завеса."
-	},
-	{
-		"role": "SUPPORT",
-		"name": "ПУЛЕМЕТЧИК",
-		"primary": 5, # PPSh-41 Drum
-		"primary_name": "ППШ-41 (71 патрон) / Станковый MG",
-		"desc": "Шквальный огонь на подавление, увеличенный боезапас, поддержка наступления."
+		"primaries": [5, 1],
+		"desc": "ППШ-41 и кабельный FPV-дрон для разведки и подрыва."
 	}
 ]
 
-func setup(p_team: String, p_sectors: Array, p_base_spawns: Array) -> void:
+const WEAPON_NAMES := {
+	0: "AK-47", 1: "MP-40", 2: "MOSIN-NAGANT", 3: "M1911",
+	4: "PUMP SHOTGUN", 5: "PPSh-41", 6: "KAR98K", 7: "PANZERFAUST"
+}
+
+var team_name: String = "IRON LEGION"
+var sector_data: Array = []
+var base_spawns: Array = []
+var selected_spawn := Vector3.ZERO
+var selected_spawn_name := "ГЛАВНАЯ БАЗА"
+var selected_role := "ASSAULT"
+var selected_primary := 0
+
+var _map: FRONTLINEDeploymentMap
+var _layout_boxes: Array = []
+var _height_sampler := Callable()
+var _role_buttons: Dictionary = {}
+var _primary_buttons: Dictionary = {}
+var _spawn_label: Label
+var _loadout_summary: Label
+var _loadout_overlay: Control
+var _primary_grid: GridContainer
+var _deploy_btn: Button
+var _root: Control
+
+func setup(p_team: String, p_sectors: Array, p_spawns: Array, p_boxes: Array = [], p_height_sampler := Callable(), p_role: String = "ASSAULT", p_primary: int = -1) -> void:
 	team_name = p_team
 	sector_data = p_sectors
-	base_spawns = p_base_spawns
+	base_spawns = p_spawns
+	_layout_boxes = p_boxes
+	_height_sampler = p_height_sampler
+	layer = 15
+	name = "TacticalDeploy"
+	selected_role = _known_role(p_role)
+	var choices := _primaries_for(selected_role)
+	selected_primary = p_primary if choices.has(p_primary) else int(choices[0])
 	if not base_spawns.is_empty():
 		selected_spawn = base_spawns[0]
-	layer = 15
 	_build_ui()
+	_map.configure(_layout_boxes, sector_data, base_spawns)
+	_map.set_selected(selected_spawn)
+	_update_texts()
 
 func _build_ui() -> void:
-	_root_container = Control.new()
-	_root_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_root_container)
+	_root = Control.new()
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_root)
 
-	# Полупрозрачная тактическая виньетка фона
-	var bg := ColorRect.new()
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.04, 0.06, 0.08, 0.68)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root_container.add_child(bg)
+	var dim := ColorRect.new()
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.03, 0.05, 0.06, 0.86)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(dim)
 
-	# Верхняя плашка
-	var top_bar := PanelContainer.new()
-	top_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_bar.offset_bottom = 60.0
-	var top_style := StyleBoxFlat.new()
-	top_style.bg_color = Color(0.08, 0.10, 0.13, 0.90)
-	top_style.border_width_bottom = 2
-	top_style.border_color = Color(0.85, 0.65, 0.20, 0.90)
-	top_bar.add_theme_stylebox_override("panel", top_style)
-	_root_container.add_child(top_bar)
+	var top := PanelContainer.new()
+	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top.offset_bottom = 64.0
+	top.add_theme_stylebox_override("panel", _style(Color(0.07, 0.09, 0.11, 0.96), Color(0.85, 0.65, 0.20, 0.9)))
+	_root.add_child(top)
 
-	var top_label := Label.new()
-	top_label.text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ • ВЫБОР ТОЧКИ И КЛАССА • " + team_name.to_upper()
-	top_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	top_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	top_label.add_theme_font_size_override("font_size", 20)
-	top_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
-	top_bar.add_child(top_label)
-	_top_label = top_label
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 14)
+	top.add_child(top_row)
 
-	# Главный контейнер (Слева спавны, справа классы)
-	var main_h := HBoxContainer.new()
-	main_h.anchor_left = 0.05
-	main_h.anchor_right = 0.95
-	main_h.anchor_top = 0.12
-	main_h.anchor_bottom = 0.82
-	main_h.add_theme_constant_override("separation", 24)
-	_root_container.add_child(main_h)
+	var title := Label.new()
+	title.text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
+	top_row.add_child(title)
 
-	# --- ЛЕВАЯ КОЛОНКА: ТОЧКИ СПАВНА ---
-	var spawn_panel := PanelContainer.new()
-	spawn_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spawn_panel.size_flags_stretch_ratio = 1.0
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.06, 0.08, 0.10, 0.82)
-	panel_style.set_corner_radius_all(6)
-	panel_style.border_width_left = 2
-	panel_style.border_width_top = 2
-	panel_style.border_width_right = 2
-	panel_style.border_width_bottom = 2
-	panel_style.border_color = Color(0.25, 0.35, 0.42, 0.60)
-	spawn_panel.add_theme_stylebox_override("panel", panel_style)
-	main_h.add_child(spawn_panel)
-	_spawn_panel = spawn_panel
+	var team := Label.new()
+	team.text = team_name.to_upper()
+	team.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	team.add_theme_font_size_override("font_size", 16)
+	team.add_theme_color_override("font_color", Color(0.55, 0.80, 1.0))
+	top_row.add_child(team)
 
-	var spawn_vbox := VBoxContainer.new()
-	spawn_vbox.add_theme_constant_override("separation", 10)
-	spawn_panel.add_child(spawn_vbox)
+	var loadout_btn := Button.new()
+	loadout_btn.text = "LOADOUT / СНАРЯЖЕНИЕ"
+	loadout_btn.custom_minimum_size = Vector2(240, 44)
+	loadout_btn.add_theme_font_size_override("font_size", 16)
+	loadout_btn.pressed.connect(_open_loadout)
+	top_row.add_child(loadout_btn)
 
-	var spawn_header := Label.new()
-	spawn_header.text = "ТОЧКИ ВЫСАДКИ (SPAWN POINTS)"
-	spawn_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	spawn_header.add_theme_font_size_override("font_size", 17)
-	spawn_header.add_theme_color_override("font_color", Color(0.45, 0.85, 1.0))
-	spawn_vbox.add_child(spawn_header)
+	var main := HBoxContainer.new()
+	main.anchor_left = 0.03
+	main.anchor_right = 0.97
+	main.anchor_top = 0.13
+	main.anchor_bottom = 0.84
+	main.add_theme_constant_override("separation", 18)
+	_root.add_child(main)
 
-	# 1. Базовый спавн (всегда доступен)
-	var base_btn := Button.new()
-	base_btn.text = "[БАЗА] ГЛАВНАЯ БАЗА (%s)" % ("СЕВЕР" if team_name.contains("RED") else "ЮГ")
-	base_btn.custom_minimum_size = Vector2(0, 48)
-	base_btn.add_theme_font_size_override("font_size", 16)
-	base_btn.pressed.connect(func():
-		_select_spawn(base_spawns[0] if not base_spawns.is_empty() else Vector3.ZERO, "ГЛАВНАЯ БАЗА", base_btn)
-	)
-	spawn_vbox.add_child(base_btn)
-	_spawn_buttons.append(base_btn)
+	var map_panel := PanelContainer.new()
+	map_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	map_panel.size_flags_stretch_ratio = 1.9
+	map_panel.add_theme_stylebox_override("panel", _style(Color(0.05, 0.08, 0.07, 0.92), Color(0.28, 0.40, 0.34, 0.8)))
+	main.add_child(map_panel)
 
-	# 2. Секторы карты A, B, C
-	for sec in sector_data:
-		var sec_name: String = str(sec.name)
-		var sec_pos: Vector3 = sec.pos
-		var sec_owner: String = str(sec.owner)
-		var is_friendly := (sec_owner == team_name)
+	var map_vbox := VBoxContainer.new()
+	map_vbox.add_theme_constant_override("separation", 6)
+	map_panel.add_child(map_vbox)
 
-		var btn := Button.new()
-		if is_friendly:
-			btn.text = "[СЕКТОР] %s • ЗАХВАЧЕН (ДОСТУПЕН)" % sec_name
-			btn.add_theme_color_override("font_color", Color(0.45, 1.0, 0.45))
-			btn.pressed.connect(func():
-				_select_spawn(sec_pos + Vector3(randf_range(-2.0, 2.0), 0.0, randf_range(-2.0, 2.0)), "СЕКТОР " + sec_name, btn)
-			)
-		else:
-			var status_str := "ВРАГ" if sec_owner != "" else "НЕЙТРАЛЕН"
-			btn.text = "[СЕКТОР] %s • %s (НЕДОСТУПЕН)" % [sec_name, status_str]
-			btn.add_theme_color_override("font_color", Color(0.65, 0.65, 0.65))
-			btn.disabled = true
-		btn.custom_minimum_size = Vector2(0, 48)
-		btn.add_theme_font_size_override("font_size", 15)
-		spawn_vbox.add_child(btn)
-		_spawn_buttons.append(btn)
+	var map_header := Label.new()
+	map_header.text = "ВЫБЕРИ ТОЧКУ ВЫСАДКИ НА КАРТЕ"
+	map_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	map_header.add_theme_font_size_override("font_size", 16)
+	map_header.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	map_vbox.add_child(map_header)
 
-	# --- ПРАВАЯ КОЛОНКА: КЛАССЫ И СНАРЯЖЕНИЕ ---
-	var class_panel := PanelContainer.new()
-	class_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	class_panel.size_flags_stretch_ratio = 1.2
-	class_panel.add_theme_stylebox_override("panel", panel_style)
-	main_h.add_child(class_panel)
-	_class_panel = class_panel
+	_map = DEPLOY_MAP.new()
+	_map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_map.position_picked.connect(_on_map_picked)
+	map_vbox.add_child(_map)
 
-	var class_vbox := VBoxContainer.new()
-	class_vbox.add_theme_constant_override("separation", 8)
-	class_panel.add_child(class_vbox)
+	var side_panel := PanelContainer.new()
+	side_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_panel.custom_minimum_size = Vector2(300, 0)
+	side_panel.add_theme_stylebox_override("panel", _style(Color(0.06, 0.08, 0.10, 0.92), Color(0.28, 0.40, 0.34, 0.8)))
+	main.add_child(side_panel)
 
-	var class_header := Label.new()
-	class_header.text = "КЛАСС И СНАРЯЖЕНИЕ (LOADOUT)"
-	class_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	class_header.add_theme_font_size_override("font_size", 17)
-	class_header.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
-	class_vbox.add_child(class_header)
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 12)
+	side_panel.add_child(side)
 
-	for c in CLASSES:
-		var role: String = str(c.role)
-		var c_name: String = str(c.name)
-		var c_gun: String = str(c.primary_name)
-		var prim_idx: int = int(c.primary)
+	var side_header := Label.new()
+	side_header.text = "ТОЧКА ВЫСАДКИ"
+	side_header.add_theme_font_size_override("font_size", 16)
+	side_header.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	side.add_child(side_header)
 
-		var c_btn := Button.new()
-		c_btn.text = "%s  •  %s" % [c_name, c_gun]
-		c_btn.custom_minimum_size = Vector2(0, 44)
-		c_btn.add_theme_font_size_override("font_size", 15)
-		c_btn.pressed.connect(func():
-			_select_class(role, prim_idx)
-		)
-		class_vbox.add_child(c_btn)
-		_role_buttons[role] = c_btn
+	_spawn_label = Label.new()
+	_spawn_label.text = "ГЛАВНАЯ БАЗА"
+	_spawn_label.add_theme_font_size_override("font_size", 20)
+	_spawn_label.add_theme_color_override("font_color", Color(0.9, 0.95, 0.9))
+	side.add_child(_spawn_label)
 
-	# Информационная плашка выбранного класса
-	_status_label = Label.new()
-	_status_label.text = "Выбран штурмовик: автомат АК-47, гранаты Ф-1, дым."
-	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status_label.add_theme_font_size_override("font_size", 14)
-	_status_label.add_theme_color_override("font_color", Color(0.85, 0.90, 0.95))
-	class_vbox.add_child(_status_label)
+	var hint := Label.new()
+	hint.text = "Нажми на карту, чтобы поставить маркер высадки. Серые здания и стены недоступны."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", Color(0.68, 0.74, 0.70))
+	side.add_child(hint)
 
-	# --- НИЖНЯЯ КНОПКА: ДЕПЛОЙ ---
-	var bottom_bar := HBoxContainer.new()
-	bottom_bar.anchor_left = 0.25
-	bottom_bar.anchor_right = 0.75
-	bottom_bar.anchor_top = 0.86
-	bottom_bar.anchor_bottom = 0.96
-	bottom_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	_root_container.add_child(bottom_bar)
+	var separator := HSeparator.new()
+	side.add_child(separator)
+
+	_loadout_summary = Label.new()
+	_loadout_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_loadout_summary.add_theme_font_size_override("font_size", 14)
+	_loadout_summary.add_theme_color_override("font_color", Color(0.85, 0.90, 0.95))
+	side.add_child(_loadout_summary)
+
+	var change_btn := Button.new()
+	change_btn.text = "СМЕНИТЬ КЛАСС И ОРУЖИЕ"
+	change_btn.custom_minimum_size = Vector2(0, 42)
+	change_btn.pressed.connect(_open_loadout)
+	side.add_child(change_btn)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side.add_child(spacer)
+
+	var bottom := HBoxContainer.new()
+	bottom.anchor_left = 0.25
+	bottom.anchor_right = 0.75
+	bottom.anchor_top = 0.87
+	bottom.anchor_bottom = 0.97
+	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
+	_root.add_child(bottom)
 
 	_deploy_btn = Button.new()
-	_deploy_btn.text = "В БОЙ / ДЕПЛОЙ (DEPLOY)"
-	_deploy_btn.custom_minimum_size = Vector2(420, 56)
-	_deploy_btn.add_theme_font_size_override("font_size", 22)
+	_deploy_btn.text = "В БОЙ / DEPLOY"
+	_deploy_btn.custom_minimum_size = Vector2(460, 58)
+	_deploy_btn.add_theme_font_size_override("font_size", 24)
 	_deploy_btn.add_theme_color_override("font_color", Color(1.0, 0.92, 0.40))
-	var deploy_style := StyleBoxFlat.new()
-	deploy_style.bg_color = Color(0.18, 0.45, 0.22, 0.95)
-	deploy_style.set_corner_radius_all(8)
-	deploy_style.border_width_left = 2
-	deploy_style.border_width_top = 2
-	deploy_style.border_width_right = 2
-	deploy_style.border_width_bottom = 2
-	deploy_style.border_color = Color(0.40, 0.90, 0.45)
-	_deploy_btn.add_theme_stylebox_override("normal", deploy_style)
+	_deploy_btn.add_theme_stylebox_override("normal", _style(Color(0.16, 0.40, 0.20, 0.97), Color(0.40, 0.90, 0.45), 8))
+	_deploy_btn.add_theme_stylebox_override("hover", _style(Color(0.20, 0.50, 0.25, 0.97), Color(0.55, 1.0, 0.55), 8))
 	_deploy_btn.pressed.connect(_on_deploy_clicked)
-	bottom_bar.add_child(_deploy_btn)
+	bottom.add_child(_deploy_btn)
 
-	# QA-fix TASK-0022: два шага — сначала точка высадки, потом снаряжение.
-	_next_btn = Button.new()
-	_next_btn.text = "ДАЛЕЕ → СНАРЯЖЕНИЕ"
-	_next_btn.custom_minimum_size = Vector2(260, 52)
-	_next_btn.add_theme_font_size_override("font_size", 18)
-	_next_btn.pressed.connect(func(): _show_step(1))
-	bottom_bar.add_child(_next_btn)
+	_build_loadout_overlay()
 
-	_back_btn = Button.new()
-	_back_btn.text = "← ТОЧКА ВЫСАДКИ"
-	_back_btn.custom_minimum_size = Vector2(220, 52)
-	_back_btn.add_theme_font_size_override("font_size", 17)
-	_back_btn.pressed.connect(func(): _show_step(0))
-	bottom_bar.add_child(_back_btn)
+func _build_loadout_overlay() -> void:
+	_loadout_overlay = Control.new()
+	_loadout_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_loadout_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_loadout_overlay.visible = false
+	_root.add_child(_loadout_overlay)
 
-	# Инициализация выбора
-	if not _spawn_buttons.is_empty():
-		_select_spawn(selected_spawn, "ГЛАВНАЯ БАЗА", _spawn_buttons[0])
-	_select_class(selected_role, selected_primary)
-	_show_step(0)
+	var dim := ColorRect.new()
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.01, 0.02, 0.03, 0.82)
+	_loadout_overlay.add_child(dim)
 
-func _show_step(step: int) -> void:
-	_step = step
-	var spawn_step := step == 0
-	if _spawn_panel != null:
-		_spawn_panel.visible = spawn_step
-	if _class_panel != null:
-		_class_panel.visible = not spawn_step
-	if _next_btn != null:
-		_next_btn.visible = spawn_step
-	if _deploy_btn != null:
-		_deploy_btn.visible = not spawn_step
-	if _back_btn != null:
-		_back_btn.visible = not spawn_step
-	if _top_label != null:
-		_top_label.text = ("ШАГ 1/2 • ВЫБОР ТОЧКИ ВЫСАДКИ • " if spawn_step else "ШАГ 2/2 • КЛАСС И СНАРЯЖЕНИЕ • ") + team_name.to_upper()
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.anchor_left = 0.16
+	panel.anchor_right = 0.84
+	panel.anchor_top = 0.08
+	panel.anchor_bottom = 0.92
+	panel.add_theme_stylebox_override("panel", _style(Color(0.07, 0.09, 0.11, 0.98), Color(0.85, 0.65, 0.20, 0.9)))
+	_loadout_overlay.add_child(panel)
 
-func _select_spawn(pos: Vector3, spawn_name: String, active_btn: Button) -> void:
-	selected_spawn = pos
-	selected_spawn_name = spawn_name
-	for btn in _spawn_buttons:
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	panel.add_child(vbox)
+
+	var header := Label.new()
+	header.text = "LOADOUT / КЛАСС И ОРУЖИЕ"
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header.add_theme_font_size_override("font_size", 22)
+	header.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
+	vbox.add_child(header)
+
+	var role_label := Label.new()
+	role_label.text = "КЛАСС"
+	role_label.add_theme_font_size_override("font_size", 14)
+	role_label.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	vbox.add_child(role_label)
+
+	var role_grid := GridContainer.new()
+	role_grid.columns = 2
+	role_grid.add_theme_constant_override("h_separation", 8)
+	role_grid.add_theme_constant_override("v_separation", 6)
+	vbox.add_child(role_grid)
+	for cls in CLASSES:
+		var role := str(cls.role)
+		var btn := Button.new()
+		btn.text = str(cls.name)
+		btn.custom_minimum_size = Vector2(0, 44)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.add_theme_font_size_override("font_size", 15)
+		btn.pressed.connect(func(): _choose_role(role))
+		role_grid.add_child(btn)
+		_role_buttons[role] = btn
+
+	var gun_label := Label.new()
+	gun_label.text = "ОСНОВНОЕ ОРУЖИЕ"
+	gun_label.add_theme_font_size_override("font_size", 14)
+	gun_label.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	vbox.add_child(gun_label)
+
+	_primary_grid = GridContainer.new()
+	_primary_grid.columns = 2
+	_primary_grid.add_theme_constant_override("h_separation", 8)
+	_primary_grid.add_theme_constant_override("v_separation", 6)
+	vbox.add_child(_primary_grid)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	var close_btn := Button.new()
+	close_btn.text = "ГОТОВО"
+	close_btn.custom_minimum_size = Vector2(0, 46)
+	close_btn.add_theme_font_size_override("font_size", 18)
+	close_btn.pressed.connect(func(): _loadout_overlay.visible = false)
+	vbox.add_child(close_btn)
+
+func _open_loadout() -> void:
+	_rebuild_primary_buttons()
+	_update_texts()
+	_loadout_overlay.visible = true
+
+func _choose_role(role: String) -> void:
+	selected_role = _known_role(role)
+	var choices := _primaries_for(selected_role)
+	if not choices.has(selected_primary):
+		selected_primary = int(choices[0])
+	_rebuild_primary_buttons()
+	_update_texts()
+
+func _choose_primary(index: int) -> void:
+	selected_primary = index
+	_update_texts()
+
+func _rebuild_primary_buttons() -> void:
+	for child in _primary_grid.get_children():
+		child.queue_free()
+	_primary_buttons.clear()
+	for index in _primaries_for(selected_role):
+		var idx := int(index)
+		var btn := Button.new()
+		btn.text = str(WEAPON_NAMES.get(idx, "ОРУЖИЕ %d" % idx))
+		btn.custom_minimum_size = Vector2(0, 40)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.pressed.connect(func(): _choose_primary(idx))
+		_primary_grid.add_child(btn)
+		_primary_buttons[idx] = btn
+
+func _on_map_picked(world_pos: Vector3) -> void:
+	var y := 0.0
+	if _height_sampler.is_valid():
+		y = float(_height_sampler.call(world_pos.x, world_pos.z))
+	selected_spawn = Vector3(world_pos.x, y, world_pos.z)
+	selected_spawn_name = "ТОЧКА НА КАРТЕ"
+	_update_texts()
+
+func _update_texts() -> void:
+	if _spawn_label != null:
+		_spawn_label.text = selected_spawn_name
+	if _loadout_summary != null:
+		var cls := _class_data(selected_role)
+		_loadout_summary.text = "КЛАСС: %s\nОРУЖИЕ: %s\n\n%s" % [
+			str(cls.get("name", selected_role)),
+			str(WEAPON_NAMES.get(selected_primary, "—")),
+			str(cls.get("desc", ""))
+		]
+	for role in _role_buttons:
+		var btn: Button = _role_buttons[role]
 		if is_instance_valid(btn):
-			btn.modulate = Color(1.0, 1.0, 1.0)
-	if is_instance_valid(active_btn):
-		active_btn.modulate = Color(1.2, 1.2, 0.7)
-
-func _select_class(role: String, prim_idx: int) -> void:
-	selected_role = role
-	selected_primary = prim_idx
-	for r in _role_buttons:
-		var btn: Button = _role_buttons[r]
+			btn.modulate = Color(1.15, 1.15, 0.65) if role == selected_role else Color.WHITE
+	for index in _primary_buttons:
+		var btn: Button = _primary_buttons[index]
 		if is_instance_valid(btn):
-			btn.modulate = Color(1.2, 1.2, 0.6) if r == role else Color(1.0, 1.0, 1.0)
-
-	for c in CLASSES:
-		if c.role == role:
-			if _status_label != null:
-				_status_label.text = "Класс: %s\nОсновное: %s\n%s" % [c.name, c.primary_name, c.desc]
-			break
+			btn.modulate = Color(1.15, 1.15, 0.65) if index == selected_primary else Color.WHITE
 
 func _on_deploy_clicked() -> void:
-	_deploy_btn.disabled = true
-	var tw := create_tween()
-	tw.tween_property(_root_container, "modulate:a", 0.0, 0.35)
-	tw.chain().tween_callback(func():
+	if _deploy_btn != null:
+		_deploy_btn.disabled = true
+	var tween := create_tween()
+	tween.tween_property(_root, "modulate:a", 0.0, 0.25)
+	tween.chain().tween_callback(func():
 		deployed.emit(selected_spawn, selected_role, selected_primary)
 		queue_free()
 	)
+
+func _known_role(role: String) -> String:
+	for cls in CLASSES:
+		if str(cls.role) == role:
+			return role
+	return "ASSAULT"
+
+func _class_data(role: String) -> Dictionary:
+	for cls in CLASSES:
+		if str(cls.role) == role:
+			return cls
+	return CLASSES[0]
+
+func _primaries_for(role: String) -> Array:
+	for cls in CLASSES:
+		if str(cls.role) == role:
+			return cls.primaries
+	return CLASSES[0].primaries
+
+func _style(bg: Color, border: Color, radius: int = 6) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg
+	style.border_color = border
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(radius)
+	return style

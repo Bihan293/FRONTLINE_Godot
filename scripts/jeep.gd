@@ -10,6 +10,8 @@ const SFX_EXPLOSION = preload("res://assets/audio/explosion.wav")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const VEHICLE_MESHES = preload("res://scripts/vehicle_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
+const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
+const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 
 const MAX_FORWARD_SPEED := 13.5
 const MAX_REVERSE_SPEED := 5.5
@@ -17,11 +19,16 @@ const ACCEL := 8.5
 const BRAKE_DECEL := 15.0
 const DRAG_DECEL := 3.5
 const TURN_RATE := 1.35
-## Масштаб визуала Antigravity. Отзыв QA (2026-11-08): джип был «игрушечным».
-## 1.45 даёт Willys ~4.9 м длиной — чанки-аркада, как ощущается в Dummy War.
-const MODEL_SCALE := 1.90
+## Масштаб визуала Antigravity: Willys ~4.9 м, коллайдер совпадает с мешем.
+const MODEL_SCALE := 1.45
 const WHEEL_RADIUS := 0.34 * MODEL_SCALE
 const GRAVITY := 18.0
+
+const TURRET_INTERVAL := 0.09
+const TURRET_DAMAGE := 24
+const TURRET_RANGE := 170.0
+const TURRET_BULLET_SPEED := 730.0
+const TURRET_RAY_MASK := (1 << 0) | (1 << 1) | (1 << 2)
 
 const MAX_HEALTH := 260.0
 
@@ -40,6 +47,13 @@ var _wheels: Array[Node3D] = []
 var _driver_marker: Marker3D
 var _smoke: CPUParticles3D
 var _fire_particles: CPUParticles3D
+var _turret_yaw: Node3D
+var _turret_pitch: Node3D
+var _turret_muzzle: Marker3D
+var _fire_cooldown := 0.0
+var _turret_audio: AudioStreamPlayer3D
+var _turret_flash: MeshInstance3D
+var _turret_flash_time := 0.0
 
 func _ready() -> void:
 	add_to_group("enterable_vehicles")
@@ -89,13 +103,28 @@ func seat_position() -> Vector3:
 	return _driver_marker.global_position if _driver_marker != null else global_position
 
 func exit_position() -> Vector3:
-	if _driver_marker == null:
-		return global_position + global_transform.basis.x * -1.35 * MODEL_SCALE
-	return global_position - global_transform.basis.x * 1.35 * MODEL_SCALE + Vector3.UP * 0.2
+	var origin := global_position + Vector3.UP * 0.9
+	var candidates := [
+		global_position - global_transform.basis.x * 1.35 * MODEL_SCALE,
+		global_position + global_transform.basis.x * 1.35 * MODEL_SCALE,
+		global_position + global_transform.basis.z * 2.0 * MODEL_SCALE
+	]
+	var space := get_world_3d().direct_space_state
+	for candidate in candidates:
+		var query := PhysicsRayQueryParameters3D.create(origin, candidate + Vector3.UP * 0.9)
+		query.collision_mask = 1
+		query.exclude = [get_rid()]
+		query.collide_with_areas = false
+		if space.intersect_ray(query).is_empty():
+			return candidate + Vector3.UP * 0.2
+	return global_position + Vector3.UP * 0.6
 
 func driver_eye_height() -> float:
-	# Eye above the taller (scaled) cowl.
-	return 1.06 * MODEL_SCALE
+	# Высота глаз над сиденьем, без повторного умножения на MODEL_SCALE.
+	return 0.85
+
+func interaction_radius() -> float:
+	return 4.4
 
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Unknown") -> int:
 	if destroyed:
@@ -177,6 +206,11 @@ func _build_visuals() -> void:
 		if wheel != null:
 			_wheels.append(wheel)
 
+	_turret_yaw = _model_root.get_node_or_null("TurretYaw") as Node3D
+	_turret_pitch = _model_root.get_node_or_null("TurretPitch") as Node3D
+	_turret_muzzle = _model_root.get_node_or_null("Muzzle") as Marker3D
+	_build_turret_audio()
+
 	# Дым при повреждении.	# Дым при повреждении.
 	_smoke = CPUParticles3D.new()
 	_smoke.amount = 14
@@ -247,6 +281,89 @@ func _read_driver_input() -> Vector2:
 		move.y += float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP)) - float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN))
 	return move.limit_length(1.0)
 
+func _build_turret_audio() -> void:
+	_turret_audio = AudioStreamPlayer3D.new()
+	_turret_audio.stream = WEAPON_SOUND.get_shot("ppsh41")
+	_turret_audio.unit_size = 15.0
+	_turret_audio.max_distance = 180.0
+	_turret_audio.max_polyphony = 1
+	_turret_audio.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
+	_turret_audio.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
+	add_child(_turret_audio)
+	if _turret_muzzle == null:
+		return
+	_turret_flash = MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.07
+	mesh.height = 0.14
+	_turret_flash.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.8, 0.3)
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.6, 0.15)
+	mat.emission_energy_multiplier = 3.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_turret_flash.material_override = mat
+	_turret_flash.visible = false
+	_turret_muzzle.add_child(_turret_flash)
+
+## Наведение спаренного пулемёта по камере водителя.
+func tick_driver(player: Node3D, delta: float) -> void:
+	_fire_cooldown = maxf(0.0, _fire_cooldown - delta)
+	if _turret_flash_time > 0.0:
+		_turret_flash_time = maxf(0.0, _turret_flash_time - delta)
+		if _turret_flash_time <= 0.0 and _turret_flash != null:
+			_turret_flash.visible = false
+	if _turret_yaw == null or _turret_pitch == null:
+		return
+	var camera: Camera3D = player.get("camera")
+	if camera == null:
+		return
+	var dir := -camera.global_transform.basis.z
+	if dir.length_squared() < 0.001:
+		return
+	dir = dir.normalized()
+	var local_yaw := wrapf(atan2(-dir.x, -dir.z) - global_rotation.y, -PI, PI)
+	_turret_yaw.rotation.y = clampf(local_yaw, -PI, PI)
+	_turret_pitch.rotation.x = clampf(asin(clampf(dir.y, -1.0, 1.0)), -0.35, 0.55)
+
+func try_fire(player: Node3D) -> bool:
+	if destroyed or driver != player or _fire_cooldown > 0.0:
+		return false
+	var camera: Camera3D = player.get("camera")
+	if camera == null:
+		return false
+	_fire_cooldown = TURRET_INTERVAL
+	var origin := _turret_muzzle.global_position if _turret_muzzle != null else global_position + Vector3.UP * 1.55
+	var forward := -camera.global_transform.basis.z
+	var aim_end := camera.global_position + forward * TURRET_RANGE
+	var query := PhysicsRayQueryParameters3D.create(camera.global_position, aim_end)
+	query.collision_mask = TURRET_RAY_MASK
+	query.collide_with_areas = true
+	query.exclude = [player.get_rid(), get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var aim_point: Vector3 = hit.get("position", aim_end)
+	var direction := (aim_point - origin).normalized()
+	if direction.length_squared() < 0.01:
+		direction = forward
+	var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var world := get_parent()
+	if world != null and world.has_method("spawn_bullet_projectile"):
+		world.call("spawn_bullet_projectile", origin, direction, TURRET_BULLET_SPEED, TURRET_DAMAGE, TURRET_RANGE, "Player", player_team, player)
+	elif world != null:
+		var bullet = BULLET_SCRIPT.new()
+		world.add_child(bullet)
+		bullet.configure(origin, direction, TURRET_BULLET_SPEED, TURRET_DAMAGE, TURRET_RANGE, "Player", player_team, player)
+	if _turret_audio != null:
+		_turret_audio.global_position = origin
+		_turret_audio.pitch_scale = 0.92 + randf_range(-0.03, 0.03)
+		_turret_audio.play()
+	if _turret_flash != null:
+		_turret_flash.visible = true
+		_turret_flash_time = 0.05
+	HIT_EFFECTS.spawn_casing(world, origin - direction * 0.4 + Vector3.UP * 0.08, Vector3(randf_range(-1.0, 1.0), 2.2, randf_range(-1.0, 1.0)))
+	return true
+
 func _physics_process(delta: float) -> void:
 	var input := _read_driver_input()
 	var throttle := clampf(input.y, -1.0, 1.0)
@@ -275,6 +392,14 @@ func _physics_process(delta: float) -> void:
 	velocity.z = forward.z * _speed
 	velocity.y = -GRAVITY * (0.0 if is_on_floor() else 1.0)
 	move_and_slide()
+
+	# Удар о стену/дерево гасит скорость, иначе джип «шлифует» препятствие.
+	if absf(_speed) > 1.0:
+		for i in range(get_slide_collision_count()):
+			var collision := get_slide_collision(i)
+			if collision.get_normal().y < 0.45:
+				_speed = move_toward(_speed, 0.0, BRAKE_DECEL * 1.4 * delta)
+				break
 
 	var wheel_spin := _speed * delta / WHEEL_RADIUS
 	for wheel in _wheels:

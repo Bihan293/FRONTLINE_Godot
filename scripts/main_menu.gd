@@ -321,7 +321,7 @@ func _launch_map_tactical() -> void:
 	get_tree().set_meta("open_tactical_deploy_at_start", true)
 	get_tree().set_meta("deploy_intro", false)
 	if selected_map == "POLYGON":
-		get_tree().change_scene_to_file("res://scenes/Main.tscn")
+		get_tree().change_scene_to_file("res://scenes/Polygon.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/Battlefield.tscn")
 

@@ -184,7 +184,10 @@ func _apply_actor_hit(actor: Node, collider: Object, position: Vector3, directio
 	var attacker_pos := global_position - direction
 	if is_instance_valid(shooter) and shooter is Node3D:
 		attacker_pos = (shooter as Node3D).global_position
-	var applied := int(actor.call("receive_hit", damage, attacker_pos, region, shooter_name))
+	var result: Variant = actor.call("receive_hit", damage, attacker_pos, region, shooter_name)
+	var applied := 0
+	if result is int or result is float:
+		applied = int(result)
 	if applied <= 0:
 		return
 	var world := get_parent()

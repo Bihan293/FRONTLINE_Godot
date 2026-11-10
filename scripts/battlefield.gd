@@ -66,6 +66,9 @@ var _mat_cache: Dictionary = {}
 var _detail_texture: Texture2D
 var _environment: Environment
 var _active_bots: Array[FRONTLINESoldierBot] = []
+var _deploy_ui: CanvasLayer = null
+var _reinforcement_queue: Array[Dictionary] = []
+var _reinforcement_spawn_timer := 0.0
 var _bot_name_idx := 0
 var _merge_vertices := PackedVector3Array()
 var _merge_normals := PackedVector3Array()
@@ -442,6 +445,8 @@ func _play_deploy_intro() -> void:
 func open_tactical_deploy() -> void:
 	if player == null or not is_instance_valid(player):
 		return
+	if _deploy_ui != null and is_instance_valid(_deploy_ui):
+		return
 	var player_camera := player.get("camera") as Camera3D
 	if player_camera == null:
 		return
@@ -483,9 +488,8 @@ func _on_player_tactical_deployed(spawn_pos: Vector3, role_name: String, primary
 			overhead_cam.queue_free()
 		return
 
-	player.set("player_role", role_name)
+	player.call("apply_loadout", role_name, primary_idx)
 	player.set("respawn_position", spawn_pos)
-	player.set("current_weapon_index", primary_idx)
 	if player.get("is_dead"):
 		player.call("respawn")
 	else:
@@ -616,13 +620,15 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 	# Добавление в киллфид
 	_add_killfeed_entry(killer_name, victim.soldier_name, victim.team_name)
 
-	# Запуск подкрепления через 7 секунд (разброс, чтобы пачка смертей
-	# не вызывала одновременную сборку нескольких ботов в одном кадре).
+	# Подкрепление ставится в очередь: тяжёлая сборка модели не должна
+	# выполняться пачкой в одном кадре после массовой гибели.
 	var v_team := victim.team_name
-	get_tree().create_timer(7.0 + randf_range(-0.25, 0.75), false).timeout.connect(func():
-		if is_instance_valid(self):
-			_spawn_reinforcement(v_team)
-	)
+	_reinforcement_queue.append({
+		"team": v_team,
+		"at": Time.get_ticks_msec() + 7000 + randi_range(-250, 750)
+	})
+	if _reinforcement_queue.size() > 24:
+		_reinforcement_queue.pop_front()
 
 func spawn_weapon_pickup(pos: Vector3, index: int, clip: int, reserve: int, initial_velocity: Vector3 = Vector3.ZERO) -> void:
 	var active_pickups := get_tree().get_nodes_in_group("field_weapon_pickups")
@@ -773,12 +779,30 @@ func _process(delta: float) -> void:
 	if is_game_over:
 		return
 	match_elapsed_time += delta
+	_process_reinforcement_queue(delta)
 	# QA-optimization: владение сектором не меняется быстрее 4 Гц.
 	_sector_timer -= delta
 	if _sector_timer <= 0.0:
 		_sector_timer = 0.25
 		_update_sector_captures()
 	_update_ticket_bleed(delta)
+
+## Один тяжёлый спавн за такт: иначе 3-4 смерти подряд дают 300-400 мс фриз.
+func _process_reinforcement_queue(delta: float) -> void:
+	if _reinforcement_queue.is_empty():
+		return
+	_reinforcement_spawn_timer -= delta
+	if _reinforcement_spawn_timer > 0.0:
+		return
+	var now := Time.get_ticks_msec()
+	for i in range(_reinforcement_queue.size()):
+		var item: Dictionary = _reinforcement_queue[i]
+		if int(item.at) > now:
+			continue
+		_reinforcement_queue.remove_at(i)
+		_spawn_reinforcement(str(item.team))
+		_reinforcement_spawn_timer = 0.45
+		return
 
 func _update_ticket_bleed(delta: float) -> void:
 	if game_mode == "TDM":

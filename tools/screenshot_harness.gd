@@ -16,6 +16,8 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT_DIR))
 	if "hud_only" in OS.get_cmdline_user_args():
 		await _capture_hud_only()
+	elif "deploy_new" in OS.get_cmdline_user_args():
+		await _capture_new_deploy()
 	elif "village_hud" in OS.get_cmdline_user_args():
 		await _capture_village_hud_only()
 	elif "deployment" in OS.get_cmdline_user_args():
@@ -60,6 +62,30 @@ func _capture_village_hud_only() -> void:
 	await _wait_frames(4)
 	_prepare_player(player_node, Vector3(0.0, 0.4, 40.0), 0.0)
 	await _capture("07_village_hud")
+	battlefield.queue_free()
+
+func _capture_new_deploy() -> void:
+	get_tree().set_meta("selected_map", "BATTLEFIELD")
+	get_tree().set_meta("selected_mode", "CONQUEST")
+	get_tree().set_meta("selected_team", "IRON LEGION")
+	get_tree().set_meta("open_tactical_deploy_at_start", true)
+	get_tree().set_meta("deploy_intro", false)
+	var packed: PackedScene = load(BATTLEFIELD_SCENE)
+	var battlefield := packed.instantiate()
+	add_child(battlefield)
+	await _wait_frames(40)
+	await _capture("10_tactical_deploy")
+	var ui := battlefield.get_node_or_null("TacticalDeploy")
+	if ui != null:
+		ui.call("_open_loadout")
+		await _wait_frames(10)
+		await _capture("11_loadout")
+		var overlay: Control = ui.get("_loadout_overlay")
+		if overlay != null:
+			overlay.visible = false
+		ui.call("_on_deploy_clicked")
+		await _wait_frames(80)
+		await _capture("12_fp_arms")
 	battlefield.queue_free()
 
 func _capture_hud_only() -> void:
