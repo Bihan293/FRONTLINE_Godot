@@ -1044,7 +1044,8 @@ func _test_heal_animation() -> void:
 	for _dbg in range(3):
 		await get_tree().physics_frame
 	var heal_view: Node3D = player.get("heal_view_root")
-	var heal_bar: Control = player.get("heal_progress_bar")
+	var hud: Node = player.get("_player_hud")
+	var heal_bar: Control = hud.get("heal_progress_bar") if hud != null else null
 	_check(heal_view != null, "heal view model missing")
 	_check(heal_view != null and heal_view.visible, "heal bandage not visible during heal")
 	_check(heal_bar != null and heal_bar.visible, "green heal progress bar not visible")
