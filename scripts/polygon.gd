@@ -19,7 +19,7 @@ var _detail_texture: Texture2D
 var _environment: Environment
 
 func _ready() -> void:
-    team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+    team_name = MatchState.player_team
     _build_world()
     _spawn_player()
     _build_hud()
@@ -244,7 +244,7 @@ func _add_dummy(
 func _spawn_player() -> void:
     player = CharacterBody3D.new()
     player.set_script(PLAYER_SCRIPT)
-    var spawn: Vector3 = get_tree().get_meta("spawn_position", Vector3(0, LAYOUT.SPAWN_Y, 30))
+    var spawn: Vector3 = MatchState.consume_spawn(Vector3(0, LAYOUT.SPAWN_Y, 30))
     spawn.x = clampf(spawn.x, -40.0, 40.0)
     spawn.z = clampf(spawn.z, -40.0, 40.0)
     spawn.y = LAYOUT.SPAWN_Y

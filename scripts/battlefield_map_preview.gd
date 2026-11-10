@@ -27,7 +27,7 @@ var _map_width := MAP_WIDTH
 var _map_depth := MAP_DEPTH
 
 func _ready() -> void:
-	_set_layout(str(get_tree().get_meta("selected_map", "BATTLEFIELD")))
+	_set_layout(MatchState.map_name)
 	mouse_filter = Control.MOUSE_FILTER_STOP if interactive else Control.MOUSE_FILTER_IGNORE
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_update_spawns()

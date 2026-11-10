@@ -80,8 +80,8 @@ func _capture_pickups_only() -> void:
 	battlefield.queue_free()
 
 func _capture_intro_only() -> void:
-	get_tree().set_meta("spawn_position", Vector3(0.0, 0.4, 50.0))
-	get_tree().set_meta("deploy_intro", true)
+	MatchState.set_spawn(Vector3(0.0, 0.4, 50.0))
+	MatchState.request_deploy_screen(false, true)
 	var battlefield := await _load_map("BATTLEFIELD", "IRON LEGION")
 	_set_hud_visible(battlefield, false)
 	await _wait_frames(2)
@@ -134,13 +134,13 @@ func _capture(file_name: String) -> void:
 
 func _load_map(map_name: String, team: String) -> Node3D:
 	# QA-tool: скрины не должны перекрываться экраном тактического деплоя.
-	get_tree().set_meta("skip_deploy_screen", true)
-	get_tree().set_meta("open_tactical_deploy_at_start", false)
-	get_tree().set_meta("selected_map", map_name)
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", team)
-	get_tree().set_meta("selected_role", "ASSAULT")
-	get_tree().set_meta("selected_loadout", "BALANCED")
+	MatchState.skip_deploy_screen = true
+	MatchState.request_deploy_screen(false, false)
+	MatchState.map_name = map_name
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = team
+	MatchState.player_role = "ASSAULT"
+	MatchState.loadout_preset = "BALANCED"
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -277,9 +277,9 @@ func _capture_village_models() -> void:
 	await _wait_frames(3)
 
 func _capture_polygon_models() -> void:
-	get_tree().set_meta("selected_map", "POLYGON")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("selected_role", "ASSAULT")
+	MatchState.map_name = "POLYGON"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.player_role = "ASSAULT"
 	var packed: PackedScene = load(POLYGON_SCENE)
 	var polygon := packed.instantiate() as Node3D
 	add_child(polygon)

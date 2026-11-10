@@ -20,8 +20,6 @@ func _ready() -> void:
 		await _capture_new_deploy()
 	elif "village_hud" in OS.get_cmdline_user_args():
 		await _capture_village_hud_only()
-	elif "deployment" in OS.get_cmdline_user_args():
-		await _capture_deployment_only()
 	else:
 		await _capture_main_menu()
 		await _capture_battlefield()
@@ -29,29 +27,10 @@ func _ready() -> void:
 	print("SCREENSHOTS_OK: %d" % _captures)
 	get_tree().quit()
 
-func _capture_deployment_only() -> void:
-	var packed: PackedScene = load(MAIN_MENU_SCENE)
-	var menu: Control = packed.instantiate()
-	add_child(menu)
-	await _wait_frames(3)
-	menu.call("_show_maps")
-	await _wait_frames(2)
-	menu.call("_select_battlefield")
-	await _wait_frames(2)
-	menu.call("_show_deployment")
-	await _wait_frames(3)
-	await _capture("08_deployment")
-	menu.call("_set_team_in_place", "RED FRONT")
-	menu.call("_set_role_in_place", "SNIPER")
-	menu.call("_set_loadout_in_place", "SURVIVAL")
-	await _wait_frames(3)
-	await _capture("09_deployment_red")
-	menu.queue_free()
-
 func _capture_village_hud_only() -> void:
-	get_tree().set_meta("selected_map", "VILLAGE")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "RED FRONT")
+	MatchState.map_name = "VILLAGE"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "RED FRONT"
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -65,11 +44,10 @@ func _capture_village_hud_only() -> void:
 	battlefield.queue_free()
 
 func _capture_new_deploy() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("open_tactical_deploy_at_start", true)
-	get_tree().set_meta("deploy_intro", false)
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.request_deploy_screen(true, false)
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate()
 	add_child(battlefield)
@@ -89,9 +67,9 @@ func _capture_new_deploy() -> void:
 	battlefield.queue_free()
 
 func _capture_hud_only() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -172,9 +150,9 @@ func _prepare_player(player_node: Node, position: Vector3, yaw: float) -> void:
 		(camera as Camera3D).current = true
 
 func _capture_battlefield() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -209,9 +187,9 @@ func _capture_battlefield() -> void:
 	await _wait_frames(3)
 
 func _capture_village() -> void:
-	get_tree().set_meta("selected_map", "VILLAGE")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "RED FRONT")
+	MatchState.map_name = "VILLAGE"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "RED FRONT"
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)

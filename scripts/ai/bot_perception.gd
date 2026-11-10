@@ -245,7 +245,7 @@ func _is_enemy(actor: Node3D) -> bool:
 	if actor.is_in_group("radio_drones"):
 		return str(actor.get("operator_team")) != str(_owner.get("team_name"))
 	if actor.is_in_group("player"):
-		return str(_owner.get_tree().get_meta("selected_team", "IRON LEGION")) != str(_owner.get("team_name"))
+		return MatchState.player_team != str(_owner.get("team_name"))
 	return str(actor.get("team_name")) != str(_owner.get("team_name"))
 
 func _actor_is_dead(actor: Node3D) -> bool:

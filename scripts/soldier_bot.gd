@@ -161,7 +161,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(45.0)
 	_navigation = get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation
 
-	match_difficulty = clampi(int(get_tree().get_meta("match_difficulty", 1)), 0, 2)
+	match_difficulty = MatchState.difficulty
 	match match_difficulty:
 		0:
 			difficulty_spread_mult = 1.45
@@ -234,7 +234,7 @@ func _ready() -> void:
 
 ## Данные карты не меняются во время матча — считаем один раз.
 func _cache_map_data() -> void:
-	_cached_map_name = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	_cached_map_name = MatchState.map_name
 	if _cached_map_name == "VILLAGE":
 		_sector_positions = PackedFloat32Array([-45.0, 0.0, 45.0])
 		_enemy_base_z = 48.0

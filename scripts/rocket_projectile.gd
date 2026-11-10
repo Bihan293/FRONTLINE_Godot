@@ -235,7 +235,7 @@ func _apply_blast_damage(pos: Vector3) -> void:
 
 	# Игрок
 	var player = get_tree().get_first_node_in_group("player") as Node3D
-	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var player_team: String = MatchState.player_team
 	if player != null and is_instance_valid(player) and player.has_method("receive_hit"):
 		if team_name == "" or team_name != player_team or shooter_name == "Player":
 			var dist := pos.distance_to(player.global_position)

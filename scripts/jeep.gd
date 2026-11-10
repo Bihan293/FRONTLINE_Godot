@@ -346,7 +346,7 @@ func try_fire(player: Node3D) -> bool:
 	var direction := (aim_point - origin).normalized()
 	if direction.length_squared() < 0.01:
 		direction = forward
-	var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var player_team := MatchState.player_team
 	var world := get_parent()
 	if world != null and world.has_method("spawn_bullet_projectile"):
 		world.call("spawn_bullet_projectile", origin, direction, TURRET_BULLET_SPEED, TURRET_DAMAGE, TURRET_RANGE, "Player", player_team, player)

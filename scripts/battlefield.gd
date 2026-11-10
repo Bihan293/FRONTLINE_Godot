@@ -42,7 +42,7 @@ func record_player_damage(amount: int) -> void:
 		player_damage += amount
 
 func _layout():
-	var map_name: String = str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map_name: String = MatchState.map_name
 	if map_name == "VILLAGE":
 		return VILLAGE_LAYOUT
 	if map_name == "COUNTRYSIDE":
@@ -51,7 +51,7 @@ func _layout():
 
 ## Высота земли для точки, выбранной на карте. Пустой Callable — плоская карта.
 func _terrain_height_sampler() -> Callable:
-	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map_name := MatchState.map_name
 	if map_name == "VILLAGE":
 		return Callable(VILLAGE_LAYOUT, "terrain_height_at")
 	if map_name == "COUNTRYSIDE":
@@ -98,8 +98,8 @@ const GERMAN_NAMES := [
 ]
 
 func _ready() -> void:
-	team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
-	game_mode = str(get_tree().get_meta("selected_mode", "CONQUEST"))
+	team_name = MatchState.player_team
+	game_mode = MatchState.mode
 	if game_mode == "TDM":
 		score_iron = 0
 		score_red = 0
@@ -115,13 +115,11 @@ func _ready() -> void:
 	_build_sectors()
 	_build_hud()
 	_spawn_initial_squads()
-	if bool(get_tree().get_meta("open_tactical_deploy_at_start", false)):
-		get_tree().set_meta("open_tactical_deploy_at_start", false)
-		get_tree().set_meta("deploy_intro", false)
+	if MatchState.consume_open_deploy():
 		open_tactical_deploy()
-	elif bool(get_tree().get_meta("deploy_intro", false)):
+	elif MatchState.consume_deploy_intro():
 		_play_deploy_intro()
-	elif not OS.has_feature("dedicated_server") and not bool(get_tree().get_meta("skip_deploy_screen", false)) and DisplayServer.get_name() != "headless":
+	elif not OS.has_feature("dedicated_server") and not MatchState.skip_deploy_screen and DisplayServer.get_name() != "headless":
 		open_tactical_deploy()
 
 func _make_detail_texture() -> Texture2D:
@@ -207,7 +205,7 @@ func _build_world() -> void:
 
 	# Построение природной основы для новой сельской карты.
 	var layout = _layout()
-	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map_name := MatchState.map_name
 	if map_name == "COUNTRYSIDE":
 		COUNTRYSIDE_LAYOUT.add_world(self, true, true)
 	elif map_name == "VILLAGE":
@@ -238,7 +236,7 @@ func _spawn_barrel(pos: Vector3) -> void:
 
 func _spawn_supply_caches() -> void:
 	var positions: Array[Vector3]
-	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map_name := MatchState.map_name
 	if map_name == "COUNTRYSIDE":
 		return
 	if map_name == "VILLAGE":
@@ -260,7 +258,7 @@ func _spawn_supply_caches() -> void:
 func _spawn_vehicles() -> void:
 	# Задача TASK-0012: стационарные пулемёты по флангам секторов и
 	# джип у баз. На дебаг-полигоне техника не создаём.
-	var map := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map := MatchState.map_name
 	if map == "POLYGON" or map == "COUNTRYSIDE":
 		return
 	var turrets: Array[Dictionary] = [
@@ -407,7 +405,7 @@ func _build_diggable_ground(data: Dictionary) -> void:
 	var size: Vector3 = data.size
 	var ground = DIGGABLE_GROUND_SCRIPT.new()
 	var height_sampler := Callable()
-	if str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE":
+	if MatchState.map_name == "VILLAGE":
 		height_sampler = Callable(VILLAGE_LAYOUT, "terrain_height_at")
 	ground.configure(Vector2(size.x, size.z), 2.0, _mat(data.color, true), height_sampler)
 	ground.position = data.pos + Vector3(0.0, size.y * 0.5, 0.0)
@@ -417,13 +415,12 @@ func _spawn_player() -> void:
 	player = CharacterBody3D.new()
 	player.set_script(PLAYER_SCRIPT)
 	var default_spawn: Vector3 = _layout().spawns_red()[0] if team_name.contains("RED") else _layout().spawns_iron()[0]
-	var spawn: Vector3 = get_tree().get_meta("spawn_position", default_spawn)
+	var spawn: Vector3 = MatchState.consume_spawn(default_spawn)
 	player.position = spawn
 	add_child(player)
 
 ## Кинематографичный спуск камеры с верху карты к выбранной точке спавна.
 func _play_deploy_intro() -> void:
-	get_tree().set_meta("deploy_intro", false)
 	if player == null or not is_instance_valid(player):
 		return
 	var player_camera := player.get("camera") as Camera3D
@@ -580,7 +577,7 @@ func _build_sectors() -> void:
 
 ## Создание стартовых отрядов ботов (по squad_size бойцов с каждой стороны)
 func _spawn_initial_squads() -> void:
-	var squad_size: int = clampi(int(get_tree().get_meta("match_squad_size", 7)), 7, 14)
+	var squad_size: int = MatchState.squad_size
 	var iron_spawns: Array = _layout().spawns_iron()
 	for i in range(squad_size):
 		var sp: Vector3 = iron_spawns[i % iron_spawns.size()] + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-3.0, 3.0))
@@ -609,7 +606,7 @@ func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldi
 	return bot
 
 func _on_bot_fired(pos: Vector3, team: String) -> void:
-	var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var player_team := MatchState.player_team
 	if compass != null and team != player_team and player != null and is_instance_valid(player):
 		if player.global_position.distance_squared_to(pos) < 70.0 * 70.0:
 			compass.add_gunfire_ping(pos)
@@ -906,7 +903,7 @@ func _end_match(winner: String) -> void:
 	var mins := int(match_elapsed_time) / 60
 	var secs := int(match_elapsed_time) % 60
 	var kd_ratio: float = float(score_kills) if player_deaths == 0 else (float(score_kills) / float(player_deaths))
-	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	var map_name := MatchState.map_name
 
 	var stats := Label.new()
 	stats.text = "КАРТА: %s   •   РЕЖИМ: %s   •   ВРЕМЯ: %02d:%02d\nСЧЁТ: ЖЕЛЕЗНЫЙ ЛЕГИОН %d : %d КРАСНАЯ ЗВЕЗДА\n\nБОЕВОЙ ОТЧЁТ ИГРОКА:\nФраги: %d   •   Смерти: %d   •   K/D: %.2f\nЗахват секторов: %d   •   Нанесённый урон: %d" % [

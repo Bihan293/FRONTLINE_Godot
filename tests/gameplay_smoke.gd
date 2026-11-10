@@ -47,6 +47,7 @@ func _ready() -> void:
 	await _test_tactical_buildings_pack()
 	await _test_tactical_street_props_pack()
 	await _test_tactical_commercial_props_pack()
+	await _test_main_menu_match_state()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -240,28 +241,23 @@ func _test_death_ragdoll() -> void:
 	await get_tree().process_frame
 
 func _test_weapon_definitions() -> void:
-	var player_script: Script = load("res://scripts/player.gd")
-	_check(player_script != null, "player script missing")
-	if player_script == null:
-		return
-	var constants: Dictionary = player_script.get_script_constant_map()
-	var definitions: Array = constants.get("WEAPON_DEFS", [])
+	var definitions: Array[FRONTLINEWeaponDef] = FRONTLINEWeaponCatalog.all()
 	_check(definitions.size() >= 5, "arsenal has fewer than five weapons")
 	var seen: Dictionary = {}
-	var sidearm_index := int(constants.get("SIDEARM_INDEX", -1))
+	var sidearm_index := FRONTLINEWeaponCatalog.SIDEARM_INDEX
 	_check(sidearm_index >= 0 and sidearm_index < definitions.size(), "backup sidearm index is invalid")
 	if sidearm_index >= 0 and sidearm_index < definitions.size():
-		_check(str(definitions[sidearm_index].get("id", "")) == "m1911", "backup sidearm is not the M1911")
+		_check(definitions[sidearm_index].id == "m1911", "backup sidearm is not the M1911")
 	for definition in definitions:
-		var weapon_id := str(definition["id"])
+		var weapon_id := definition.id
 		_check(not weapon_id.is_empty(), "weapon with empty id")
 		_check(not seen.has(weapon_id), "duplicate weapon id: " + weapon_id)
 		seen[weapon_id] = true
-		_check(int(definition["mag"]) > 0, weapon_id + " has invalid magazine")
-		_check(int(definition["reserve"]) > 0, weapon_id + " has invalid reserve ammo")
-		_check(float(definition["damage"]) > 0.0, weapon_id + " has invalid damage")
-		_check(float(definition["range"]) > 0.0, weapon_id + " has invalid range")
-		_check(int(definition["pellets"]) > 0, weapon_id + " has invalid pellet count")
+		_check(definition.magazine > 0, weapon_id + " has invalid magazine")
+		_check(definition.reserve > 0, weapon_id + " has invalid reserve ammo")
+		_check(float(definition.damage) > 0.0, weapon_id + " has invalid damage")
+		_check(definition.range_m > 0.0, weapon_id + " has invalid range")
+		_check(definition.pellets > 0, weapon_id + " has invalid pellet count")
 		var model: Node3D = WEAPON_MESHES.make_weapon(weapon_id)
 		_check(model != null, weapon_id + " has no weapon mesh")
 		if model != null:
@@ -330,9 +326,9 @@ func _test_minimap_alignment() -> void:
 	await get_tree().process_frame
 
 func _test_pause_freezes_bots() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("skip_deploy_screen", true)
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.skip_deploy_screen = true
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
 	_check(scene != null, "battlefield scene missing")
 	if scene == null:
@@ -388,16 +384,16 @@ func _test_pause_freezes_bots() -> void:
 func _test_loadout_presets() -> void:
 	await _run_loadout_case("ASSAULT", "ASSAULT", 4, 1, 0)
 	await _run_loadout_case("SNIPER", "SURVIVAL", 0, 3, 6)
-	get_tree().set_meta("selected_role", "ASSAULT")
-	get_tree().set_meta("selected_loadout", "BALANCED")
+	MatchState.player_role = "ASSAULT"
+	MatchState.loadout_preset = "BALANCED"
 
 func _run_loadout_case(role_id: String, preset_id: String, expected_grenades: int, expected_medkits: int, expected_weapon: int) -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("skip_deploy_screen", true)
-	get_tree().set_meta("selected_role", role_id)
-	get_tree().set_meta("selected_loadout", preset_id)
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
+	MatchState.player_role = role_id
+	MatchState.loadout_preset = preset_id
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
 	if scene == null:
 		_check(false, "battlefield scene missing for loadout test")
@@ -417,12 +413,12 @@ func _run_loadout_case(role_id: String, preset_id: String, expected_grenades: in
 	await get_tree().process_frame
 
 func _test_role_weapon_restrictions() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("skip_deploy_screen", true)
-	get_tree().set_meta("selected_role", "ASSAULT")
-	get_tree().set_meta("selected_loadout", "BALANCED")
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
+	MatchState.player_role = "ASSAULT"
+	MatchState.loadout_preset = "BALANCED"
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
 	if scene == null:
 		_check(false, "battlefield scene missing for weapon restriction test")
@@ -801,11 +797,11 @@ func _test_tactical_deployment_screen() -> void:
 		_check(red_spawns.size() >= 3, "red front spawns count < 3")
 
 	# 3. Test deploy intro camera sequence in Battlefield scene
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("skip_deploy_screen", true)
-	get_tree().set_meta("deploy_intro", true)
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
+	MatchState.request_deploy_screen(false, true)
 
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")
 	_check(scene != null, "battlefield scene missing for deploy intro test")
@@ -815,7 +811,7 @@ func _test_tactical_deployment_screen() -> void:
 	add_child(battlefield)
 	await get_tree().process_frame
 
-	_check(not bool(get_tree().get_meta("deploy_intro", false)), "deploy_intro metadata was not consumed by _play_deploy_intro")
+	_check(not bool(MatchState.has_pending_deploy_intro()), "deploy_intro metadata was not consumed by _play_deploy_intro")
 
 	var player := get_tree().get_first_node_in_group("player")
 	_check(player != null, "player not found in battlefield during deploy test")
@@ -893,7 +889,7 @@ func _test_first_person_ads_alignment() -> void:
 	var weapons := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
 	for wid in weapons:
 		var target_idx := -1
-		var defs: Array = player.WEAPON_DEFS
+		var defs: Array[FRONTLINEWeaponDef] = FRONTLINEWeaponCatalog.all()
 		for i in range(defs.size()):
 			if str(defs[i].id) == wid:
 				target_idx = i
@@ -1091,6 +1087,39 @@ func _test_tactical_commercial_props_pack() -> void:
 			node.queue_free()
 
 	await get_tree().process_frame
+
+func _test_main_menu_match_state() -> void:
+	var packed: PackedScene = load("res://scenes/MainMenu.tscn")
+	_check(packed != null, "MainMenu scene missing")
+	if packed == null:
+		return
+	var menu: Control = packed.instantiate()
+	add_child(menu)
+	await get_tree().process_frame
+	menu.call("_show_maps")
+	await get_tree().process_frame
+	menu.call("_select_village")
+	_check(MatchState.map_name == "VILLAGE", "menu did not select VILLAGE")
+	menu.call("_select_countryside")
+	_check(MatchState.map_name == "COUNTRYSIDE", "menu did not select COUNTRYSIDE")
+	menu.call("_select_polygon")
+	_check(MatchState.map_name == "POLYGON", "menu did not select POLYGON")
+	menu.queue_free()
+	await get_tree().process_frame
+
+	MatchState.configure("BATTLEFIELD", "TDM", "RED FRONT", "SNIPER", 14, 2)
+	_check(MatchState.mode == "TDM", "MatchState did not keep TDM")
+	_check(MatchState.player_team == "RED FRONT", "MatchState did not keep team")
+	_check(MatchState.player_role == "SNIPER", "MatchState did not keep role")
+	_check(MatchState.squad_size == 14, "MatchState did not keep squad size")
+	_check(MatchState.difficulty == 2, "MatchState did not keep difficulty")
+	_check(not MatchState.has_spawn_position, "MatchState kept a stale spawn")
+	MatchState.set_spawn(Vector3(1.0, 2.0, 3.0))
+	_check(MatchState.consume_spawn(Vector3.ZERO).distance_to(Vector3(1.0, 2.0, 3.0)) < 0.001, "MatchState lost spawn position")
+	MatchState.clear_spawn()
+	_check(not MatchState.has_spawn_position, "MatchState did not clear spawn")
+
+	MatchState.configure("BATTLEFIELD", "CONQUEST", "IRON LEGION", "ASSAULT", 7, 1)
 
 func _report() -> void:
 	if _failures.is_empty():

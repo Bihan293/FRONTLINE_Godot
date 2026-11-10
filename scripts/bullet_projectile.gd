@@ -172,7 +172,7 @@ func _apply_actor_hit(actor: Node, collider: Object, position: Vector3, directio
 	if "team_name" in actor:
 		target_team = str(actor.get("team_name"))
 	elif actor.is_in_group("player"):
-		target_team = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		target_team = MatchState.player_team
 	if target_team != "" and target_team == shooter_team:
 		return
 

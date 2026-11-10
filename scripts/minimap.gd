@@ -26,7 +26,7 @@ func setup(p: Node3D, bot_list: Array, sector_list: Array, iron_points: Array, r
 	sectors = sector_list
 	iron_spawns = iron_points
 	red_spawns = red_points
-	var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var team := MatchState.player_team
 	_player_is_red = team.to_upper().contains("RED")
 	queue_redraw()
 

@@ -25,11 +25,11 @@ func _ready() -> void:
 		GameSettings.quality = quality
 		GameSettings.apply_video()
 		GameSettings.apply_frame_limit()
-	get_tree().set_meta("selected_map", map_name)
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
-	get_tree().set_meta("selected_role", "ASSAULT")
-	get_tree().set_meta("match_squad_size", squad)
+	MatchState.map_name = map_name
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.player_role = "ASSAULT"
+	MatchState.squad_size = squad
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate()
 	add_child(battlefield)

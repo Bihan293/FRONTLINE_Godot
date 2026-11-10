@@ -64,11 +64,11 @@ func _test_battlefield_integration() -> void:
 		["BATTLEFIELD", "TDM"],
 	]
 	for config in configs:
-		get_tree().set_meta("selected_map", config[0])
-		get_tree().set_meta("selected_mode", config[1])
+		MatchState.map_name = config[0]
+		MatchState.mode = config[1]
 		await _run_battlefield_case(str(config[0]), str(config[1]))
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
 
 func _run_battlefield_case(map_name: String, mode_name: String) -> void:
 	var scene: PackedScene = load("res://scenes/Battlefield.tscn")

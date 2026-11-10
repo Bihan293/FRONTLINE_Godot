@@ -124,9 +124,9 @@ func _test_friendly_fire_blocks_bullet() -> void:
 	await get_tree().physics_frame
 
 func _test_player_shot_starts_at_weapon_muzzle() -> void:
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
-	get_tree().set_meta("selected_mode", "CONQUEST")
-	get_tree().set_meta("selected_team", "IRON LEGION")
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
 	var battlefield := BATTLEFIELD_SCENE.instantiate()
 	add_child(battlefield)
 	await get_tree().process_frame

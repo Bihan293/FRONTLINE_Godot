@@ -53,7 +53,7 @@ var _receive_hit_flash := 0.0
 func launch(start_pos: Vector3, initial_yaw: float, op: CharacterBody3D, tether_len := 150.0) -> void:
 	operator = op
 	operator_name = "Player"
-	operator_team = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	operator_team = MatchState.player_team
 	max_tether = maxf(30.0, tether_len)
 	if _collision_shape != null and is_instance_valid(operator):
 		add_collision_exception_with(operator)

@@ -21,7 +21,7 @@ func _ready() -> void:
 	await _test_map(nav, "BATTLEFIELD", BATTLEFIELD_LAYOUT)
 	await _test_map(nav, "VILLAGE", VILLAGE_LAYOUT)
 
-	get_tree().set_meta("selected_map", "BATTLEFIELD")
+	MatchState.map_name = "BATTLEFIELD"
 	nav.call("ensure_for_current_map")
 	_report()
 
@@ -30,7 +30,7 @@ func _check(condition: bool, message: String) -> void:
 		_failures.append(message)
 
 func _test_map(nav: Node, map_name: String, layout) -> void:
-	get_tree().set_meta("selected_map", map_name)
+	MatchState.map_name = map_name
 	nav.call("ensure_for_current_map")
 
 	var iron: Array = layout.spawns_iron()

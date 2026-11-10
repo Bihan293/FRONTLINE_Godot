@@ -43,17 +43,6 @@ const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
 const SIDEARM_INDEX := 3 # M1911 is carried as a backup sidearm by every role.
 
-const WEAPON_DEFS := [
-	{"id": "ak47", "name": "AK-47", "mag": 30, "reserve": 150, "damage": 45, "interval": 0.10, "reload": 2.2, "spread": 0.006, "pellets": 1, "range": 140.0, "muzzle_velocity": 715.0, "pitch": 1.0},
-	{"id": "mp40", "name": "MP-40", "mag": 32, "reserve": 160, "damage": 27, "interval": 0.075, "reload": 2.0, "spread": 0.014, "pellets": 1, "range": 105.0, "muzzle_velocity": 380.0, "pitch": 1.16},
-	{"id": "mosin", "name": "MOSIN-NAGANT", "mag": 5, "reserve": 50, "damage": 84, "interval": 1.35, "reload": 2.6, "spread": 0.0018, "pellets": 1, "range": 220.0, "muzzle_velocity": 865.0, "pitch": 0.76},
-	{"id": "m1911", "name": "M1911", "mag": 8, "reserve": 56, "damage": 35, "interval": 0.24, "reload": 1.5, "spread": 0.009, "pellets": 1, "range": 80.0, "muzzle_velocity": 253.0, "pitch": 1.3},
-	{"id": "shotgun", "name": "PUMP SHOTGUN", "mag": 6, "reserve": 36, "damage": 10, "interval": 0.78, "reload": 3.2, "spread": 0.075, "pellets": 7, "range": 52.0, "muzzle_velocity": 400.0, "pitch": 0.78},
-	{"id": "ppsh41", "name": "PPSH-41", "mag": 71, "reserve": 213, "damage": 22, "interval": 0.065, "reload": 3.1, "spread": 0.016, "pellets": 1, "range": 95.0, "muzzle_velocity": 488.0, "pitch": 1.25},
-	{"id": "kar98k", "name": "KAR98K SNIPER", "mag": 5, "reserve": 45, "damage": 95, "interval": 1.45, "reload": 2.8, "spread": 0.0008, "pellets": 1, "range": 260.0, "muzzle_velocity": 760.0, "pitch": 0.70},
-	{"id": "panzerfaust", "name": "PANZERFAUST", "mag": 1, "reserve": 5, "damage": 220, "interval": 2.2, "reload": 3.5, "spread": 0.003, "pellets": 1, "range": 160.0, "pitch": 0.65},
-]
-
 const WORLD_LAYER_MASK := 1 << 0
 const HITBOX_LAYER_MASK := 1 << 1
 const SOLDIER_LAYER_MASK := 1 << 2
@@ -374,15 +363,15 @@ func _equip_weapon_visual() -> void:
 		wrist_right_marker.position = right_wrist_offset
 
 func _init_weapon_inventory() -> void:
-	for definition in WEAPON_DEFS:
-		ammo_by_weapon.append(int(definition.mag))
+	for definition in FRONTLINEWeaponCatalog.all():
+		ammo_by_weapon.append(int(definition.magazine))
 		reserve_by_weapon.append(int(definition.reserve))
 
-	player_role = _normalize_role(str(get_tree().get_meta("selected_role", "ASSAULT")))
+	player_role = _normalize_role(MatchState.player_role)
 	_configure_role_loadout(player_role)
 
 	# Пресет снаряжения, выбранный на экране развёртывания.
-	match str(get_tree().get_meta("selected_loadout", "BALANCED")):
+	match MatchState.loadout_preset:
 		"ASSAULT":
 			grenades += 1
 			medkits = maxi(1, medkits - 1)
@@ -391,19 +380,19 @@ func _init_weapon_inventory() -> void:
 			medkits += 1
 
 	# Ручная настройка на экране спавна: оружие и количество снаряжения.
-	var chosen_primary := int(get_tree().get_meta("selected_primary", -1))
-	if chosen_primary >= 0 and chosen_primary < WEAPON_DEFS.size():
+	var chosen_primary := MatchState.primary_weapon_index
+	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
 		_set_primary_slot(chosen_primary)
-	var chosen_grenades := int(get_tree().get_meta("selected_grenades", -1))
+	var chosen_grenades := MatchState.grenades_override
 	if chosen_grenades >= 0:
 		grenades = chosen_grenades
-	var chosen_smoke := int(get_tree().get_meta("selected_smoke", -1))
+	var chosen_smoke := MatchState.smoke_override
 	if chosen_smoke >= 0:
 		smoke_grenades = chosen_smoke
-	var chosen_medkits := int(get_tree().get_meta("selected_medkits", -1))
+	var chosen_medkits := MatchState.medkits_override
 	if chosen_medkits >= 0:
 		medkits = chosen_medkits
-	var chosen_rockets := int(get_tree().get_meta("selected_rockets", -1))
+	var chosen_rockets := MatchState.rockets_override
 	if chosen_rockets >= 0:
 		reserve_by_weapon[7] = chosen_rockets
 
@@ -461,7 +450,7 @@ func _configure_role_loadout(role: String) -> void:
 			drone_charge_available = false
 
 func _set_primary_slot(index: int) -> void:
-	if index < 0 or index >= WEAPON_DEFS.size():
+	if index < 0 or index >= FRONTLINEWeaponCatalog.count():
 		return
 	role_primary_weapon_index = index
 	role_weapon_indices = [index]
@@ -472,7 +461,7 @@ func _set_primary_slot(index: int) -> void:
 ## между смертями, а не сбрасываются на ASSAULT.
 func apply_loadout(role: String, primary_index: int) -> void:
 	_configure_role_loadout(role)
-	if primary_index >= 0 and primary_index < WEAPON_DEFS.size():
+	if primary_index >= 0 and primary_index < FRONTLINEWeaponCatalog.count():
 		_set_primary_slot(primary_index)
 	current_weapon_index = role_primary_weapon_index
 	last_primary_weapon_index = role_primary_weapon_index
@@ -483,15 +472,15 @@ func apply_loadout(role: String, primary_index: int) -> void:
 	_refresh_ammo()
 	_refresh_equipment()
 
-func _weapon_data() -> Dictionary:
-	return WEAPON_DEFS[current_weapon_index]
+func _weapon_data() -> FRONTLINEWeaponDef:
+	return FRONTLINEWeaponCatalog.get_def(current_weapon_index)
 
 func _store_weapon_ammo() -> void:
 	ammo_by_weapon[current_weapon_index] = ammo
 	reserve_by_weapon[current_weapon_index] = reserve_ammo
 
 func _switch_weapon(index: int) -> void:
-	if is_dead or index < 0 or index >= WEAPON_DEFS.size() or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_dead or index < 0 or index >= FRONTLINEWeaponCatalog.count() or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	if not role_weapon_indices.has(index):
 		return
@@ -570,12 +559,12 @@ func _refresh_equipment_icon() -> void:
 		label = "ПИСТОЛЕТ"
 	else:
 		var weapon := _weapon_data()
-		var wid := str(weapon.get("id", ""))
+		var wid := str(weapon.id)
 		if wid == "panzerfaust":
 			icon_id = "rpg"
 			label = "РПГ"
 		else:
-			label = str(weapon.get("name", "ОРУЖИЕ"))
+			label = str(weapon.display_name)
 	mobile_controls.call("set_equipment_info", icon_id, label)
 
 func _cycle_weapon(direction: int) -> void:
@@ -623,7 +612,7 @@ func _on_shovel_button() -> void:
 		_toggle_shovel()
 
 func _build_body() -> void:
-	var team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var team := MatchState.player_team
 	var body = PLAYER_BODY.new()
 	body.name = "PlayerBody"
 	body.position = Vector3(0.0, 0.0, -0.45)
@@ -677,7 +666,7 @@ func _build_view_hands() -> void:
 func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var arm := Node3D.new()
 	arm.name = arm_name
-	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var player_team: String = MatchState.player_team
 	var is_red: bool = player_team.to_upper().contains("RED") or player_team.to_upper().contains("SOVIET")
 	var sleeve := StandardMaterial3D.new()
 	# Тёмная полевая ткань — без «синих» оттенков, ближе к Dummy War.
@@ -1363,7 +1352,7 @@ func _on_drone_vertical_changed(direction: float, pressed: bool) -> void:
 	drone_vertical_input = direction if pressed else 0.0
 
 func _drone_tether_length() -> float:
-	match str(get_tree().get_meta("selected_map", "BATTLEFIELD")):
+	match MatchState.map_name:
 		"VILLAGE":
 			return 105.0
 		"POLYGON":
@@ -1699,7 +1688,7 @@ func _physics_process(delta: float) -> void:
 
 	if is_reloading:
 		reload_timer -= delta
-		var reload_total: float = float(_weapon_data().get("reload", 2.2))
+		var reload_total: float = _weapon_data().reload_time
 		var progress := 1.0 - clampf(reload_timer / maxf(0.01, reload_total), 0.0, 1.0)
 		if weapon_mount != null:
 			weapon_mount.rotation.z = sin(progress * PI) * 0.14
@@ -1708,7 +1697,7 @@ func _physics_process(delta: float) -> void:
 			var reach_offset := Vector3(0.0, -0.10 * sin(progress * PI), 0.06 * sin(progress * PI))
 			left_arm_pivot.position = left_arm_base + reach_offset
 		if reload_timer <= 0.0:
-			var need := int(_weapon_data().mag) - ammo
+			var need := int(_weapon_data().magazine) - ammo
 			var take := mini(need, reserve_ammo)
 			ammo += take
 			reserve_ammo -= take
@@ -2007,16 +1996,16 @@ func _shoot() -> void:
 			fire_cooldown = 0.25
 		return
 	ammo -= 1
-	fire_cooldown = float(weapon.interval)
+	fire_cooldown = float(weapon.fire_interval)
 	_store_weapon_ammo()
 	_refresh_ammo()
-	_play_player_shot_sfx(str(weapon.id), float(weapon.pitch))
+	_play_player_shot_sfx(str(weapon.id), float(weapon.sound_pitch))
 
 	# QA-fix TASK-0022: попадание считается ДО отдачи. Раньше recoil успевал
 	# повернуть камеру на ~1.5-2°, и снайперская пуля в прицеле уходила выше
 	# цели (в зуме это стабильный промах «не регает урон»).
 	var pre_recoil_dir := -camera.global_transform.basis.z
-	var pre_aim_end := camera.global_position + pre_recoil_dir * float(weapon["range"])
+	var pre_aim_end := camera.global_position + pre_recoil_dir * float(weapon.range_m)
 	var pre_aim_query := PhysicsRayQueryParameters3D.create(camera.global_position, pre_aim_end)
 	pre_aim_query.collision_mask = RAY_COLLISION_MASK
 	pre_aim_query.exclude = [get_rid()]
@@ -2044,7 +2033,7 @@ func _shoot() -> void:
 
 		var rocket = ROCKET_PROJECTILE_SCRIPT.new()
 		get_parent().add_child(rocket)
-		var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		var player_team: String = MatchState.player_team
 		rocket.launch(spawn_pos, shoot_dir, "Player", player_team, self)
 		return
 
@@ -2097,7 +2086,7 @@ func _shoot() -> void:
 	# along its own path, preserving the visible muzzle-to-sight parallax.
 	var aim_point := pre_aim_point
 	var base_direction := (aim_point - bullet_origin).normalized()
-	var player_team: String = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	var player_team: String = MatchState.player_team
 	var pellet_count := int(weapon.pellets)
 	for pellet_index in range(pellet_count):
 		var dir := base_direction
@@ -2106,9 +2095,9 @@ func _shoot() -> void:
 		_spawn_ballistic_bullet(
 			bullet_origin,
 			dir,
-			float(weapon.get("muzzle_velocity", 650.0)),
+			float(weapon.muzzle_velocity),
 			int(weapon.damage),
-			float(weapon["range"]),
+			float(weapon.range_m),
 			"Player",
 			player_team,
 			self
@@ -2187,10 +2176,10 @@ func _reload() -> void:
 	if is_shovel_equipped or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	var weapon := _weapon_data()
-	if is_reloading or is_healing or ammo >= int(weapon.mag) or reserve_ammo <= 0 or is_dead or input_locked:
+	if is_reloading or is_healing or ammo >= int(weapon.magazine) or reserve_ammo <= 0 or is_dead or input_locked:
 		return
 	is_reloading = true
-	reload_timer = float(weapon.reload)
+	reload_timer = float(weapon.reload_time)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
 ## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
@@ -2405,7 +2394,7 @@ func _spawn_thrown_grenade() -> void:
 		g.linear_velocity = throw_dir.normalized() * 14.5 + velocity * 0.45
 	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	g.thrower_name = "Player"
-	g.team_name = str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	g.team_name = MatchState.player_team
 	get_parent().add_child(g)
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
 	if grenade_safety_lever != null:
@@ -2662,7 +2651,7 @@ func _use_heal() -> void:
 		return
 	heal_target = null
 	if player_role == "MEDIC":
-		var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+		var player_team := MatchState.player_team
 		var nearest_dist := 6.5
 		for bot in get_tree().get_nodes_in_group("bots"):
 			if bot == null or not is_instance_valid(bot) or bool(bot.get("is_dead")):
@@ -2708,7 +2697,7 @@ func _refresh_ammo() -> void:
 		return
 	var weapon := _weapon_data()
 	var slot := "ЗАПАСНОЙ" if current_weapon_index == SIDEARM_INDEX else str(current_weapon_index + 1)
-	ammo_label.text = "%s  %s   %d / %d" % [slot, str(weapon.name), ammo, reserve_ammo]
+	ammo_label.text = "%s  %s   %d / %d" % [slot, str(weapon.display_name), ammo, reserve_ammo]
 
 func _refresh_health() -> void:
 	if health_label != null:
@@ -2817,14 +2806,14 @@ func take_field_ammo(amount: int) -> int:
 	return reserve_ammo - before
 
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
-	if is_dead or input_locked or index < 0 or index >= WEAPON_DEFS.size():
+	if is_dead or input_locked or index < 0 or index >= FRONTLINEWeaponCatalog.count():
 		return false
 	if index != current_weapon_index:
 		return true
 	var stored_clip := ammo
 	var stored_reserve := reserve_ammo
-	var definition: Dictionary = WEAPON_DEFS[index]
-	var max_mag := int(definition.mag)
+	var definition: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
+	var max_mag := int(definition.magazine)
 	var max_reserve := int(definition.reserve)
 	return stored_clip < max_mag or stored_reserve < max_reserve
 
@@ -2832,8 +2821,8 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if not can_take_weapon_pickup(index, clip, reserve):
 		return false
 	if index == current_weapon_index:
-		var definition: Dictionary = WEAPON_DEFS[index]
-		var max_mag := int(definition.mag)
+		var definition: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
+		var max_mag := int(definition.magazine)
 		var max_reserve := int(definition.reserve)
 		var needed_clip := max_mag - ammo
 		var taken_clip := mini(needed_clip, maxi(0, clip))
@@ -2862,9 +2851,9 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 			role_weapon_indices.insert(0, index)
 
 	current_weapon_index = index
-	var incoming: Dictionary = WEAPON_DEFS[index]
-	ammo = mini(int(incoming.mag), maxi(0, clip))
-	reserve_ammo = mini(int(incoming.reserve), maxi(0, reserve))
+	var incoming: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
+	ammo = mini(incoming.magazine, maxi(0, clip))
+	reserve_ammo = mini(incoming.reserve, maxi(0, reserve))
 	is_reloading = false
 	reload_timer = 0.0
 	weapon_kick = 0.0
@@ -3002,14 +2991,14 @@ func respawn() -> void:
 		_view_arm_left.visible = true
 	if _view_arm_right != null:
 		_view_arm_right.visible = true
-	for i in range(WEAPON_DEFS.size()):
-		ammo_by_weapon[i] = int(WEAPON_DEFS[i].mag)
-		reserve_by_weapon[i] = int(WEAPON_DEFS[i].reserve)
+	for i in range(FRONTLINEWeaponCatalog.count()):
+		ammo_by_weapon[i] = FRONTLINEWeaponCatalog.get_def(i).magazine
+		reserve_by_weapon[i] = int(FRONTLINEWeaponCatalog.get_def(i).reserve)
 
 	# Роль и основное оружие сохраняются; сбрасываются только патроны и снаряжение.
 	var chosen_primary := role_primary_weapon_index
 	_configure_role_loadout(player_role)
-	if chosen_primary >= 0 and chosen_primary < WEAPON_DEFS.size():
+	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
 		_set_primary_slot(chosen_primary)
 	current_weapon_index = role_primary_weapon_index
 

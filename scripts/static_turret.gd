@@ -171,7 +171,7 @@ func try_fire(player: Node3D) -> bool:
 	return true
 
 func team_name() -> String:
-	return str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	return MatchState.player_team
 
 ## Мобильная оптимизация (TASK-0019): мелкие детали станка исчезают
 ## дальше 45 м, средние — дальше 90 м (число частей не меняется).

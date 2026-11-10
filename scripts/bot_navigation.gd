@@ -24,10 +24,7 @@ var _built_map := ""
 var _walk_query := PhysicsRayQueryParameters3D.new()
 
 func _current_map_name() -> String:
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree != null and tree.has_meta("selected_map"):
-		return str(tree.get_meta("selected_map"))
-	return "BATTLEFIELD"
+	return MatchState.map_name
 
 func _get_layout():
 	if _current_map_name() == "VILLAGE":
