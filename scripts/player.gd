@@ -4,8 +4,6 @@ const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
-const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
-const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
@@ -106,7 +104,7 @@ var role_weapon_indices: Array[int]:
 var is_shovel_equipped := false
 var carried_soil := 0
 var shovel_action_cooldown := 0.0
-var nearby_field_pickups: Array[Node3D] = []
+var _pickups := FRONTLINEPlayerPickups.new()
 
 var _view_arms: FRONTLINEPlayerViewArms
 var _view_arm_left: Node3D:
@@ -141,8 +139,6 @@ var reload_timer: float:
 	set(value): _weapons.reload_timer = value
 
 # Снаряжение игрока
-var grenades := 3
-var smoke_grenades := 2
 var medkits := 2
 var is_healing := false
 var heal_timer := 0.0
@@ -165,19 +161,19 @@ var vault_start_pos := Vector3.ZERO
 var vault_peak_pos := Vector3.ZERO
 var vault_land_pos := Vector3.ZERO
 
-# Анимация взведения и броска гранаты с удержанием кнопки (Cook / Aim & Release)
-enum GrenadeActionState { IDLE, EQUIP, PULL_PIN, HOLD_AIM, THROW_SWING, RECOVER }
-var grenade_anim_state: GrenadeActionState = GrenadeActionState.IDLE
-var _grenade_payload := "frag"
-var _grenade_view_payload := ""
-var grenade_anim_timer := 0.0
-var is_grenade_held := false
-var grenade_view_root: Node3D
-var grenade_pull_ring: Node3D
-var grenade_safety_lever: Node3D
-var grenade_hand_left: Node3D
-var grenade_hand_right: Node3D
-var grenade_has_spawned := false
+# Гранаты: состояние и viewmodel живут в отдельном компоненте.
+var _grenades := FRONTLINEPlayerGrenades.new()
+var grenade_anim_state: int:
+	get: return _grenades.state
+	set(value): _grenades.state = value
+var is_grenade_held: bool:
+	get: return _grenades.is_held
+var grenades: int:
+	get: return _grenades.grenade_count
+	set(value): _grenades.grenade_count = value
+var smoke_grenades: int:
+	get: return _grenades.smoke_count
+	set(value): _grenades.smoke_count = value
 
 # Здоровье и статус игрока
 var health := MAX_HEALTH
@@ -191,9 +187,10 @@ var hud: CanvasLayer:
 
 var mobile_controls: MobileControls
 var mobile_move := Vector2.ZERO
-var mounted_vehicle: Node3D = null
+var _vehicles := FRONTLINEPlayerVehicles.new()
+var mounted_vehicle: Node3D:
+	get: return _vehicles.vehicle
 var _prompt_timer := 0.0
-var _mounted_last_vehicle_yaw := 0.0
 var mobile_fire := false
 var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu:
@@ -216,9 +213,15 @@ func _ready() -> void:
 	respawn_position = position
 	_weapons.ammo_changed.connect(_refresh_ammo)
 	_weapons.reload_finished.connect(_on_weapon_reload_finished)
+	_pickups.setup(self)
+	_grenades.equipment_changed.connect(_refresh_equipment)
+	_grenades.sound_requested.connect(_on_grenade_sound)
 	_init_weapon_inventory()
 	_build_player()
 	_build_weapon()
+	add_child(_grenades)
+	_grenades.setup(self, camera, weapon_root)
+	_vehicles.setup(self)
 	_build_body()
 	_build_audio()
 	_build_mobile_controls()
@@ -267,7 +270,6 @@ func _build_weapon() -> void:
 	_view_arms.setup(camera, weapon_root)
 	_weapon_view.attach_arms(_view_arms)
 	_equip_weapon_visual()
-	_build_grenade_view()
 	_build_heal_view()
 
 func _equip_weapon_visual() -> void:
@@ -366,7 +368,7 @@ func _weapon_data() -> FRONTLINEWeaponDef:
 	return _weapons.current_def()
 
 func _switch_weapon(index: int) -> void:
-	if is_dead or index < 0 or index >= FRONTLINEWeaponCatalog.count() or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_dead or index < 0 or index >= FRONTLINEWeaponCatalog.count() or _grenades.is_busy():
 		return
 	if not role_weapon_indices.has(index):
 		return
@@ -394,7 +396,7 @@ func _switch_weapon(index: int) -> void:
 func _cycle_equipment(direction: int) -> void:
 	if is_dead or input_locked or active_drone != null or mounted_vehicle != null:
 		return
-	if grenade_anim_state != GrenadeActionState.IDLE:
+	if _grenades.is_busy():
 		return
 	var cur := "primary"
 	if is_shovel_equipped:
@@ -462,7 +464,7 @@ func _select_weapon_slot(slot: int) -> void:
 	_switch_weapon(role_weapon_indices[slot])
 
 func _toggle_sidearm() -> void:
-	if is_dead or input_locked or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_dead or input_locked or _grenades.is_busy():
 		return
 	if is_shovel_equipped:
 		is_shovel_equipped = false
@@ -474,7 +476,7 @@ func _toggle_sidearm() -> void:
 		_switch_weapon(SIDEARM_INDEX)
 
 func _toggle_shovel() -> void:
-	if is_dead or input_locked or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_dead or input_locked or active_drone != null or _grenades.is_busy():
 		return
 	is_shovel_equipped = not is_shovel_equipped
 	_weapons.cancel_reload()
@@ -524,7 +526,7 @@ func _update_view_arms() -> void:
 	if _view_arms == null:
 		return
 	var visible := weapon_root != null and weapon_root.visible
-	_view_arms.update(visible and grenade_anim_state == GrenadeActionState.IDLE)
+	_view_arms.update(visible and not _grenades.is_busy())
 
 func _update_viewmodel_visibility(scoped: bool) -> void:
 	if weapon_root == null:
@@ -532,7 +534,7 @@ func _update_viewmodel_visibility(scoped: bool) -> void:
 	if is_dead:
 		return
 	# Во время гранаты/лечения/лопаты видимостью управляют их состояния.
-	if is_healing or grenade_anim_state != GrenadeActionState.IDLE or is_shovel_equipped:
+	if is_healing or _grenades.is_busy() or is_shovel_equipped:
 		return
 	weapon_root.visible = not scoped
 
@@ -850,8 +852,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.keycode == KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		return
-	if mounted_vehicle != null:
-		mounted_vehicle = null
+	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
+		_vehicles.vehicle = null
 	if event is InputEventKey and not event.pressed and event.keycode == KEY_H:
 		heal_hold = false
 		if is_healing:
@@ -940,14 +942,14 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
-	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
+	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
+		_vehicles.vehicle = null
+	if _vehicles.is_mounted():
 		# Сначала применяем взгляд, затем тик техники: турель берёт свежую
 		# камеру (иначе наводка отстаёт на кадр).
 		_apply_look(delta)
-		_process_mounted_vehicle(delta)
+		_vehicles.process(delta)
 		return
-	if mounted_vehicle != null:
-		mounted_vehicle = null
 	if is_vaulting:
 		_process_vault(delta)
 		return
@@ -1033,7 +1035,7 @@ func _physics_process(delta: float) -> void:
 	view_state.strafe_x = mobile_move.x
 	view_state.is_reloading = is_reloading
 	view_state.reload_progress = _weapons.reload_progress()
-	view_state.allow_arms = grenade_anim_state == GrenadeActionState.IDLE
+	view_state.allow_arms = not _grenades.is_busy()
 	_weapon_view.update(view_state)
 
 	if mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
@@ -1140,93 +1142,16 @@ func _physics_process(delta: float) -> void:
 ## === Техника и турели (TASK-0012) ===
 
 func _process_mounted_vehicle(delta: float) -> void:
-	velocity = Vector3.ZERO
-	# QA-fix TASK-0022: в джипе камера едет вместе с корпусом — игроку не нужно
-	# «доворачивать» взгляд на каждом повороте (турели остаются свободными).
-	if mounted_vehicle.has_method("camera_follows_vehicle") and bool(mounted_vehicle.call("camera_follows_vehicle")):
-		var vehicle_yaw: float = mounted_vehicle.global_rotation.y
-		yaw += wrapf(vehicle_yaw - _mounted_last_vehicle_yaw, -PI, PI)
-		_mounted_last_vehicle_yaw = vehicle_yaw
-	# В технике всегда показываем точку прицеливания (без снайперского скопа).
-	if _player_hud != null and not is_dead:
-		_player_hud.set_scope(false)
-		_player_hud.set_crosshair_visible(true)
-	if mounted_vehicle.has_method("tick_driver"):
-		mounted_vehicle.call("tick_driver", self, delta)
-	var firing := mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
-	if firing and mounted_vehicle.has_method("try_fire"):
-		mounted_vehicle.call("try_fire", self)
-	_apply_look(delta)
-	_refresh_pickup_prompt()
+	_vehicles.process(delta)
 
-func _enter_vehicle(vehicle: Node3D) -> void:
-	if is_dead or input_locked or mounted_vehicle != null:
-		return
-	if vehicle == null or not is_instance_valid(vehicle):
-		return
-	if not vehicle.has_method("enter") or not bool(vehicle.call("can_enter", self)):
-		return
-	mounted_vehicle = vehicle
-	_mounted_last_vehicle_yaw = vehicle.global_rotation.y
-	if vehicle.has_method("camera_follows_vehicle") and bool(vehicle.call("camera_follows_vehicle")):
-		yaw = _mounted_last_vehicle_yaw
-	vehicle.call("enter", self)
-	if vehicle is PhysicsBody3D:
-		add_collision_exception_with(vehicle)
-	velocity = Vector3.ZERO
-	if mobile_controls != null and mobile_controls.has_method("set_vehicle_mode"):
-		mobile_controls.call("set_vehicle_mode", true)
-	if weapon_root != null:
-		weapon_root.visible = false
-	var eye_height := 1.20
-	if vehicle.has_method("driver_eye_height"):
-		eye_height = float(vehicle.call("driver_eye_height"))
-	camera.position.y = eye_height
-	if vehicle.has_method("seat_position"):
-		global_position = vehicle.call("seat_position")
+func _enter_vehicle(target: Node3D) -> void:
+	_vehicles.enter(target)
 
 func _exit_vehicle() -> void:
-	var vehicle := mounted_vehicle
-	mounted_vehicle = null
-	if vehicle != null and is_instance_valid(vehicle):
-		if vehicle.has_method("exit_vehicle"):
-			vehicle.call("exit_vehicle", self)
-		if vehicle is PhysicsBody3D:
-			remove_collision_exception_with(vehicle)
-		if vehicle.has_method("exit_position"):
-			global_position = vehicle.call("exit_position")
-	velocity = Vector3.ZERO
-	if mobile_controls != null and mobile_controls.has_method("set_vehicle_mode"):
-		mobile_controls.call("set_vehicle_mode", false)
-	# Стоячая высота камеры после высадки (lerp в _physics_process дочекается).
-	camera.position.y = 1.70
-	if weapon_root != null and not is_dead:
-		weapon_root.visible = true
-	if player_body != null and not is_dead:
-		player_body.visible = false
+	_vehicles.exit()
 
 func _nearest_enterable() -> Node3D:
-	if mounted_vehicle != null:
-		return null
-	var nearest: Node3D = null
-	var best_score := INF
-	for node in get_tree().get_nodes_in_group("enterable_vehicles"):
-		var station := node as Node3D
-		if station == null or not is_instance_valid(station):
-			continue
-		if not station.has_method("can_enter") or not bool(station.call("can_enter", self)):
-			continue
-		var radius := 2.8
-		if station.has_method("interaction_radius"):
-			radius = float(station.call("interaction_radius"))
-		var distance := global_position.distance_to(station.global_position)
-		if distance > radius:
-			continue
-		var score := distance / maxf(radius, 0.1)
-		if score < best_score:
-			best_score = score
-			nearest = station
-	return nearest
+	return _vehicles.nearest_enterable()
 
 func _apply_look(delta: float = 0.016) -> void:
 	rotation.y = yaw
@@ -1289,7 +1214,7 @@ func _up_action() -> void:
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
-	if grenade_anim_state != GrenadeActionState.IDLE:
+	if _grenades.is_busy():
 		return
 	if is_shovel_equipped:
 		_use_shovel_action(false)
@@ -1483,7 +1408,7 @@ func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _regio
 			world.call("add_kill")
 
 func _reload() -> void:
-	if is_shovel_equipped or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_shovel_equipped or _grenades.is_busy():
 		return
 	if is_healing or is_dead or input_locked:
 		return
@@ -1492,6 +1417,9 @@ func _reload() -> void:
 
 func _on_weapon_reload_finished() -> void:
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
+
+func _on_grenade_sound(stream: AudioStream, volume_db: float, pitch: float) -> void:
+	_play_sfx(sfx_reload_in, stream, volume_db, pitch)
 
 ## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
 func _build_heal_view() -> void:
@@ -1583,225 +1511,32 @@ func _finish_heal_visual() -> void:
 		heal_view_root.visible = false
 	if _player_hud != null:
 		_player_hud.set_heal_progress(-1.0)
-	if weapon_root != null and not is_dead and not is_shovel_equipped and grenade_anim_state == GrenadeActionState.IDLE:
+	if weapon_root != null and not is_dead and not is_shovel_equipped and not _grenades.is_busy():
 		weapon_root.visible = true
 
-func _build_grenade_view() -> void:
-	# По умолчанию в руках осколочная; дымовая подменяет модель при замахе.
-	_ensure_grenade_view("frag")
-
-func _ensure_grenade_view(payload: String) -> void:
-	if grenade_view_root != null and is_instance_valid(grenade_view_root) and _grenade_view_payload == payload:
-		return
-	if grenade_view_root != null and is_instance_valid(grenade_view_root):
-		grenade_view_root.queue_free()
-	grenade_view_root = WEAPON_MESHES.make_smoke_view_model() if payload == "smoke" else WEAPON_MESHES.make_grenade_view_model()
-	_grenade_view_payload = payload
-	if grenade_view_root == null:
-		return
-	grenade_view_root.name = "GrenadeView"
-	grenade_view_root.position = Vector3(0.18, -0.16, -0.38)
-	grenade_view_root.scale = Vector3.ONE * 0.72
-	grenade_view_root.visible = false
-	camera.add_child(grenade_view_root)
-
-	grenade_safety_lever = grenade_view_root.find_child("SafetyLever", true, false)
-	grenade_pull_ring = grenade_view_root.find_child("PullRing", true, false)
-	grenade_hand_left = grenade_view_root.find_child("HandLeft", true, false)
-	grenade_hand_right = grenade_view_root.find_child("HandRight", true, false)
+func _on_mobile_grenade_changed(pressed: bool) -> void:
+	if pressed:
+		_grenades.start_hold()
+	else:
+		_grenades.release_throw()
 
 func _on_heal_released() -> void:
 	heal_hold = false
 	if is_healing:
 		_cancel_healing()
 
-func _on_mobile_grenade_changed(pressed: bool) -> void:
-	if pressed:
-		_start_grenade_hold()
-	else:
-		_release_grenade_throw()
-
 func _start_grenade_hold(payload: String = "frag") -> void:
-	if payload == "smoke":
-		if smoke_grenades <= 0:
-			return
-	elif grenades <= 0:
-		return
-	if is_dead or input_locked or is_healing or active_drone != null or is_reloading or is_vaulting:
-		return
-	_grenade_payload = payload
-	_ensure_grenade_view(payload)
-	is_grenade_held = true
-	if grenade_anim_state == GrenadeActionState.IDLE or grenade_anim_state == GrenadeActionState.RECOVER:
-		grenade_anim_state = GrenadeActionState.EQUIP
-		grenade_anim_timer = 0.12
-		grenade_has_spawned = false
-		if grenade_view_root != null:
-			grenade_view_root.visible = true
-			grenade_view_root.position = Vector3(0.20, -0.36, -0.32)
-			grenade_view_root.rotation = Vector3(deg_to_rad(-18.0), deg_to_rad(-10.0), 0.0)
-			if grenade_pull_ring != null:
-				grenade_pull_ring.position = Vector3(-0.035, 0.0, 0.0)
-				grenade_pull_ring.visible = true
-			if grenade_safety_lever != null:
-				grenade_safety_lever.rotation = Vector3.ZERO
-				grenade_safety_lever.visible = true
-			# Левая рука видна, пока тянет чеку; после рывка убирается.
-			if grenade_hand_left != null:
-				grenade_hand_left.visible = true
-				grenade_hand_left.position.x = -0.075
-		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -8.0, 1.35)
+	_grenades.start_hold(payload)
 
 func _release_grenade_throw() -> void:
-	is_grenade_held = false
-	if grenade_anim_state == GrenadeActionState.HOLD_AIM:
-		grenade_anim_state = GrenadeActionState.THROW_SWING
-		grenade_anim_timer = 0.26
-		_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.45)
-	elif grenade_anim_state == GrenadeActionState.PULL_PIN or grenade_anim_state == GrenadeActionState.EQUIP:
-		pass
-
-func _grenade_throw_origin() -> Vector3:
-	if grenade_view_root != null and is_instance_valid(grenade_view_root):
-		return grenade_view_root.global_position
-	return camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
-
-func _spawn_thrown_grenade() -> void:
-	if grenade_has_spawned:
-		return
-	if _grenade_payload == "smoke":
-		if smoke_grenades <= 0:
-			return
-		grenade_has_spawned = true
-		smoke_grenades -= 1
-		_refresh_equipment()
-		var smoke := SMOKE_SCRIPT.new()
-		var smoke_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
-		smoke.position = _grenade_throw_origin()
-		smoke.linear_velocity = smoke_dir.normalized() * 13.5 + velocity * 0.4
-		smoke.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
-		smoke.thrower_name = "Player"
-		get_parent().add_child(smoke)
-		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
-		if grenade_safety_lever != null:
-			grenade_safety_lever.visible = false
-		_hide_grenade_view_after_throw()
-		return
-	if grenades <= 0:
-		return
-	grenade_has_spawned = true
-	grenades -= 1
-	_refresh_equipment()
-	var g := GRENADE_SCRIPT.new()
-	if is_dead:
-		# Мёртвый сброс гранаты под ноги (Dead-man drop при гибели во время замаха)
-		g.position = global_position + Vector3(0.0, 0.45, 0.0)
-		g.linear_velocity = Vector3(randf_range(-0.6, 0.6), 1.2, randf_range(-0.6, 0.6))
-	else:
-		# Граната вылетает из кисти, а не из центра камеры.
-		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
-		g.position = _grenade_throw_origin()
-		g.linear_velocity = throw_dir.normalized() * 14.5 + velocity * 0.45
-	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
-	g.thrower_name = "Player"
-	g.team_name = MatchState.player_team
-	get_parent().add_child(g)
-	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
-	if grenade_safety_lever != null:
-		grenade_safety_lever.visible = false
-	_hide_grenade_view_after_throw()
-
-func _hide_grenade_view_after_throw() -> void:
-	if grenade_view_root != null and is_instance_valid(grenade_view_root):
-		grenade_view_root.visible = false
-
-func _update_grenade_animation(delta: float) -> void:
-	if grenade_anim_state == GrenadeActionState.IDLE:
-		if grenade_view_root != null and grenade_view_root.visible:
-			grenade_view_root.visible = false
-		# QA-fix TASK-0022: оружие возвращается в руки после броска.
-		if weapon_root != null and not weapon_root.visible and not is_dead and not is_shovel_equipped:
-			weapon_root.visible = true
-		return
-
-	# QA-fix TASK-0022: на время работы с гранатой оружие полностью убирается —
-	# раньше автомат оставался на экране вместе с руками гранаты («каша»).
-	if weapon_root != null:
-		weapon_root.visible = false
-
-	if weapon_root != null:
-		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.28, delta * 14.0)
-
-	grenade_anim_timer -= delta
-
-	match grenade_anim_state:
-		GrenadeActionState.EQUIP:
-			if grenade_view_root != null:
-				grenade_view_root.position = grenade_view_root.position.lerp(Vector3(0.18, -0.14, -0.36), delta * 18.0)
-				grenade_view_root.rotation.x = lerpf(grenade_view_root.rotation.x, deg_to_rad(6.0), delta * 18.0)
-			if grenade_anim_timer <= 0.0:
-				grenade_anim_state = GrenadeActionState.PULL_PIN
-				grenade_anim_timer = 0.16
-				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.55)
-
-		GrenadeActionState.PULL_PIN:
-			var pull_progress := 1.0 - clampf(grenade_anim_timer / 0.16, 0.0, 1.0)
-			if grenade_pull_ring != null:
-				grenade_pull_ring.position.x = lerpf(-0.035, -0.16, pull_progress)
-			if grenade_hand_left != null:
-				grenade_hand_left.position.x = lerpf(-0.075, -0.22, pull_progress)
-			if grenade_anim_timer <= 0.0:
-				if grenade_pull_ring != null:
-					grenade_pull_ring.visible = false
-				if grenade_hand_left != null:
-					grenade_hand_left.visible = false
-				if is_grenade_held:
-					grenade_anim_state = GrenadeActionState.HOLD_AIM
-				else:
-					grenade_anim_state = GrenadeActionState.THROW_SWING
-					grenade_anim_timer = 0.26
-
-		GrenadeActionState.HOLD_AIM:
-			if grenade_view_root != null:
-				var hold_target_pos := Vector3(0.24, -0.09, -0.30)
-				var hold_target_rot := Vector3(deg_to_rad(28.0), deg_to_rad(-16.0), deg_to_rad(12.0))
-				grenade_view_root.position = grenade_view_root.position.lerp(hold_target_pos, delta * 16.0)
-				grenade_view_root.rotation = grenade_view_root.rotation.lerp(hold_target_rot, delta * 16.0)
-			if not is_grenade_held:
-				grenade_anim_state = GrenadeActionState.THROW_SWING
-				grenade_anim_timer = 0.18
-
-		GrenadeActionState.THROW_SWING:
-			var swing_progress := 1.0 - clampf(grenade_anim_timer / 0.26, 0.0, 1.0)
-			if grenade_view_root != null:
-				var throw_target_pos := Vector3(0.06, -0.12, -0.62)
-				var throw_target_rot := Vector3(deg_to_rad(-38.0), deg_to_rad(10.0), deg_to_rad(-14.0))
-				grenade_view_root.position = grenade_view_root.position.lerp(throw_target_pos, delta * 26.0)
-				grenade_view_root.rotation = grenade_view_root.rotation.lerp(throw_target_rot, delta * 26.0)
-			if swing_progress >= 0.72 and not grenade_has_spawned:
-				_spawn_thrown_grenade()
-			if grenade_anim_timer <= 0.0:
-				grenade_anim_state = GrenadeActionState.RECOVER
-				grenade_anim_timer = 0.20
-				if grenade_view_root != null:
-					grenade_view_root.visible = false
-
-		GrenadeActionState.RECOVER:
-			if grenade_anim_timer <= 0.0:
-				grenade_anim_state = GrenadeActionState.IDLE
+	_grenades.release_throw()
 
 func _throw_grenade() -> void:
-	if grenades <= 0 or is_dead:
-		return
-	if grenade_anim_state == GrenadeActionState.IDLE:
-		_start_grenade_hold()
-		_release_grenade_throw()
+	_grenades.throw_grenade()
 
-## Механика паркура (преодоление заборов, подоконников и низких укрытий)
-## QA-fix TASK-0022: ступеньки/бордюры/швы до 0.55 м больше не «застревают».
-## Раньше CharacterBody3D упирался в любой пиксельный выступ; теперь, если
-## перед игроком низкий бортик с проходимой площадкой сверху, капсула
-## аккуратно приподнимается на него.
+func _update_grenade_animation(delta: float) -> void:
+	_grenades.tick(delta)
+
 func _try_step_up() -> void:
 	if is_vaulting or stance != 0 or not is_on_floor():
 		return
@@ -1847,7 +1582,7 @@ func _try_step_up() -> void:
 	velocity.y = maxf(velocity.y, 0.0)
 
 func _try_vault() -> bool:
-	if is_dead or input_locked or is_vaulting or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
+	if is_dead or input_locked or is_vaulting or active_drone != null or _grenades.is_busy():
 		return false
 	var space_state := get_world_3d().direct_space_state
 	if space_state == null:
@@ -1948,13 +1683,7 @@ func _process_vault(delta: float) -> void:
 		move_and_slide()
 
 func _throw_smoke() -> void:
-	if smoke_grenades <= 0 or is_dead or input_locked:
-		return
-	# QA-fix TASK-0022: дымовая бросается через ту же анимацию, что и Ф-1
-	# (достал -> выдернул чеку -> замах -> бросок), а не «вылетает из головы».
-	if grenade_anim_state == GrenadeActionState.IDLE:
-		_start_grenade_hold("smoke")
-		_release_grenade_throw()
+	_grenades.throw_smoke()
 
 func _use_heal() -> void:
 	if medkits <= 0 or is_dead or is_healing:
@@ -2023,62 +1752,27 @@ func _refresh_equipment() -> void:
 	_player_hud.set_equipment_text("%s • ГР:%d • ДЫМ:%d • БИНТ:%d%s%s" % [role_text, grenades, smoke_grenades, medkits, drone_text, soil_text])
 
 func register_field_pickup(pickup: Node3D) -> void:
-	if is_instance_valid(pickup) and not nearby_field_pickups.has(pickup):
-		nearby_field_pickups.append(pickup)
-		_refresh_pickup_prompt()
+	_pickups.register(pickup)
+	_refresh_pickup_prompt()
 
 func unregister_field_pickup(pickup: Node3D) -> void:
-	nearby_field_pickups.erase(pickup)
+	_pickups.unregister(pickup)
 	_refresh_pickup_prompt()
 
 func _nearest_field_pickup() -> Node3D:
-	var nearest: Node3D = null
-	var nearest_distance := 2.6
-	var candidates: Array[Node3D] = []
-	for p in nearby_field_pickups:
-		if is_instance_valid(p) and not candidates.has(p):
-			candidates.append(p)
-	for p in get_tree().get_nodes_in_group("field_weapon_pickups"):
-		if is_instance_valid(p) and not candidates.has(p):
-			candidates.append(p as Node3D)
-	for p in get_tree().get_nodes_in_group("field_supply_crates"):
-		if is_instance_valid(p) and not candidates.has(p):
-			candidates.append(p as Node3D)
-
-	for pickup in candidates:
-		if not is_instance_valid(pickup):
-			continue
-		if not pickup.has_method("can_collect") or not bool(pickup.call("can_collect", self)):
-			continue
-		var dist := global_position.distance_to(pickup.global_position)
-		if dist < nearest_distance:
-			nearest_distance = dist
-			nearest = pickup
-	return nearest
+	return _pickups.nearest_field_pickup()
 
 func _refresh_pickup_prompt() -> void:
-	if mounted_vehicle != null and not is_instance_valid(mounted_vehicle):
-		mounted_vehicle = null
-	var enterable: Node3D = null
-	var pickup: Node3D = null
-	if mounted_vehicle == null:
-		enterable = _nearest_enterable()
-		pickup = _nearest_field_pickup()
-	var prompt: Node3D = null
-	if mounted_vehicle != null:
-		prompt = mounted_vehicle
-	elif enterable != null:
-		prompt = enterable
-	elif pickup != null:
-		prompt = pickup
+	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
+		_vehicles.vehicle = null
+	var target := _pickups.prompt_target()
 	if _player_hud != null:
 		var prompt_text := ""
-		if prompt != null and prompt.has_method("prompt_text"):
-			prompt_text = str(prompt.call("prompt_text", OS.has_feature("mobile")))
+		if target != null and target.has_method("prompt_text"):
+			prompt_text = str(target.call("prompt_text", OS.has_feature("mobile")))
 		_player_hud.set_pickup_prompt(prompt_text)
 	if mobile_controls != null:
-		var show_interact := (mounted_vehicle != null or enterable != null or pickup != null)
-		mobile_controls.set_interact_visible(show_interact)
+		mobile_controls.set_interact_visible(target != null)
 
 func _interact_with_pickup() -> void:
 	if is_dead or input_locked:
@@ -2095,55 +1789,21 @@ func _interact_with_pickup() -> void:
 	if pickup == null or not pickup.has_method("collect"):
 		return
 	if bool(pickup.call("collect", self)):
-		nearby_field_pickups.erase(pickup)
+		_pickups.unregister(pickup)
 		_refresh_pickup_prompt()
 		_play_sfx(sfx_ui, SFX_UI, -2.0, 1.12)
 
 func can_take_field_ammo(amount: int) -> bool:
-	if is_dead or input_locked or amount <= 0:
-		return false
-	return _weapons.can_take_reserve()
+	return _pickups.can_take_field_ammo(amount)
 
 func take_field_ammo(amount: int) -> int:
-	if not can_take_field_ammo(amount):
-		return 0
-	return _weapons.add_reserve(amount)
+	return _pickups.take_field_ammo(amount)
 
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
-	if is_dead or input_locked or index < 0 or index >= FRONTLINEWeaponCatalog.count():
-		return false
-	if index != current_weapon_index:
-		return true
-	var stored_clip := ammo
-	var stored_reserve := reserve_ammo
-	var definition: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
-	var max_mag := int(definition.magazine)
-	var max_reserve := int(definition.reserve)
-	return stored_clip < max_mag or stored_reserve < max_reserve
+	return _pickups.can_take_weapon(index, clip, reserve)
 
 func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
-	if not can_take_weapon_pickup(index, clip, reserve):
-		return false
-	if index == current_weapon_index:
-		_weapons.refill_current(clip, reserve)
-		return true
-
-	var previous_index := current_weapon_index
-	var previous_clip := ammo
-	var previous_reserve := reserve_ammo
-	_weapons.store_current()
-	_weapons.clear_slot(previous_index)
-	_spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
-
-	_weapons.replace_role_slot(previous_index, index)
-	_weapons.equip_from_pickup(index, clip, reserve)
-	weapon_kick = 0.0
-	_set_aiming(false)
-	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
-		mobile_controls.call("reset_aim")
-	_equip_weapon_visual()
-	_refresh_ammo()
-	return true
+	return _pickups.take_weapon(index, clip, reserve)
 
 func _spawn_weapon_drop(index: int, clip: int, reserve: int) -> void:
 	var parent := get_parent()
@@ -2195,13 +1855,7 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 
 	is_dead = true
 	is_vaulting = false
-	if is_grenade_held and not grenade_has_spawned and grenades > 0:
-		_spawn_thrown_grenade()
-	is_grenade_held = false
-	grenade_has_spawned = false
-	grenade_anim_state = GrenadeActionState.IDLE
-	if grenade_view_root != null:
-		grenade_view_root.visible = false
+	_grenades.drop_on_death()
 	health = 0.0
 	velocity = Vector3.ZERO
 	collision_layer = 0
@@ -2246,11 +1900,7 @@ func respawn() -> void:
 
 	is_dead = false
 	is_vaulting = false
-	is_grenade_held = false
-	grenade_has_spawned = false
-	grenade_anim_state = GrenadeActionState.IDLE
-	if grenade_view_root != null:
-		grenade_view_root.visible = false
+	_grenades.reset()
 	collision_layer = WORLD_LAYER_MASK
 	health = MAX_HEALTH
 	if player_body != null and player_body.has_method("set_ragdoll"):

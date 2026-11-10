@@ -481,6 +481,9 @@ func _test_parkour_and_grenade_hold() -> void:
 
 		p.call("_release_grenade_throw")
 		_check(not bool(p.get("is_grenade_held")), "grenade hold flag still active after release")
+		for _step in range(4):
+			p.call("_update_grenade_animation", 0.2)
+		_check(int(p.get("grenades")) < 3, "grenade throw did not consume a grenade")
 
 		p.queue_free()
 		await get_tree().process_frame

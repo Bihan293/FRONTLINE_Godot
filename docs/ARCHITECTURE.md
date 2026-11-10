@@ -78,8 +78,8 @@ scenes (.tscn)
 2. **Сделано:** `WeaponController` (слоты/патроны/перезарядка) и
    `PlayerWeaponView` + `PlayerViewArms` (модель, вспышка, покачивание, IK-руки).
 3. **Сделано:** `PlayerHUD` — здоровье, патроны, урон, кровь, смерть, пауза.
-4. **Следующее:** вынести `PlayerGrenades`, `PlayerVehicles`, `PlayerPickups`.
-5. Разбить `soldier_bot.gd` на `BotMotor`, `BotCombat`, `BotPerception`.
+4. **Сделано:** `PlayerGrenades`, `PlayerVehicles`, `PlayerPickups`.
+5. **Следующее:** `soldier_bot.gd` → `BotMotor` + `BotCombat` + `BotPerception`.
 6. Вынести HUD и мир `battlefield.gd` в `BattlefieldHUD`/`BattlefieldWorld`.
 7. Перевести меню, деплой и HUD в `.tscn`-сцены.
 8. Включить `gdlint` в CI после того, как долг опустится до нуля.
