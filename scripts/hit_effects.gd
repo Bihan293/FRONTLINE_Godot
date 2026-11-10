@@ -16,6 +16,8 @@ static var _dust_particle_mat: StandardMaterial3D
 static var _spark_mat: StandardMaterial3D
 static var _casing_mesh: CylinderMesh
 static var _casing_mat: StandardMaterial3D
+static var _active_casings: Array = []
+const MAX_ACTIVE_CASINGS := 40
 
 class CasingNode extends Node3D:
 	var velocity := Vector3.ZERO
@@ -28,8 +30,6 @@ class CasingNode extends Node3D:
 		life -= delta
 		if life <= 0.0:
 			queue_free()
-			return
-		if settled:
 			return
 		velocity.y -= 16.0 * delta
 		position += velocity * delta
@@ -45,6 +45,9 @@ class CasingNode extends Node3D:
 				velocity = Vector3.ZERO
 				angular_vel = Vector3.ZERO
 				settled = true
+				# Осевшая гильза больше не тратит кадр: висит до таймера.
+				set_process(false)
+				get_tree().create_timer(1.6, false).timeout.connect(queue_free)
 
 class DroppedWeaponNode extends Node3D:
 	var velocity := Vector3.ZERO
@@ -79,6 +82,16 @@ static func spawn_casing(parent: Node, spawn_pos: Vector3, eject_velocity: Vecto
 	# Low-пресет: гильзы не спавним (каждая — отдельный нод и физтело).
 	if GameSettings.quality == 0:
 		return
+	# Жесткий лимит: при шквальном огне старые гильзы удаляются, а не копятся.
+	var i := _active_casings.size() - 1
+	while i >= 0:
+		if not is_instance_valid(_active_casings[i]):
+			_active_casings.remove_at(i)
+		i -= 1
+	if _active_casings.size() >= MAX_ACTIVE_CASINGS:
+		var oldest = _active_casings.pop_front()
+		if is_instance_valid(oldest):
+			oldest.queue_free()
 	var c := CasingNode.new()
 	c.position = spawn_pos
 	c.velocity = eject_velocity + Vector3(randf_range(-0.3, 0.3), randf_range(-0.2, 0.4), randf_range(-0.3, 0.3))
@@ -86,8 +99,10 @@ static func spawn_casing(parent: Node, spawn_pos: Vector3, eject_velocity: Vecto
 	var mi := MeshInstance3D.new()
 	mi.mesh = _get_casing_mesh()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_end = 16.0
 	c.add_child(mi)
 	parent.add_child(c)
+	_active_casings.append(c)
 
 static func spawn_dropped_weapon(parent: Node, spawn_pos: Vector3, weapon_mesh: Mesh, eject_vel: Vector3) -> void:
 	if parent == null or weapon_mesh == null:

@@ -211,6 +211,37 @@ func apply_video() -> void:
 func apply_frame_limit() -> void:
 	# Низкий пресет ограничивает FPS, чтобы телефон не грелся и не лагал.
 	Engine.max_fps = 30 if quality == 0 else 60
+	# На low физика тоже 30 Гц: иначе ИИ и move_and_slide считаются вдвое
+	# чаще, чем рисуется кадр, и CPU работает впустую.
+	Engine.physics_ticks_per_second = 30 if quality == 0 else 60
+
+## Интервал пересчёта скелета на дистанции. 0 — каждый кадр, -1 — не анимировать.
+func bot_animation_interval(distance: float) -> float:
+	match quality:
+		0:
+			if distance < 18.0:
+				return 0.0
+			if distance < 45.0:
+				return 1.0 / 15.0
+			if distance < 80.0:
+				return 1.0 / 8.0
+			return -1.0
+		1:
+			if distance < 28.0:
+				return 0.0
+			if distance < 65.0:
+				return 1.0 / 20.0
+			if distance < 110.0:
+				return 1.0 / 10.0
+			return -1.0
+		_:
+			if distance < 35.0:
+				return 0.0
+			if distance < 90.0:
+				return 1.0 / 30.0
+			if distance < 160.0:
+				return 1.0 / 15.0
+			return -1.0
 
 func shadows_enabled() -> bool:
 	return quality > 0

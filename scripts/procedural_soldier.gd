@@ -436,12 +436,12 @@ func _process(delta: float) -> void:
 		return
 
 	# При дистанции больше near троттлим скелет; на low пороги жёстче.
-	var lod_near := GameSettings.bot_lod_near()
-	var lod_far := GameSettings.bot_lod_far()
-	if _cached_cam_dist > lod_near:
+	var interval := GameSettings.bot_animation_interval(_cached_cam_dist)
+	if interval < 0.0:
+		return
+	if interval > 0.0:
 		_lod_step_accum += delta
-		var min_interval := (0.10 if GameSettings.quality == 0 else 0.066) if _cached_cam_dist > lod_far else (0.050 if GameSettings.quality == 0 else 0.033)
-		if _lod_step_accum < min_interval:
+		if _lod_step_accum < interval:
 			return
 		delta = _lod_step_accum
 		_lod_step_accum = 0.0

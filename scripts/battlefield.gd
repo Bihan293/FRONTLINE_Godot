@@ -576,9 +576,19 @@ func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldi
 	_active_bots.append(bot)
 	return bot
 
-func _on_bot_fired(pos: Vector3) -> void:
-	if compass != null:
-		compass.add_gunfire_ping(pos)
+func _on_bot_fired(pos: Vector3, team: String) -> void:
+	var player_team := str(get_tree().get_meta("selected_team", "IRON LEGION"))
+	if compass != null and team != player_team and player != null and is_instance_valid(player):
+		if player.global_position.distance_squared_to(pos) < 70.0 * 70.0:
+			compass.add_gunfire_ping(pos)
+	report_gunshot(pos, team)
+
+## Централизованное оповещение пехоты о выстреле. Слух не зависит от того,
+## кто стрелял — игрок или бот, — и работает без рейкаста на каждый выстрел.
+func report_gunshot(pos: Vector3, shooter_team: String) -> void:
+	for bot in _active_bots:
+		if is_instance_valid(bot) and not bot.is_dead and bot.team_name != shooter_team:
+			bot.hear_gunshot(pos)
 
 func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon_name: String) -> void:
 	if game_mode == "TDM":
@@ -606,9 +616,10 @@ func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon
 	# Добавление в киллфид
 	_add_killfeed_entry(killer_name, victim.soldier_name, victim.team_name)
 
-	# Запуск подкрепления через 7 секунд
+	# Запуск подкрепления через 7 секунд (разброс, чтобы пачка смертей
+	# не вызывала одновременную сборку нескольких ботов в одном кадре).
 	var v_team := victim.team_name
-	get_tree().create_timer(7.0, false).timeout.connect(func():
+	get_tree().create_timer(7.0 + randf_range(-0.25, 0.75), false).timeout.connect(func():
 		if is_instance_valid(self):
 			_spawn_reinforcement(v_team)
 	)

@@ -7,10 +7,12 @@ class_name FRONTLINECompassBar
 
 const COMPASS_WIDTH := 380.0
 const COMPASS_HEIGHT := 36.0
+const MAX_GUNFIRE_PINGS := 24
 
 var player_camera: Camera3D
 var sectors: Array[Dictionary] = []
-var _gunfire_pings: Array[Dictionary] = []
+var _ping_positions := PackedVector3Array()
+var _ping_times := PackedFloat32Array()
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(COMPASS_WIDTH, COMPASS_HEIGHT)
@@ -21,23 +23,26 @@ func setup(camera: Camera3D, sector_list: Array[Dictionary]) -> void:
 	sectors = sector_list
 
 func add_gunfire_ping(world_pos: Vector3) -> void:
-	_gunfire_pings.append({
-		"pos": world_pos,
-		"time": 2.2
-	})
+	# Кольцевой буфер фиксированного размера: без Dictionary на каждый выстрел
+	# и без роста массива в затяжном бою.
+	if _ping_positions.size() >= MAX_GUNFIRE_PINGS:
+		_ping_positions.remove_at(0)
+		_ping_times.remove_at(0)
+	_ping_positions.append(world_pos)
+	_ping_times.append(2.2)
 
 var _redraw_accum := 0.0
 
 func _process(delta: float) -> void:
-	# Очистка старых меток выстрелов
-	var i := _gunfire_pings.size() - 1
+	var i := _ping_times.size() - 1
 	while i >= 0:
-		_gunfire_pings[i].time -= delta
-		if _gunfire_pings[i].time <= 0.0:
-			_gunfire_pings.remove_at(i)
+		_ping_times[i] -= delta
+		if _ping_times[i] <= 0.0:
+			_ping_positions.remove_at(i)
+			_ping_times.remove_at(i)
 		i -= 1
 	_redraw_accum += delta
-	if _redraw_accum < 0.08:
+	if _redraw_accum < 0.10:
 		return
 	_redraw_accum = 0.0
 	queue_redraw()
@@ -109,11 +114,11 @@ func _draw() -> void:
 			draw_string(font, Vector2(x - sz.x * 0.5, COMPASS_HEIGHT + 16), label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 
 	# Метки вражеской стрельбы
-	for ping in _gunfire_pings:
-		var to_ping: Vector3 = ping.pos - player_camera.global_position
+	for i in range(_ping_positions.size()):
+		var to_ping: Vector3 = _ping_positions[i] - player_camera.global_position
 		var angle_ping := atan2(-to_ping.x, -to_ping.z)
 		var diff := fposmod(angle_ping - cam_yaw + PI, TAU) - PI
 		if absf(diff) < fov_angle * 0.5:
 			var x := _angle_to_x(diff, center, half_w, fov_angle)
-			var alpha: float = clampf(ping.time / 1.5, 0.0, 1.0)
+			var alpha: float = clampf(_ping_times[i] / 1.5, 0.0, 1.0)
 			draw_circle(Vector2(x, COMPASS_HEIGHT - 4), 4.5, Color(1.0, 0.15, 0.1, alpha))
