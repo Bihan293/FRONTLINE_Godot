@@ -10,26 +10,12 @@ signal soldier_fired(pos: Vector3, team: String)
 
 const PERCEPTION = preload("res://scripts/ai/bot_perception.gd")
 const TUNING = preload("res://scripts/ai/bot_tuning.gd")
-const PROCEDURAL = preload("res://scripts/procedural_soldier.gd")
-const BLOCK_RIG_BUILDER = preload("res://scripts/block_rig_builder.gd")
-const TACTICAL_GEAR = preload("res://scripts/tactical_gear.gd")
-const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const GRENADE_SCRIPT = preload("res://scripts/grenade.gd")
-const SMOKE_SCRIPT = preload("res://scripts/smoke_grenade.gd")
-const AMBIENCE = preload("res://scripts/battlefield_ambience.gd")
-const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
-const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
 const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 
-const IRON_SCENE := "res://assets/models/soldiers/FRONTLINE_German_Grey_Block_Soldier.glb"
-const RED_SCENE := "res://assets/models/soldiers/FRONTLINE_Soviet_Khaki_Block_Soldier.glb"
-const SFX_SHOT = preload("res://assets/audio/shot.wav")
-const SFX_RELOAD_OUT = preload("res://assets/audio/reload_out.ogg")
-const SFX_RELOAD_IN = preload("res://assets/audio/reload_in.wav")
-const SFX_HIT_FLESH = preload("res://assets/audio/hit_flesh.ogg")
 
 const SPEED_WALK := 3.4
 const SPEED_SPRINT := 5.6
@@ -68,6 +54,7 @@ var current_target: Node3D:
 			_perception.force_target(value)
 
 var _perception: FRONTLINEBotPerception
+var _motor := FRONTLINEBotMotor.new()
 var burst_count := 0
 var fire_cooldown := 0.0
 
@@ -78,33 +65,10 @@ var combat_strafe_dir := Vector3.ZERO
 var _last_target_id := 0
 
 # Узлы модели
-var _pivot: Node3D
-var _visual: Node3D
-var _proc: FRONTLINEProceduralSoldier
-var _gun_pivot: Node3D
-var _gun_mesh: MeshInstance3D
-var _muzzle_node: Node3D
-var _muzzle_flash: MeshInstance3D
-var _flash_time := 0.0
-var _label: Label3D
-var _sfx_shot: AudioStreamPlayer3D
-var _sfx_reload: AudioStreamPlayer3D
 var _hitboxes: Array[Area3D] = []
-var _navigation: FRONTLINEBotNavigation
-var _route_path := PackedVector3Array()
-var _route_index := 0
-var _route_repath_timer := 0.0
+var _visuals: FRONTLINEBotVisuals
 # Антизастревание: решение принимается до move_and_slide, а не после.
-var _stuck_check_timer := 0.0
-var _stuck_last_pos := Vector3.ZERO
-var _unstick_timer := 0.0
-var _unstick_dir := Vector3.ZERO
-var _unstick_jump := false
-var _intended_speed := 0.0
 # QA-optimization: кэш акустики (4 Гц вместо каждого выстрела).
-var _audio_env_timer := 0.0
-var _audio_indoors := false
-var _audio_occluded := false
 var _self_rids: Array[RID] = []
 # Обход препятствий считается один раз за кадр по итоговому направлению.
 var _avoid_timer := 0.0
@@ -114,7 +78,6 @@ var _avoid_front := PhysicsRayQueryParameters3D.new()
 var _avoid_left := PhysicsRayQueryParameters3D.new()
 var _avoid_right := PhysicsRayQueryParameters3D.new()
 var _fire_query := PhysicsRayQueryParameters3D.new()
-var _sep_timer := 0.0
 var _drone_timer := 0.0
 var _nearest_drone_cached: Node3D = null
 # QA-fix TASK-0022: тактическая «живость» — перебежки, приседания, разброс маршрутов.
@@ -125,8 +88,6 @@ var _scan_time := 0.0
 # QA-fix TASK-0022: укрытия под огнём.
 var _cover_target := Vector3.ZERO
 var _cover_timer := 0.0
-var _route_goal := Vector3.ZERO
-var _route_has_attempted := false
 var _shout_timer := 0.0
 # Данные карты кэшируются один раз, а не пересчитываются каждый кадр.
 var _cached_map_name := "BATTLEFIELD"
@@ -140,9 +101,7 @@ var difficulty_spread_mult: float = 1.0
 var difficulty_reaction_mult: float = 1.0
 var difficulty_recovery_mult: float = 1.0
 var _medic_timer: float = randf_range(3.0, 6.0)
-var _cached_cam: Camera3D = null
 var _cached_player: Node3D = null
-var _label_update_timer: float = 0.0
 
 static var profile_build := false
 
@@ -152,14 +111,13 @@ func _ready() -> void:
 	_personal_offset_x = randf_range(-9.0, 9.0)
 	_bound_timer = randf_range(0.6, 2.2)
 	_bound_crouch = false
-	_label_update_timer = randf_range(0.0, 0.25)
 	add_to_group("bots")
 	add_to_group("damageable_actor")
 	collision_layer = SOLDIER_LAYER_MASK
 	collision_mask = WORLD_LAYER_MASK | SOLDIER_LAYER_MASK
 	floor_snap_length = 0.3
 	floor_max_angle = deg_to_rad(45.0)
-	_navigation = get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation
+	_motor.setup(self, get_node_or_null("/root/BotNavigation") as FRONTLINEBotNavigation)
 
 	match_difficulty = MatchState.difficulty
 	match match_difficulty:
@@ -207,19 +165,14 @@ func _ready() -> void:
 	_build_body_collision()
 	var t_visual0 := Time.get_ticks_usec()
 	_build_visuals()
-	var t_weapon0 := Time.get_ticks_usec()
-	_build_weapon()
 	var t_rest0 := Time.get_ticks_usec()
 	_build_hitboxes()
 	_rebuild_self_rids()
-	_build_label()
-	_build_audio()
 	if profile_build:
 		var t_end := Time.get_ticks_usec()
-		print("BOT_BUILD collide=%.2f visual=%.2f weapon=%.2f rest=%.2f total=%.2f" % [
+		print("BOT_BUILD collide=%.2f visuals=%.2f rest=%.2f total=%.2f" % [
 			float(t_visual0 - t_collide0) / 1000.0,
-			float(t_weapon0 - t_visual0) / 1000.0,
-			float(t_rest0 - t_weapon0) / 1000.0,
+			float(t_rest0 - t_visual0) / 1000.0,
 			float(t_end - t_rest0) / 1000.0,
 			float(t_end - t_build) / 1000.0
 		])
@@ -227,9 +180,7 @@ func _ready() -> void:
 	_perception = PERCEPTION.new()
 	_perception.setup(self, randf())
 	_cache_map_data()
-	_init_avoid_queries()
-	_stuck_last_pos = global_position
-	_route_repath_timer = randf_range(0.15, 0.9)
+	_init_fire_query()
 	fire_cooldown = randf_range(0.4, 1.2) * difficulty_reaction_mult
 
 ## Данные карты не меняются во время матча — считаем один раз.
@@ -250,11 +201,7 @@ func _cache_map_data() -> void:
 		_sector_positions = PackedFloat32Array([-52.0, 0.0, 52.0])
 		_enemy_base_z = 56.0
 
-func _init_avoid_queries() -> void:
-	for query in [_avoid_front, _avoid_left, _avoid_right]:
-		query.collision_mask = TUNING.WORLD_LAYER
-		query.collide_with_areas = false
-		query.collide_with_bodies = true
+func _init_fire_query() -> void:
 	_fire_query.collision_mask = TUNING.LOS_MASK
 	_fire_query.collide_with_areas = true
 	_fire_query.collide_with_bodies = true
@@ -272,121 +219,10 @@ func _build_body_collision() -> void:
 static var _visual_template_cache: Dictionary = {}
 
 func _build_visuals() -> void:
-	_pivot = Node3D.new()
-	add_child(_pivot)
-
-	var path := RED_SCENE if team_name.to_upper().contains("RED") else IRON_SCENE
-	var is_red: bool = team_name.to_upper().contains("RED")
-	var template: Node3D = _visual_template_cache.get(path)
-	if template == null:
-		template = _create_visual_template(path, is_red)
-		if template == null:
-			return
-		# Храним нетронутый шаблон: у первого бота _ready() изменит позы костей.
-		_visual_template_cache[path] = template.duplicate() as Node3D
-	var t_dup := Time.get_ticks_usec()
-	_visual = template.duplicate() as Node3D
-	var t_add := Time.get_ticks_usec()
-	_pivot.add_child(_visual)
-	var t_ready := Time.get_ticks_usec()
-	if profile_build:
-		print("VIS duplicate=%.2f ready=%.2f" % [
-			float(t_add - t_dup) / 1000.0,
-			float(t_ready - t_add) / 1000.0
-		])
-	if _visual.has_method("set_motion"):
-		_proc = _visual as FRONTLINEProceduralSoldier
-	# QA-optimization: мелкие детали модели скрываем на дистанции — меньше draw calls.
-	if GameSettings.quality == 0 and _proc != null:
-		_proc.set_t_pose_arms(false)
-		_proc.set_aiming(true)
-		_proc.set_motion(0.0, false)
-
-## Собирает модель один раз на фракцию. Повторные боты — дешёвый duplicate()
-## вместо загрузки GLB, снаряжения, рига и слияния меша.
-func _create_visual_template(path: String, is_red: bool) -> Node3D:
-	var visual := Node3D.new()
-	visual.rotation.y = PI
-	var packed = load(path)
-	if packed == null:
-		push_error("FRONTLINE: cannot load soldier GLB " + path)
-		return null
-	var model = packed.instantiate()
-	TACTICAL_GEAR.add_tactical_loadout(model, is_red, true)
-	visual.add_child(model)
-	var skeleton := BLOCK_RIG_BUILDER.rig_model(model)
-	if skeleton is Skeleton3D:
-		BLOCK_RIG_BUILDER.merge_rigged_model(skeleton)
-		# После слияния в модели остаётся только скелет с одним skinned-мешем.
-		# Выкидываем пустую GLB-иерархию: duplicate() шаблона перестаёт
-		# копировать десятки служебных узлов и занимает доли миллисекунды.
-		var skeleton_parent := skeleton.get_parent()
-		if skeleton_parent != null and skeleton_parent != visual:
-			var skeleton_xform := skeleton.transform
-			skeleton_parent.remove_child(skeleton)
-			visual.add_child(skeleton)
-			skeleton.transform = skeleton_xform
-			skeleton_parent.free()
-		# Мобильный бюджет: на low/medium солдаты не пишут shadow pass,
-		# а дальний план отсекается по дистанции.
-		for mesh_node in visual.find_children("*", "MeshInstance3D", true, false):
-			var mesh_inst := mesh_node as MeshInstance3D
-			if mesh_inst == null:
-				continue
-			if GameSettings.quality <= 1:
-				mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			mesh_inst.visibility_range_end = maxf(120.0, GameSettings.view_distance() * 0.9)
-		# Скрипт ставим до входа в дерево, чтобы его _ready() сразу увидел скелет.
-		visual.set_script(PROCEDURAL)
-	return visual
-
-static var _weapon_template_cache: Dictionary = {}
-
-func _build_weapon() -> void:
-	_gun_pivot = Node3D.new()
-	_gun_pivot.name = "GunPivot"
-	_gun_pivot.position = Vector3(0.16, 1.25, -0.22)
-	_pivot.add_child(_gun_pivot)
-
-	var weapon_ids := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
-	var wid: String = weapon_ids[clampi(bot_weapon_index, 0, weapon_ids.size() - 1)]
-
-	var template: Node3D = _weapon_template_cache.get(wid)
-	if template == null:
-		template = WEAPON_MESHES.make_weapon(wid)
-		if template == null:
-			push_error("FRONTLINE: cannot build bot weapon " + wid)
-			return
-		template.scale = Vector3.ONE * 0.95
-		_weapon_template_cache[wid] = template.duplicate() as Node3D
-	var model := template.duplicate() as Node3D
-	_gun_pivot.add_child(model)
-	_muzzle_node = model.get_node_or_null("Muzzle") as Node3D
-	var meshes := model.find_children("*", "MeshInstance3D", true, false)
-	if not meshes.is_empty():
-		_gun_mesh = meshes[0] as MeshInstance3D
-
-	if _muzzle_node == null:
-		_muzzle_node = Node3D.new()
-		_muzzle_node.position = Vector3(0.0, 0.05, -0.6)
-		_gun_pivot.add_child(_muzzle_node)
-	_build_muzzle_flash()
-
-func _build_muzzle_flash() -> void:
-	_muzzle_flash = MeshInstance3D.new()
-	var flash_sphere := SphereMesh.new()
-	flash_sphere.radius = 0.06
-	flash_sphere.height = 0.12
-	_muzzle_flash.mesh = flash_sphere
-	var flash_mat := StandardMaterial3D.new()
-	flash_mat.albedo_color = Color(1.0, 0.78, 0.25)
-	flash_mat.emission_enabled = true
-	flash_mat.emission = Color(1.0, 0.6, 0.1)
-	flash_mat.emission_energy_multiplier = 4.5
-	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_muzzle_flash.material_override = flash_mat
-	_muzzle_flash.visible = false
-	_muzzle_node.add_child(_muzzle_flash)
+	_visuals = FRONTLINEBotVisuals.new()
+	_visuals.name = "BotVisuals"
+	add_child(_visuals)
+	_visuals.setup(team_name, soldier_name, bot_weapon_index, bot_role)
 
 func _build_hitboxes() -> void:
 	var shape_head := BoxShape3D.new()
@@ -412,49 +248,8 @@ func _add_hitbox(region: String, local_pos: Vector3, shape: Shape3D) -> void:
 	cs.shape = shape
 	area.add_child(cs)
 	area.position = local_pos
-	_pivot.add_child(area)
+	_visuals.add_child(area)
 	_hitboxes.append(area)
-
-func _role_title() -> String:
-	var is_red := team_name.contains("RED")
-	match bot_role:
-		"MEDIC":
-			return "САНИТАР" if is_red else "SANITÄTER"
-		"GUNNER":
-			return "ПУЛЕМЁТ" if is_red else "MG"
-		"SNIPER":
-			return "СНАЙПЕР" if is_red else "SCHARF"
-		"ANTI_ARMOR":
-			return "ПТ" if is_red else "PANZER"
-		_:
-			return "ШТУРМ" if is_red else "STURM"
-
-func _build_label() -> void:
-	_label = Label3D.new()
-	_label.text = "%s [%s]" % [soldier_name, _role_title()]
-	_label.position = Vector3(0, 2.15, 0)
-	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_label.font_size = 18
-	_label.modulate = Color(0.85, 0.35, 0.35) if team_name.contains("RED") else Color(0.65, 0.75, 0.85)
-	add_child(_label)
-
-func _build_audio() -> void:
-	_sfx_shot = AudioStreamPlayer3D.new()
-	var weapon_ids := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
-	_sfx_shot.stream = WEAPON_SOUND.get_shot(weapon_ids[clampi(bot_weapon_index, 0, weapon_ids.size() - 1)])
-	_sfx_shot.unit_size = 16.0
-	_sfx_shot.max_distance = 220.0
-	_sfx_shot.max_polyphony = 1
-	_sfx_shot.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
-	_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
-	add_child(_sfx_shot)
-
-	_sfx_reload = AudioStreamPlayer3D.new()
-	_sfx_reload.stream = SFX_RELOAD_IN
-	_sfx_reload.unit_size = 8.0
-	_sfx_reload.max_distance = 45.0
-	_sfx_reload.bus = COMBAT_AUDIO.BUS_SFX
-	add_child(_sfx_reload)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -464,14 +259,12 @@ func _physics_process(delta: float) -> void:
 
 	_apply_gravity(delta)
 	_handle_effects(delta)
-	_audio_env_timer -= delta
 	if _perception != null:
 		_perception.tick(delta, _get_self_collision_rids())
 	_update_ai(delta)
-	_resolve_movement(delta)
-	_intended_speed = Vector2(velocity.x, velocity.z).length()
+	velocity = _motor.resolve(self, delta)
 	move_and_slide()
-	_update_stuck_watch(delta)
+	_motor.update_stuck(self, delta)
 	_update_animation(delta)
 
 func _apply_gravity(delta: float) -> void:
@@ -483,98 +276,19 @@ func _apply_gravity(delta: float) -> void:
 ## Единая точка применения движения: поведение задаёт намерение,
 ## здесь оно один раз обходит препятствия, расталкивается и выбирается
 ## из застревания. Никаких повторных рейкастов из каждого поведения.
-func _resolve_movement(delta: float) -> void:
-	var intent := Vector3(velocity.x, 0.0, velocity.z)
-	if intent.length_squared() > 0.0001:
-		var avoided := _avoid_obstacles(intent.normalized())
-		var speed := intent.length()
-		velocity.x = avoided.x * speed
-		velocity.z = avoided.z * speed
-	_apply_separation(delta)
-	if _unstick_timer > 0.0:
-		_unstick_timer -= delta
-		if _unstick_dir.length_squared() > 0.01:
-			velocity.x = _unstick_dir.x * SPEED_WALK
-			velocity.z = _unstick_dir.z * SPEED_WALK
-		if _unstick_jump and is_on_floor():
-			velocity.y = 4.6
-			_unstick_jump = false
+func _avoid_obstacles(desired_dir: Vector3) -> Vector3:
+	return _motor.avoid(self, desired_dir)
+
+func _route_direction(destination: Vector3, delta: float) -> Vector3:
+	return _motor.route_direction(self, destination, delta)
 
 func _update_animation(delta: float) -> void:
 	var horiz_vel := Vector2(velocity.x, velocity.z).length()
-	if _proc != null:
-		_proc.set_motion(horiz_vel, horiz_vel > SPEED_WALK + 0.5)
-		_proc.set_crouching(stance >= 1)
-		if _proc.has_method("set_prone"):
-			_proc.call("set_prone", stance == 2)
-		_proc.set_reloading(is_reloading)
-	if _gun_pivot != null:
-		var reload_tilt := -0.32 if is_reloading else 0.0
-		_gun_pivot.rotation.z = lerpf(_gun_pivot.rotation.z, reload_tilt, clampf(delta * 8.0, 0.0, 1.0))
-	if _label == null:
-		return
-	_label_update_timer -= delta
-	if _label_update_timer > 0.0:
-		return
-	_label_update_timer = 0.25
-	if _cached_cam == null or not is_instance_valid(_cached_cam):
-		var vp := get_viewport()
-		_cached_cam = vp.get_camera_3d() if vp != null else null
-	var label_dist := 999.0
-	if _cached_cam != null and is_instance_valid(_cached_cam):
-		label_dist = global_position.distance_to(_cached_cam.global_position)
-	_label.visible = GameSettings.quality > 0 and label_dist < 36.0
+	if _visuals != null:
+		_visuals.update_motion(horiz_vel, horiz_vel > SPEED_WALK + 0.5, stance >= 1, stance == 2, is_reloading)
+		_visuals.update_effects(delta, true)
 
 ## Мягкое расталкивание союзников: боты не сбиваются в кучу в углах и проходах.
-func _apply_separation(delta: float) -> void:
-	_sep_timer += delta
-	if _sep_timer < 0.10:
-		return
-	var step := _sep_timer
-	_sep_timer = 0.0
-	var push := Vector3.ZERO
-	for b in get_tree().get_nodes_in_group("bots"):
-		if b == self or not is_instance_valid(b):
-			continue
-		var other := b as Node3D
-		if other == null:
-			continue
-		var d := global_position - other.global_position
-		d.y = 0.0
-		var dist_sq := d.length_squared()
-		if dist_sq > 0.0025 and dist_sq < 5.29:
-			var dist := sqrt(dist_sq)
-			push += (d / dist) * ((2.3 - dist) / 2.3)
-	if push.length_squared() > 0.001:
-		push = push.limit_length(1.0)
-		velocity.x += push.x * 18.0 * step
-		velocity.z += push.z * 18.0 * step
-
-## Если бот хочет идти, но за 0.8 с сместился меньше 18 см — короткий
-## боковой шаг с подскоком и сброс пути. Проверка идёт после move_and_slide,
-## а само исправление применяется в _resolve_movement до следующего шага.
-func _update_stuck_watch(delta: float) -> void:
-	if _unstick_timer > 0.0:
-		return
-	_stuck_check_timer -= delta
-	if _stuck_check_timer > 0.0:
-		return
-	_stuck_check_timer = 0.8
-	var moved := global_position.distance_to(_stuck_last_pos)
-	_stuck_last_pos = global_position
-	if _intended_speed <= SPEED_CROUCH * 0.8 or moved >= 0.18:
-		return
-	var heading := Vector3(velocity.x, 0.0, velocity.z)
-	if heading.length_squared() < 0.01:
-		heading = -global_transform.basis.z
-	heading = heading.normalized()
-	var side := Vector3(-heading.z, 0.0, heading.x) * (1.0 if randf() < 0.5 else -1.0)
-	_unstick_dir = (side + heading * 0.35).normalized()
-	_unstick_timer = 0.55
-	_unstick_jump = true
-	_route_repath_timer = 0.0
-	_route_has_attempted = false
-
 func _update_ai(delta: float) -> void:
 	# Подавление постепенно рассеивается с учетом сложности
 	if suppression > 0.0:
@@ -597,14 +311,13 @@ func _update_ai(delta: float) -> void:
 				away = away.normalized()
 				if randf() < 0.6:
 					_shout("ДРОН!" if team_name.contains("RED") else "DRONE!", Color(1.0, 0.3, 0.25))
-				var flee_dir := _avoid_obstacles(away)
+				var flee_dir := _motor.avoid(self, away)
 				velocity.x = flee_dir.x * SPEED_SPRINT
 				velocity.z = flee_dir.z * SPEED_SPRINT
 				stance = 0
 				if is_on_floor() and randf() < 0.02:
 					velocity.y = 4.2
-				_route_repath_timer = 0.0
-				_route_has_attempted = false
+				_motor.invalidate_route()
 				return
 
 	# Поведение санитара (Medic)
@@ -679,7 +392,7 @@ func _investigate_behavior(delta: float) -> void:
 		_perception.clear_alert()
 		_advance_behavior(delta)
 		return
-	var direction := _route_direction(point, delta)
+	var direction := _motor.route_direction(self, point, delta)
 	if direction.length_squared() < 0.01:
 		_perception.clear_alert()
 		_advance_behavior(delta)
@@ -689,11 +402,10 @@ func _investigate_behavior(delta: float) -> void:
 	stance = 0
 	var target_yaw := atan2(-direction.x, -direction.z)
 	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 5.0, 0.0, 1.0))
-	if _gun_pivot != null:
-		_gun_pivot.rotation.x = 0.0
-	if _proc != null:
+	if _visuals != null:
+		_visuals.set_gun_pitch(0.0)
 		_scan_time += delta
-		_proc.set_look(sin(_scan_time * 1.6) * 0.35, 0.0)
+		_visuals.set_look(sin(_scan_time * 1.6) * 0.35, 0.0)
 
 ## Ищет точку рядом, из-за которой цель не видит бота (стена/мешки/техника).
 ## Кандидат обязан стоять на земле и реально перекрывать линию от глаз цели.
@@ -794,7 +506,7 @@ func _combat_behavior(delta: float) -> void:
 		fire_cooldown = maxf(fire_cooldown, 0.30)
 		var last_seen := _perception.last_known_position
 		if not last_seen.is_zero_approx() and global_position.distance_to(last_seen) > 1.5:
-			var seek_dir := _route_direction(last_seen, delta)
+			var seek_dir := _motor.route_direction(self, last_seen, delta)
 			velocity.x = seek_dir.x * SPEED_WALK
 			velocity.z = seek_dir.z * SPEED_WALK
 
@@ -803,12 +515,11 @@ func _combat_behavior(delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 8.0, 0.0, 1.0))
 
 	# Наклон оружия и головы к реальной точке прицеливания.
-	if _gun_pivot != null:
+	if _visuals != null:
 		var aim_y := TUNING.aim_height(current_target)
-		var pitch := atan2(to.y + aim_y - _gun_pivot.global_position.y, Vector2(to.x, to.z).length())
-		_gun_pivot.rotation.x = pitch
-		if _proc != null:
-			_proc.set_look(0.0, pitch)
+		var pitch := atan2(to.y + aim_y - _visuals.gun_position().y, Vector2(to.x, to.z).length())
+		_visuals.set_gun_pitch(pitch)
+		_visuals.set_look(0.0, pitch)
 
 	# Задержка наведения (Aim Acquisition): бот не стреляет мгновенно при первом обнаружении
 	if target_acquisition_timer > 0.0:
@@ -845,7 +556,7 @@ func _combat_behavior(delta: float) -> void:
 
 	if dist > preferred_max:
 		# Сближение по навигационному маршруту.
-		var move_dir := _route_direction(tpos, delta)
+		var move_dir := _motor.route_direction(self, tpos, delta)
 		velocity.x = move_dir.x * SPEED_WALK
 		velocity.z = move_dir.z * SPEED_WALK
 		stance = 0
@@ -951,7 +662,7 @@ func _advance_behavior(delta: float) -> void:
 			_patrol_point = objective + Vector3(randf_range(-7.0, 7.0), 0.0, randf_range(-7.0, 7.0))
 		objective = _patrol_point
 
-	var forward_dir := _route_direction(objective, delta)
+	var forward_dir := _motor.route_direction(self, objective, delta)
 
 	# Перебежки «от укрытия к укрытию»: короткий спринт, затем пауза-сканирование
 	# в приседе. Так отделение не идёт гуськом и не стоит толпой.
@@ -974,109 +685,16 @@ func _advance_behavior(delta: float) -> void:
 	if not _bound_crouch and forward_dir.length_squared() > 0.001:
 		var target_yaw := atan2(-forward_dir.x, -forward_dir.z)
 		rotation.y = lerp_angle(rotation.y, target_yaw, clampf(delta * 4.0, 0.0, 1.0))
-	if _gun_pivot != null:
-		_gun_pivot.rotation.x = 0.0
-	if _proc != null:
-		_proc.set_look(0.0, 0.0)
+	if _visuals != null:
+		_visuals.set_gun_pitch(0.0)
+		_visuals.set_look(0.0, 0.0)
 
 ## Процедурный обход препятствий (стен, заборов, мешков).
 ## Вызывается ровно один раз за кадр из _resolve_movement.
-func _avoid_obstacles(desired_dir: Vector3) -> Vector3:
-	_avoid_timer -= get_physics_process_delta_time()
-	if _avoid_timer > 0.0 and _avoid_in.dot(desired_dir) > 0.92:
-		return _avoid_out
-	_avoid_in = desired_dir
-	_avoid_timer = 0.10 + float(get_instance_id() % 4) * 0.01
-	_avoid_out = _avoid_obstacles_cast(desired_dir)
-	return _avoid_out
-
-func _avoid_obstacles_cast(desired_dir: Vector3) -> Vector3:
-	if desired_dir.length_squared() < 0.01:
-		return desired_dir
-	var space := get_world_3d().direct_space_state
-	var from := global_position + Vector3(0.0, 0.70, 0.0)
-	var forward := desired_dir.normalized()
-	var rids := _get_self_collision_rids()
-
-	_avoid_front.from = from
-	_avoid_front.to = from + forward * 1.8
-	_avoid_front.exclude = rids
-	var hit_front := space.intersect_ray(_avoid_front)
-	if hit_front.is_empty():
-		return desired_dir
-
-	var r_probe := forward.rotated(Vector3.UP, deg_to_rad(50.0))
-	var l_probe := forward.rotated(Vector3.UP, deg_to_rad(-50.0))
-
-	_avoid_right.from = from
-	_avoid_right.to = from + r_probe * 1.8
-	_avoid_right.exclude = rids
-	var hit_r := space.intersect_ray(_avoid_right)
-
-	_avoid_left.from = from
-	_avoid_left.to = from + l_probe * 1.8
-	_avoid_left.exclude = rids
-	var hit_l := space.intersect_ray(_avoid_left)
-
-	if hit_r.is_empty():
-		return r_probe
-	if hit_l.is_empty():
-		return l_probe
-	var n: Vector3 = hit_front.get("normal", -forward)
-	var tan_dir := Vector3(-n.z, 0.0, n.x)
-	return tan_dir if tan_dir.dot(desired_dir) >= 0.0 else -tan_dir
-
-func _route_direction(destination: Vector3, delta: float) -> Vector3:
-	var direct := destination - global_position
-	direct.y = 0.0
-	if direct.length_squared() <= 0.04:
-		return Vector3.ZERO
-	if _navigation == null:
-		return direct.normalized()
-
-	_route_repath_timer = maxf(0.0, _route_repath_timer - delta)
-	var destination_moved := _route_goal.distance_squared_to(destination) > 25.0
-	if not _route_has_attempted or _route_repath_timer <= 0.0 or destination_moved:
-		_route_path = _navigation.find_path(global_position, destination)
-		_route_goal = destination
-		_route_index = _closest_waypoint_index(_route_path)
-		_route_repath_timer = 2.4 + float(get_instance_id() % 5) * 0.12
-		_route_has_attempted = true
-	if _route_path.is_empty():
-		return direct.normalized()
-
-	while _route_index < _route_path.size() - 1:
-		var waypoint := _route_path[_route_index]
-		waypoint.y = global_position.y
-		if global_position.distance_to(waypoint) > 1.15:
-			break
-		_route_index += 1
-
-	var next_point := _route_path[_route_index]
-	var direction := next_point - global_position
-	direction.y = 0.0
-	if direction.length_squared() <= 0.04:
-		return Vector3.ZERO
-	return direction.normalized()
-
-## После перестройки пути продолжаем с ближайшего сегмента, а не с нулевого.
-func _closest_waypoint_index(path: PackedVector3Array) -> int:
-	var best := 0
-	var best_dist := INF
-	var here := Vector2(global_position.x, global_position.z)
-	for i in range(path.size()):
-		var point := Vector2(path[i].x, path[i].z)
-		var dist := here.distance_squared_to(point)
-		if dist < best_dist:
-			best_dist = dist
-			best = i
-	return best
-
-## Ствол не должен стрелять в стену/союзника: проверяем линию от дула до цели.
 func _muzzle_clear() -> bool:
-	if current_target == null or _muzzle_node == null:
+	if current_target == null or _visuals == null:
 		return true
-	var from := _muzzle_node.global_position
+	var from := _visuals.muzzle_position()
 	var aim := _perception.fire_point()
 	var distance := from.distance_to(aim)
 	if distance < 0.1:
@@ -1145,48 +763,17 @@ func _shoot_burst() -> void:
 
 func _fire_single_shot() -> void:
 	soldier_fired.emit(global_position, team_name)
-	var from := _muzzle_node.global_position if _muzzle_node != null else global_position + Vector3(0, 1.3, 0)
+	var from := _visuals.muzzle_position()
 
 	const WID_NAMES := ["ak47", "mp40", "mosin", "m1911", "shotgun", "ppsh41", "kar98k", "panzerfaust"]
 	var wid: String = WID_NAMES[clampi(bot_weapon_index, 0, WID_NAMES.size() - 1)]
-	var prof: Dictionary = COMBAT_AUDIO.WEAPON_PROFILES.get(wid, {})
 
-	if _sfx_shot != null:
-		var listener_pos := COMBAT_AUDIO.get_listener_position(get_tree())
-		var dist_sq := from.distance_squared_to(listener_pos)
-		var max_dist := float(prof.get("max_dist", 220.0))
-		if dist_sq <= max_dist * max_dist:
-			_sfx_shot.unit_size = float(prof.get("unit_size", 16.0))
-			_sfx_shot.max_distance = max_dist
-			_sfx_shot.pitch_scale = randf_range(0.96, 1.04)
-			_sfx_shot.volume_db = float(prof.get("vol", -2.0))
-			# QA-optimization: акустика пересчитывается 4 раза/с, а не на каждый
-			# выстрел — иначе 7 автоматчиков дают сотни рейкастов в секунду.
-			if _audio_env_timer <= 0.0:
-				_audio_env_timer = 0.25
-				var world_3d := get_world_3d()
-				_audio_indoors = COMBAT_AUDIO.is_indoors(world_3d, from)
-				_audio_occluded = (not _audio_indoors) and COMBAT_AUDIO.check_occlusion(world_3d, from, listener_pos)
-			if _audio_indoors:
-				_sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
-				_sfx_shot.attenuation_filter_cutoff_hz = 18000.0
-				_sfx_shot.attenuation_filter_db = 0.0
-			elif _audio_occluded:
-				_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_OCCLUDED
-				_sfx_shot.attenuation_filter_cutoff_hz = 1250.0
-				_sfx_shot.attenuation_filter_db = -8.0
-			else:
-				_sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
-				_sfx_shot.attenuation_filter_cutoff_hz = 20500.0
-				_sfx_shot.attenuation_filter_db = 0.0
-			_sfx_shot.play()
+	if _visuals != null:
+		_visuals.play_shot(from)
 
-	if _muzzle_flash != null:
-		_muzzle_flash.visible = true
-		_flash_time = 0.045
-
-	if _proc != null:
-		_proc.set_firing(true)
+	if _visuals != null:
+		_visuals.flash_muzzle()
+		_visuals.set_firing(true)
 
 	var target_pt := _perception.fire_point() if current_target != null else from - global_transform.basis.z * 40.0
 	# Реалистичный разброс человека (вместо лазерного 0.02)
@@ -1255,28 +842,16 @@ func _start_reload() -> void:
 	reload_timer = 2.4
 	stance = 1
 	_shout("ПЕРЕЗАРЯДКА!" if team_name.contains("RED") else "LADE NACH!", Color(0.3, 0.8, 1.0))
-	if _sfx_reload != null:
-		_sfx_reload.play()
+	if _visuals != null:
+		_visuals.play_reload()
 
 func _handle_effects(delta: float) -> void:
-	if _flash_time > 0.0:
-		_flash_time -= delta
-		if _flash_time <= 0.0 and _muzzle_flash != null:
-			_muzzle_flash.visible = false
-			if _proc != null:
-				_proc.set_firing(false)
-	if _shout_timer > 0.0:
-		_shout_timer -= delta
-		if _shout_timer <= 0.0 and not is_dead and _label != null:
-			_label.text = soldier_name
-			_label.modulate = Color(0.85, 0.35, 0.35) if team_name.contains("RED") else Color(0.65, 0.75, 0.85)
+	if _visuals != null:
+		_visuals.update_effects(delta, true)
 
 func _shout(phrase: String, color: Color) -> void:
-	if _label == null or is_dead:
-		return
-	_label.text = "[ " + phrase + " ]"
-	_label.modulate = color
-	_shout_timer = 1.8
+	if _visuals != null and not is_dead:
+		_visuals.shout(phrase, color)
 
 ## Публичный слух: координатор боя сообщает о выстрелах и взрывах.
 func hear_gunshot(sound_pos: Vector3) -> void:
@@ -1296,8 +871,8 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 	hit_dir.y = 0.0
 	velocity += hit_dir * clampf(float(damage) * 0.14, 1.4, 5.5)
 
-	if _proc != null and health > 0.0:
-		_proc.add_flinch(clampf(float(damage) * 0.035, 0.75, 2.0))
+	if _visuals != null and health > 0.0:
+		_visuals.add_flinch(clampf(float(damage) * 0.035, 0.75, 2.0))
 	if health > 0.0 and randf() < 0.45:
 		_shout("РАНЕН!" if team_name.contains("RED") else "GETROFFEN!", Color(0.95, 0.25, 0.25))
 
@@ -1336,8 +911,8 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 		hb.collision_layer = 0
 
 	# Выбрасываем оружие на землю
-	if _gun_pivot != null and _gun_mesh != null:
-		var drop_pos := _gun_pivot.global_position
+	if _visuals != null and _visuals.weapon_mesh() != null:
+		var drop_pos := _visuals.weapon_drop_position()
 		var drop_vel := Vector3(randf_range(-1.0, 1.0), 1.5, randf_range(-1.0, 1.0))
 		var world := get_parent()
 		var drop_idx := clampi(bot_weapon_index, 0, 7)
@@ -1353,17 +928,12 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 			world.add_child(pickup)
 			pickup.global_position = drop_pos
 			pickup.launch(drop_vel)
-		_gun_pivot.visible = false
+		_visuals.hide_weapon()
 
-	# Текст статуса
-	if _label != null:
-		_label.text = "КИА"
-		_label.modulate = Color(0.9, 0.2, 0.2, 0.8)
-		_label.visible = false
-
-	# Запускаем физический рэгдолл скелета
-	if _proc != null:
-		_proc.set_ragdoll(true, hit_dir, region == "head")
+	# Текст статуса и рэгдолл
+	if _visuals != null:
+		_visuals.mark_dead()
+		_visuals.set_ragdoll(true, hit_dir, region == "head")
 
 	# Направленные брызги крови и лужа под телом
 	HIT_EFFECTS.spawn_directional_blood(self, global_position + Vector3(0, 0.9, 0), hit_dir, region == "head", get_parent())

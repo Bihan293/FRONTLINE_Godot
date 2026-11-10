@@ -195,7 +195,8 @@ func _test_death_ragdoll() -> void:
 	bot.position = Vector3.ZERO
 	add_child(bot)
 	await get_tree().process_frame
-	var procedural := bot.get("_proc") as FRONTLINEProceduralSoldier
+	var visuals: Node = bot.get("_visuals")
+	var procedural = visuals.get("proc") as FRONTLINEProceduralSoldier if visuals != null else null
 	_check(procedural != null, "ragdoll smoke bot has no procedural soldier rig")
 	if procedural == null:
 		bot.queue_free()

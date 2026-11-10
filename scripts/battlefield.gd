@@ -9,10 +9,8 @@ const BATTLEFIELD_LAYOUT = preload("res://scripts/battlefield_layout.gd")
 const VILLAGE_LAYOUT = preload("res://scripts/village_layout.gd")
 const COUNTRYSIDE_LAYOUT = preload("res://scripts/countryside_layout.gd")
 const SFX_UI = preload("res://assets/audio/ui_click.ogg")
-const COMPASS_SCRIPT = preload("res://scripts/compass_bar.gd")
 const AMBIENCE_SCRIPT = preload("res://scripts/battlefield_ambience.gd")
 const BARREL_SCRIPT = preload("res://scripts/explosive_barrel.gd")
-const MINIMAP_SCRIPT = preload("res://scripts/minimap.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const DIGGABLE_GROUND_SCRIPT = preload("res://scripts/diggable_ground.gd")
@@ -24,6 +22,13 @@ const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
 
 var player: CharacterBody3D
+var battlefield_hud: FRONTLINEBattlefieldHUD
+var hud: CanvasLayer:
+	get: return battlefield_hud
+var minimap: FRONTLINEMinimap:
+	get: return battlefield_hud.minimap if battlefield_hud != null else null
+var compass: FRONTLINECompassBar:
+	get: return battlefield_hud.compass if battlefield_hud != null else null
 var team_name := "IRON LEGION"
 var game_mode := "CONQUEST"
 var score_iron := 60
@@ -58,15 +63,8 @@ func _terrain_height_sampler() -> Callable:
 		return Callable(COUNTRYSIDE_LAYOUT, "height_at")
 	return Callable()
 
-var hud: CanvasLayer
-var score_label: Label
-var killfeed_container: VBoxContainer
-var sectors_container: HBoxContainer
-var sector_indicators: Dictionary = {}
 var sector_data: Array = []
-var compass: FRONTLINECompassBar
 var ambience: FRONTLINEAmbience
-var minimap: FRONTLINEMinimap
 var victory_panel: PanelContainer
 var is_game_over := false
 var _ticket_bleed_timer := 4.0
@@ -607,9 +605,9 @@ func _create_bot(pos: Vector3, team: String, bot_name: String) -> FRONTLINESoldi
 
 func _on_bot_fired(pos: Vector3, team: String) -> void:
 	var player_team := MatchState.player_team
-	if compass != null and team != player_team and player != null and is_instance_valid(player):
+	if battlefield_hud != null and team != player_team and player != null and is_instance_valid(player):
 		if player.global_position.distance_squared_to(pos) < 70.0 * 70.0:
-			compass.add_gunfire_ping(pos)
+			battlefield_hud.add_gunfire(pos)
 	report_gunshot(pos, team)
 
 ## Централизованное оповещение пехоты о выстреле. Слух не зависит от того,
@@ -705,100 +703,19 @@ func add_kill() -> void:
 	score_kills += 1
 
 func _build_hud() -> void:
-	hud = CanvasLayer.new()
-	hud.layer = 5
-	add_child(hud)
-
-	# Верхняя панель счета и секторов
-	var top_panel := PanelContainer.new()
-	top_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_panel.offset_left = 320
-	top_panel.offset_right = -320
-	top_panel.offset_top = 16
-	top_panel.offset_bottom = 68
-	hud.add_child(top_panel)
-
-	var top_box := HBoxContainer.new()
-	top_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	top_box.add_theme_constant_override("separation", 28)
-	top_panel.add_child(top_box)
-
-	score_label = Label.new()
-	score_label.add_theme_font_size_override("font_size", 20)
-	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	top_box.add_child(score_label)
-
-	sectors_container = HBoxContainer.new()
-	sectors_container.add_theme_constant_override("separation", 14)
-	top_box.add_child(sectors_container)
-
-	for sec in sector_data:
-		var lbl := Label.new()
-		lbl.text = "[ %s ]" % sec.name
-		lbl.add_theme_font_size_override("font_size", 17)
-		lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-		sectors_container.add_child(lbl)
-		sector_indicators[sec.name] = lbl
-
-	# Киллфид в левой части под миникартой (не перекрывает верхние сенсорные кнопки на мобильных)
-	killfeed_container = VBoxContainer.new()
-	killfeed_container.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	killfeed_container.offset_left = 24
-	killfeed_container.offset_right = 340
-	killfeed_container.offset_top = 320
-	killfeed_container.offset_bottom = 470
-	killfeed_container.add_theme_constant_override("separation", 4)
-	hud.add_child(killfeed_container)
-
-	# Тактический компас
-	compass = COMPASS_SCRIPT.new()
-	compass.anchor_left = 0.5
-	compass.anchor_right = 0.5
-	compass.offset_left = -190.0
-	compass.offset_right = 190.0
-	compass.offset_top = 74.0
-	compass.offset_bottom = 110.0
-	hud.add_child(compass)
-	if player != null and player.camera != null:
-		compass.setup(player.camera, sector_data)
-
-	# Круговая мини-карта под здоровьем, слева
-	minimap = MINIMAP_SCRIPT.new()
-	minimap.offset_left = 24.0
-	minimap.offset_top = 124.0
-	minimap.offset_right = 212.0
-	minimap.offset_bottom = 312.0
-	hud.add_child(minimap)
-	minimap.setup(player, _active_bots, sector_data, _layout().spawns_iron(), _layout().spawns_red())
-
+	battlefield_hud = FRONTLINEBattlefieldHUD.new()
+	add_child(battlefield_hud)
+	var layout = _layout()
+	battlefield_hud.setup(sector_data, player, _active_bots, layout.spawns_iron(), layout.spawns_red())
 	_refresh_score()
 
 func _refresh_score() -> void:
-	if score_label != null:
-		if game_mode == "TDM":
-			score_label.text = "TDM (ДО 50)  •  IRON LEGION: %d   ⚔   RED FRONT: %d" % [score_iron, score_red]
-		else:
-			score_label.text = "IRON LEGION: %d   ⚔   RED FRONT: %d" % [score_iron, score_red]
+	if battlefield_hud != null:
+		battlefield_hud.refresh_score(game_mode, score_iron, score_red)
 
 func _add_killfeed_entry(killer: String, victim: String, victim_team: String) -> void:
-	if killfeed_container == null:
-		return
-	var entry := Label.new()
-	entry.text = "%s  ︻╦╤─  %s" % [killer, victim]
-	entry.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	entry.add_theme_font_size_override("font_size", 14)
-	var color := Color(1.0, 0.45, 0.40) if victim_team.contains("RED") else Color(0.55, 0.75, 1.0)
-	entry.add_theme_color_override("font_color", color)
-	entry.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	entry.add_theme_constant_override("shadow_offset_x", 1)
-	entry.add_theme_constant_override("shadow_offset_y", 1)
-	killfeed_container.add_child(entry)
-
-	# Удаление записи через 4.5 секунды
-	get_tree().create_timer(4.5, false).timeout.connect(func():
-		if is_instance_valid(entry):
-			entry.queue_free()
-	)
+	if battlefield_hud != null:
+		battlefield_hud.add_killfeed(killer, victim, victim_team)
 
 func _process(delta: float) -> void:
 	if is_game_over:
@@ -981,7 +898,6 @@ func _update_sector_captures() -> void:
 
 func _update_sector_visual(sec: Dictionary) -> void:
 	var flag = find_child("Flag_" + str(sec.name), true, false) as MeshInstance3D
-	var lbl: Label = sector_indicators.get(sec.name, null)
 	var flag_color := Color(0.7, 0.7, 0.7)
 	if sec.owner == "IRON LEGION":
 		flag_color = Color(0.25, 0.45, 0.85)
@@ -990,5 +906,5 @@ func _update_sector_visual(sec: Dictionary) -> void:
 
 	if flag != null:
 		flag.material_override = _mat(flag_color, false)
-	if lbl != null:
-		lbl.add_theme_color_override("font_color", flag_color)
+	if battlefield_hud != null:
+		battlefield_hud.update_sector(sec)
