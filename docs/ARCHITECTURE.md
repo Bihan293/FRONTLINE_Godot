@@ -81,8 +81,9 @@ scenes (.tscn)
 4. **Сделано:** `PlayerGrenades`, `PlayerVehicles`, `PlayerPickups`.
 5. **Сделано:** `BotMotor`, `BotVisuals`, `BotCombat`, `BotPerception` — бот
    разбит на движение, визуал, стрельбу и восприятие.
-6. **Сделано:** `BattlefieldHUD`. Осталось вынести построение мира `battlefield.gd`.
-7. Перевести меню, деплой и HUD в `.tscn`-сцены.
+6. **Сделано:** `BattlefieldHUD` и `BattlefieldWorld` — battlefield разбит на
+   HUD, мир и оркестрацию.
+7. **Следующее:** перевести меню, деплой и HUD в `.tscn`-сцены.
 8. Включить `gdlint` в CI после того, как долг опустится до нуля.
 
 Каждый этап — отдельный PR, игра остаётся запускаемой после каждого коммита.
