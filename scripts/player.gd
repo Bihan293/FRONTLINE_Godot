@@ -14,9 +14,6 @@ const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
-const SHOW_VIEW_ARMS := true
-const VIEW_ARM_UPPER := 0.34
-const VIEW_ARM_LOWER := 0.31
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -106,11 +103,16 @@ var carried_soil := 0
 var shovel_action_cooldown := 0.0
 var nearby_field_pickups: Array[Node3D] = []
 
-var left_arm_pivot: Node3D
-var left_arm_base := Vector3.ZERO
+var _view_arms: FRONTLINEPlayerViewArms
+var _view_arm_left: Node3D:
+	get: return _view_arms.left_arm if _view_arms != null else null
+var _view_arm_right: Node3D:
+	get: return _view_arms.right_arm if _view_arms != null else null
+var wrist_left_marker: Node3D:
+	get: return _view_arms.wrist_left if _view_arms != null else null
+var wrist_right_marker: Node3D:
+	get: return _view_arms.wrist_right if _view_arms != null else null
 var player_body: Node3D
-var wrist_right_marker: Node3D
-var wrist_left_marker: Node3D
 var damage_label: Label
 var damage_time := 0.0
 var hit_effect_time := 0.0
@@ -202,8 +204,6 @@ var _mounted_last_vehicle_yaw := 0.0
 var mobile_fire := false
 var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu
-var _view_arm_left: Node3D
-var _view_arm_right: Node3D
 
 var sfx_shot: AudioStreamPlayer
 var sfx_empty: AudioStreamPlayer
@@ -274,13 +274,16 @@ func _build_weapon() -> void:
 	weapon_mount = Node3D.new()
 	weapon_mount.name = "WeaponMount"
 	weapon_root.add_child(weapon_mount)
-	_build_view_hands()
+	_view_arms = FRONTLINEPlayerViewArms.new()
+	_view_arms.name = "ViewArms"
+	camera.add_child(_view_arms)
+	_view_arms.setup(camera, weapon_root)
 	_equip_weapon_visual()
 	_build_grenade_view()
 	_build_heal_view()
 
 func _equip_weapon_visual() -> void:
-	if weapon_mount == null:
+	if weapon_mount == null or _view_arms == null:
 		return
 	for child in weapon_mount.get_children():
 		child.queue_free()
@@ -295,11 +298,7 @@ func _equip_weapon_visual() -> void:
 	if is_shovel_equipped:
 		weapon_base = Vector3(0.10, -0.13, -0.46)
 		weapon_aim_position = Vector3(0.02, -0.08, -0.45)
-		left_arm_base = Vector3(-0.02, -0.04, -0.24)
-		if left_arm_pivot != null:
-			left_arm_pivot.position = left_arm_base
-		if wrist_right_marker != null:
-			wrist_right_marker.position = Vector3(0.01, -0.05, 0.03)
+		_view_arms.set_hand_offsets(Vector3(-0.02, -0.04, -0.24), Vector3(0.01, -0.05, 0.03))
 		return
 	var muzzle_anchor := model.get_node_or_null("Muzzle") as Node3D
 	if muzzle_anchor == null:
@@ -373,11 +372,7 @@ func _equip_weapon_visual() -> void:
 
 	weapon_base = hip_pos
 	weapon_aim_position = aim_pos
-	left_arm_base = left_wrist_offset
-	if left_arm_pivot != null:
-		left_arm_pivot.position = left_wrist_offset
-	if wrist_right_marker != null:
-		wrist_right_marker.position = right_wrist_offset
+	_view_arms.set_hand_offsets(left_wrist_offset, right_wrist_offset)
 
 func _init_weapon_inventory() -> void:
 	player_role = _normalize_role(MatchState.player_role)
@@ -623,209 +618,11 @@ func set_drone_controller_feed(feed: Texture2D) -> void:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	screen.material_override = material
 
-func _build_view_hands() -> void:
-	wrist_right_marker = Node3D.new()
-	wrist_right_marker.name = "WristR"
-	wrist_right_marker.position = Vector3(0.0, -0.055, 0.02)
-	weapon_root.add_child(wrist_right_marker)
-
-	left_arm_pivot = Node3D.new()
-	left_arm_pivot.name = "LeftArm"
-	left_arm_pivot.position = Vector3(0.0, 0.0, -0.14)
-	left_arm_base = left_arm_pivot.position
-	weapon_root.add_child(left_arm_pivot)
-
-	wrist_left_marker = Node3D.new()
-	wrist_left_marker.name = "WristL"
-	wrist_left_marker.position = Vector3(0.0, -0.055, 0.02)
-	left_arm_pivot.add_child(wrist_left_marker)
-
-	# QA-fix TASK-0022: чёрные «отвязанные» кисти убраны; руки — изогнутые
-	# двухзвенные конечности с ладонями на запястьях.
-	_view_arm_left = _make_view_arm("ViewArmL", true)
-	_view_arm_right = _make_view_arm("ViewArmR", false)
-
-func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
-	var arm := Node3D.new()
-	arm.name = arm_name
-	var player_team: String = MatchState.player_team
-	var is_red: bool = player_team.to_upper().contains("RED") or player_team.to_upper().contains("SOVIET")
-	var sleeve := StandardMaterial3D.new()
-	# Тёмная полевая ткань — без «синих» оттенков, ближе к Dummy War.
-	sleeve.albedo_color = Color(0.24, 0.20, 0.14) if is_red else Color(0.16, 0.18, 0.13)
-	sleeve.roughness = 0.95
-	var glove := StandardMaterial3D.new()
-	glove.albedo_color = Color(0.32, 0.25, 0.18)
-	glove.roughness = 0.90
-
-	# Плечо (верхнее звено) и предплечье — два отдельных сегмента, локоть гнётся.
-	var upper := MeshInstance3D.new()
-	upper.name = "Upper"
-	var upper_mesh := CylinderMesh.new()
-	upper_mesh.top_radius = 0.052
-	upper_mesh.bottom_radius = 0.044
-	upper_mesh.height = 1.0
-	upper_mesh.radial_segments = 10
-	upper.mesh = upper_mesh
-	upper.material_override = sleeve
-	upper.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	upper.visible = true
-	arm.add_child(upper)
-
-	var forearm := MeshInstance3D.new()
-	forearm.name = "Forearm"
-	var forearm_mesh := CylinderMesh.new()
-	forearm_mesh.top_radius = 0.042
-	forearm_mesh.bottom_radius = 0.033
-	forearm_mesh.height = 1.0
-	forearm_mesh.radial_segments = 10
-	forearm.mesh = forearm_mesh
-	forearm.material_override = sleeve
-	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	forearm.visible = true
-	arm.add_child(forearm)
-
-	# Ладонь и большой палец — на конце предплечья.
-	var palm := MeshInstance3D.new()
-	palm.name = "Palm"
-	var palm_mesh := BoxMesh.new()
-	palm_mesh.size = Vector3(0.070, 0.040, 0.110)
-	palm.mesh = palm_mesh
-	palm.material_override = glove
-	palm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	arm.add_child(palm)
-
-	var thumb := MeshInstance3D.new()
-	thumb.name = "Thumb"
-	var thumb_mesh := BoxMesh.new()
-	thumb_mesh.size = Vector3(0.026, 0.028, 0.055)
-	thumb.mesh = thumb_mesh
-	thumb.material_override = glove
-	thumb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	arm.add_child(thumb)
-
-
-	# Короткая манжета рукава за кистью (рука «входит» в кадр, не висит).
-	var cuff := MeshInstance3D.new()
-	cuff.name = "Cuff"
-	var cuff_mesh := CylinderMesh.new()
-	cuff_mesh.top_radius = 0.030
-	cuff_mesh.bottom_radius = 0.033
-	cuff_mesh.height = 0.10
-	cuff_mesh.radial_segments = 8
-	cuff.mesh = cuff_mesh
-	cuff.material_override = sleeve
-	cuff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	arm.add_child(cuff)
-
-	# Пальцы, обхватывающие оружие (4 коротких фаланги на кисть).
-	for finger_index in range(4):
-		var finger := MeshInstance3D.new()
-		finger.name = "Finger%d" % finger_index
-		var finger_mesh := BoxMesh.new()
-		finger_mesh.size = Vector3(0.019, 0.022, 0.060)
-		finger.mesh = finger_mesh
-		finger.material_override = glove
-		finger.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		finger.set_meta("finger_index", finger_index)
-		arm.add_child(finger)
-
-	arm.set_meta("is_left", is_left)
-	if camera != null:
-		camera.add_child(arm)
-	return arm
-
 func _update_view_arms() -> void:
-	if camera == null:
+	if _view_arms == null:
 		return
-	if not SHOW_VIEW_ARMS or (weapon_root != null and not weapon_root.visible) or grenade_anim_state != GrenadeActionState.IDLE:
-		if _view_arm_left != null:
-			_view_arm_left.visible = false
-		if _view_arm_right != null:
-			_view_arm_right.visible = false
-		return
-	# Руки идут от плеч у нижних углов кадра к кистям на оружии:
-	# видно плечо -> локоть -> предплечье -> кисть, а не «парящие кисти».
-	var cam_xf := camera.global_transform
-	if wrist_left_marker != null and _view_arm_left != null:
-		var l_shoulder: Vector3 = cam_xf * Vector3(-0.30, -0.28, -0.01)
-		var l_pole: Vector3 = cam_xf.basis * Vector3(-0.65, -1.0, 0.05)
-		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true, l_shoulder, l_pole)
-	if wrist_right_marker != null and _view_arm_right != null:
-		var r_shoulder: Vector3 = cam_xf * Vector3(0.30, -0.28, -0.01)
-		var r_pole: Vector3 = cam_xf.basis * Vector3(0.65, -1.0, 0.05)
-		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false, r_shoulder, r_pole)
-
-func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, shoulder: Vector3, pole: Vector3) -> void:
-	arm.visible = true
-	# Корень руки совмещаем с кистевым маркером оружия — ладонь и пальцы
-	# остаются в системе координат оружия и двигаются вместе с отдачей.
-	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
-
-	var wrist := marker_xf.origin
-	var elbow := _solve_elbow(shoulder, wrist, pole)
-	var upper := arm.get_node_or_null("Upper") as MeshInstance3D
-	var forearm := arm.get_node_or_null("Forearm") as MeshInstance3D
-	if upper != null:
-		_place_limb_segment(upper, shoulder, elbow)
-	if forearm != null:
-		_place_limb_segment(forearm, elbow, wrist)
-
-	var cuff := arm.get_node_or_null("Cuff") as MeshInstance3D
-	if cuff != null:
-		cuff.visible = true
-		cuff.position = Vector3(0.0, -0.016, 0.085)
-		cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
-	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
-	if palm != null:
-		palm.visible = true
-		palm.position = Vector3(0.0, -0.012, -0.055)
-		palm.rotation = Vector3(deg_to_rad(-8.0), deg_to_rad(8.0 if is_left else -8.0), 0.0)
-	var thumb := arm.get_node_or_null("Thumb") as MeshInstance3D
-	if thumb != null:
-		thumb.visible = true
-		thumb.position = Vector3(0.05 if is_left else -0.05, 0.012, -0.048)
-		thumb.rotation = Vector3(deg_to_rad(14.0), 0.0, deg_to_rad(20.0 if is_left else -20.0))
-	# Пальцы охватывают оружие: четыре фаланги поперёк кисти.
-	var finger_x := -0.030
-	for finger_index in range(4):
-		var finger := arm.get_node_or_null("Finger%d" % finger_index) as MeshInstance3D
-		if finger == null:
-			continue
-		finger.visible = true
-		finger.position = Vector3(finger_x + float(finger_index) * 0.020, -0.020, -0.085)
-		finger.rotation = Vector3(deg_to_rad(72.0), 0.0, deg_to_rad(6.0 if is_left else -6.0))
-
-## Двухзвенная IK: положение локтя по длинам плеча/предплечья и полюсу сгиба.
-func _solve_elbow(shoulder: Vector3, wrist: Vector3, pole: Vector3) -> Vector3:
-	var delta := wrist - shoulder
-	var distance := delta.length()
-	if distance < 0.05:
-		return shoulder + Vector3.DOWN * 0.1
-	var direction := delta / distance
-	var max_reach := VIEW_ARM_UPPER + VIEW_ARM_LOWER - 0.01
-	var reach := clampf(distance, 0.05, max_reach)
-	var along := (VIEW_ARM_UPPER * VIEW_ARM_UPPER - VIEW_ARM_LOWER * VIEW_ARM_LOWER + reach * reach) / (2.0 * reach)
-	var height := sqrt(maxf(VIEW_ARM_UPPER * VIEW_ARM_UPPER - along * along, 0.0001))
-	var bend := pole - direction * pole.dot(direction)
-	if bend.length_squared() < 0.001:
-		bend = Vector3.DOWN
-	return shoulder + direction * along + bend.normalized() * height
-
-func _place_limb_segment(mesh_inst: MeshInstance3D, a: Vector3, b: Vector3) -> void:
-	var d := b - a
-	var l := d.length()
-	if l < 0.01:
-		mesh_inst.visible = false
-		return
-	mesh_inst.visible = true
-	var up := d / l
-	var right := up.cross(Vector3.UP)
-	if right.length_squared() < 0.0001:
-		right = up.cross(Vector3.RIGHT)
-	right = right.normalized()
-	var fwd := up.cross(right).normalized()
-	mesh_inst.global_transform = Transform3D(Basis(right, up * l, fwd), (a + b) * 0.5)
+	var visible := weapon_root != null and weapon_root.visible
+	_view_arms.update(visible and grenade_anim_state == GrenadeActionState.IDLE)
 
 func _update_viewmodel_visibility(scoped: bool) -> void:
 	if weapon_root == null:
@@ -1673,9 +1470,8 @@ func _physics_process(delta: float) -> void:
 		if weapon_mount != null:
 			weapon_mount.rotation.z = sin(progress * PI) * 0.14
 			weapon_mount.rotation.x = -sin(progress * PI) * 0.08
-		if left_arm_pivot != null:
-			var reach_offset := Vector3(0.0, -0.10 * sin(progress * PI), 0.06 * sin(progress * PI))
-			left_arm_pivot.position = left_arm_base + reach_offset
+		if _view_arms != null:
+			_view_arms.set_reload_progress(progress)
 
 	if damage_time > 0.0:
 		damage_time -= delta
@@ -2149,8 +1945,8 @@ func _reload() -> void:
 func _on_weapon_reload_finished() -> void:
 	if weapon_mount != null:
 		weapon_mount.rotation = Vector3.ZERO
-	if left_arm_pivot != null:
-		left_arm_pivot.position = left_arm_base
+	if _view_arms != null:
+		_view_arms.set_reload_progress(0.0)
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 
 ## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.

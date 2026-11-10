@@ -31,6 +31,7 @@ func _capture_village_hud_only() -> void:
 	MatchState.map_name = "VILLAGE"
 	MatchState.mode = "CONQUEST"
 	MatchState.player_team = "RED FRONT"
+	MatchState.skip_deploy_screen = true
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -70,6 +71,7 @@ func _capture_hud_only() -> void:
 	MatchState.map_name = "BATTLEFIELD"
 	MatchState.mode = "CONQUEST"
 	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -153,6 +155,7 @@ func _capture_battlefield() -> void:
 	MatchState.map_name = "BATTLEFIELD"
 	MatchState.mode = "CONQUEST"
 	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
@@ -190,6 +193,7 @@ func _capture_village() -> void:
 	MatchState.map_name = "VILLAGE"
 	MatchState.mode = "CONQUEST"
 	MatchState.player_team = "RED FRONT"
+	MatchState.skip_deploy_screen = true
 	var packed: PackedScene = load(BATTLEFIELD_SCENE)
 	var battlefield := packed.instantiate() as Node3D
 	add_child(battlefield)
