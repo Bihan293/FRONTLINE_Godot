@@ -95,10 +95,11 @@ func _apply_hidden_bones() -> void:
 	if _skeleton == null:
 		return
 	var tiny := Vector3.ONE * 0.001
-	if _hide_head:
-		for bone_name in ["Head", "Neck"]:
-			if _bone_ids.has(bone_name):
-				_skeleton.set_bone_pose_scale(_bone_ids[bone_name], tiny)
+	for bone_name in ["Head", "Neck"]:
+		if not _bone_ids.has(bone_name):
+			continue
+		var bone_id: int = _bone_ids[bone_name]
+		_skeleton.set_bone_pose_scale(bone_id, tiny if _hide_head else Vector3.ONE)
 
 func _find_skeleton() -> Skeleton3D:
 	var direct := get_node_or_null(skeleton_path)

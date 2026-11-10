@@ -241,7 +241,7 @@ static func make_weapon(weapon_id: String) -> Node3D:
 		_:
 			root.free()
 			return null
-	if weapon_id == "entrenching_shovel":
+	if weapon_id == "entrenching_shovel" or weapon_id == "drone_controller":
 		return root
 	# QA-optimization: собираем все части в один ArrayMesh (1 draw call).
 	if not _baked_weapon_meshes.has(weapon_id):
@@ -606,6 +606,74 @@ static func make_grenade_view_model() -> Node3D:
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
 	muzzle.position = Vector3(0.0, 0.08, -0.20)
+	root.add_child(muzzle)
+
+	return root
+
+## Дымовая шашка M18 в руке: цилиндрический корпус, рычаг и кольцо.
+## Отдельная модель, чтобы в кадре не появлялась граната Ф-1 с дымовым эффектом.
+static func make_smoke_view_model() -> Node3D:
+	var root := Node3D.new()
+	root.name = "SmokeViewModel"
+
+	var glove := _weapon_material("combat_glove", Color(0.17, 0.14, 0.11), 0.92, 0.0)
+	var canister_mat := _weapon_material("smoke_canister", Color(0.40, 0.44, 0.38), 0.72, 0.10)
+	var dark := _weapon_material("smoke_dark", Color(0.12, 0.13, 0.12), 0.55, 0.45)
+
+	_add_cylinder_ex(root, "Canister", Vector3.ZERO, 0.034, 0.034, 0.135, canister_mat, Vector3.ZERO)
+	_add_cylinder_ex(root, "TopCap", Vector3(0.0, 0.074, 0.0), 0.027, 0.030, 0.020, dark, Vector3.ZERO)
+	_add_cylinder_ex(root, "BottomCap", Vector3(0.0, -0.074, 0.0), 0.030, 0.027, 0.016, dark, Vector3.ZERO)
+	# Выходные отверстия в верхней части корпуса.
+	for i in range(4):
+		var angle := TAU * float(i) / 4.0
+		_add_box(root, "Vent%d" % i, Vector3(cos(angle) * 0.030, 0.045, sin(angle) * 0.030), Vector3(0.010, 0.018, 0.010), dark)
+
+	# Рычаг предохранителя вдоль корпуса и кольцо чеки сверху.
+	var lever := Node3D.new()
+	lever.name = "SafetyLever"
+	lever.position = Vector3(0.030, 0.030, 0.0)
+	_add_box(lever, "LeverArm", Vector3(0.0, -0.045, 0.0), Vector3(0.012, 0.110, 0.022), dark)
+	_add_box(lever, "LeverHook", Vector3(-0.012, 0.018, 0.0), Vector3(0.026, 0.012, 0.020), dark)
+	root.add_child(lever)
+
+	var ring := Node3D.new()
+	ring.name = "PullRing"
+	ring.position = Vector3(-0.034, 0.052, 0.0)
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.020
+	ring_mesh.outer_radius = 0.028
+	ring_mesh.rings = 12
+	ring_mesh.ring_segments = 6
+	var ring_inst := MeshInstance3D.new()
+	ring_inst.name = "RingWire"
+	ring_inst.mesh = ring_mesh
+	ring_inst.material_override = dark
+	ring_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring_inst.rotation = Vector3(PI * 0.5, 0.0, 0.0)
+	ring.add_child(ring_inst)
+	root.add_child(ring)
+
+	# Правая рука держит корпус, левая тянет кольцо.
+	var hand_r := Node3D.new()
+	hand_r.name = "HandRight"
+	hand_r.position = Vector3(0.030, -0.020, 0.0)
+	_add_box(hand_r, "PalmR", Vector3.ZERO, Vector3(0.062, 0.078, 0.070), glove)
+	_add_box(hand_r, "ThumbR", Vector3(-0.010, 0.040, 0.028), Vector3(0.030, 0.030, 0.042), glove)
+	_add_box(hand_r, "FingersR", Vector3(-0.026, -0.012, -0.030), Vector3(0.038, 0.072, 0.034), glove)
+	_add_cylinder_ex(hand_r, "ForearmR", Vector3(0.085, -0.075, -0.075), 0.046, 0.049, 0.19, glove, Vector3(deg_to_rad(45.0), deg_to_rad(-25.0), 0.0))
+	root.add_child(hand_r)
+
+	var hand_l := Node3D.new()
+	hand_l.name = "HandLeft"
+	hand_l.position = Vector3(-0.055, 0.066, 0.0)
+	_add_box(hand_l, "PalmL", Vector3(-0.020, 0.0, 0.0), Vector3(0.050, 0.048, 0.052), glove)
+	_add_box(hand_l, "IndexFingerL", Vector3(0.024, 0.004, 0.0), Vector3(0.036, 0.020, 0.020), glove)
+	_add_cylinder_ex(hand_l, "ForearmL", Vector3(-0.095, -0.070, -0.060), 0.046, 0.049, 0.17, glove, Vector3(deg_to_rad(45.0), deg_to_rad(35.0), 0.0))
+	root.add_child(hand_l)
+
+	var muzzle := Node3D.new()
+	muzzle.name = "Muzzle"
+	muzzle.position = Vector3(0.0, 0.08, -0.16)
 	root.add_child(muzzle)
 
 	return root

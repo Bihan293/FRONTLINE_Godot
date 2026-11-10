@@ -27,6 +27,7 @@ var wrist_left: Node3D
 var wrist_right: Node3D
 var stance := 0
 var look_down := 0.0
+var external_view := false
 var _red := false
 var _death_ragdoll_active := false
 var _cuffs: Array = []
@@ -116,6 +117,7 @@ func _place_cuff(node: MeshInstance3D, a: Vector3, b: Vector3) -> void:
         return
     var dir := d / length
     var basis := Basis(Quaternion(Vector3.UP, dir)).scaled(Vector3(1.0, length, 1.0))
+    node.visible = true
     node.global_transform = Transform3D(basis, (a + b) * 0.5)
 
 func set_motion(speed: float, running: bool) -> void:
@@ -132,6 +134,16 @@ func set_stance(value: int) -> void:
 
 func set_look_down(value: float) -> void:
     look_down = clampf(value, 0.0, 1.0)
+
+## Вид со стороны (дрон/наблюдатель): показываем голову, торс и руки полностью,
+## независимо от того, куда направлена камера первого лица.
+func set_external_view(enabled: bool) -> void:
+    external_view = enabled
+    if body_visual == null or not is_instance_valid(body_visual):
+        return
+    body_visual.set_hide_head(not enabled)
+    if not enabled and torso_mesh != null:
+        torso_mesh.visible = false
 
 func set_ragdoll(enabled: bool, hit_dir: Vector3 = Vector3.ZERO, is_headshot: bool = false) -> void:
     _death_ragdoll_active = enabled
@@ -160,9 +172,8 @@ func _process(_delta: float) -> void:
         body_visual.rotation.x = 0.0
         body_visual.position = Vector3.ZERO
     if torso_mesh != null:
-        # Торс показываем только когда игрок реально смотрит вниз.
-        # Иначе камера оказывается внутри бронежилета и он закрывает пол-экрана.
-        torso_mesh.visible = stance == 0 and look_down > 0.55
+        # Торс показываем при взгляде вниз или в режиме внешнего вида (дрон).
+        torso_mesh.visible = external_view or (stance == 0 and look_down > 0.55)
     _apply_arm(0)
     _apply_arm(1)
 
@@ -201,11 +212,12 @@ func _apply_arm(side: int) -> void:
     var q_lower := Quaternion(Vector3.DOWN, (upper_basis.inverse() * d_lower).normalized())
     skeleton.set_bone_pose_rotation(lower, q_lower)
     skeleton.set_bone_pose_rotation(hand, Quaternion.IDENTITY)
-    # Руки в first-person почти убираем: из-за IK они вытягиваются
-    # в длинные чёрные полосы поверх экрана. Оружие держит viewmodel.
-    skeleton.set_bone_pose_scale(upper, Vector3(0.02, 1.0, 0.02))
-    skeleton.set_bone_pose_scale(lower, Vector3(0.02, 1.0, 0.02))
-    skeleton.set_bone_pose_scale(hand, Vector3(1.0, 1.0, 1.0))
+    # В обычном first-person руки почти убираем, чтобы IK-сегменты не лезли
+    # в кадр; во внешнем виде (дрон) возвращаем нормальный масштаб.
+    var arm_scale := Vector3.ONE if external_view else Vector3(0.02, 1.0, 0.02)
+    skeleton.set_bone_pose_scale(upper, arm_scale)
+    skeleton.set_bone_pose_scale(lower, arm_scale)
+    skeleton.set_bone_pose_scale(hand, Vector3.ONE)
     if side < _cuffs.size():
         var world_target := skeleton.global_transform * target
         var world_elbow := skeleton.global_transform * elbow

@@ -31,6 +31,9 @@ func configure(start_pos: Vector3, direction: Vector3, speed: float, damage: int
 	shooter = owner
 	gravity = maxf(0.0, gravity_mps2)
 
+	if is_inside_tree():
+		_face_velocity()
+
 func _ready() -> void:
 	add_to_group("ballistic_bullets")
 	_build_visual()
@@ -103,12 +106,15 @@ static func _get_tracer_material(team: String) -> StandardMaterial3D:
 func _build_visual() -> void:
 	if _SHARED_MESH == null:
 		_SHARED_MESH = BoxMesh.new()
-		# Длина 1.95 м для предотвращения стробирования на 60 FPS при 730 м/с
-		_SHARED_MESH.size = Vector3(0.042, 0.042, 1.95)
+		# Длина 1 м, но смещена вперёд от дула: задняя грань не пересекает камеру
+		# и не закрывает полэкрана, как старый блок 1.95 м вокруг центра пули.
+		_SHARED_MESH.size = Vector3(0.04, 0.04, 1.0)
 
 	_visual = MeshInstance3D.new()
 	_visual.name = "VisibleBullet"
 	_visual.mesh = _SHARED_MESH
+	_visual.position = Vector3(0.0, 0.0, -0.5)
+	_visual.visibility_range_end = 140.0
 	_visual.material_override = _get_tracer_material(shooter_team)
 	_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_visual)

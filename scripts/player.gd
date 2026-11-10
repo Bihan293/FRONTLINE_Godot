@@ -15,6 +15,8 @@ const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
 const SHOW_VIEW_ARMS := true
+const VIEW_ARM_UPPER := 0.34
+const VIEW_ARM_LOWER := 0.31
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -159,6 +161,7 @@ var vault_land_pos := Vector3.ZERO
 enum GrenadeActionState { IDLE, EQUIP, PULL_PIN, HOLD_AIM, THROW_SWING, RECOVER }
 var grenade_anim_state: GrenadeActionState = GrenadeActionState.IDLE
 var _grenade_payload := "frag"
+var _grenade_view_payload := ""
 var grenade_anim_timer := 0.0
 var is_grenade_held := false
 var grenade_view_root: Node3D
@@ -257,8 +260,10 @@ func _build_weapon() -> void:
 	camera.add_child(drone_controller_anchor)
 	weapon_root = Node3D.new()
 	weapon_root.name = "ViewModel"
-	weapon_root.position = Vector3(0.24, -0.22, -0.55)
-	weapon_root.scale = Vector3.ONE * 0.50
+	weapon_root.position = Vector3(0.24, -0.22, -0.58)
+	# 0.9 — оружие реального размера. Раньше 0.5 делало автомат «игрушечным»,
+	# а кисти рук оставались полноразмерными.
+	weapon_root.scale = Vector3.ONE * 0.90
 	weapon_base = weapon_root.position
 	camera.add_child(weapon_root)
 	weapon_mount = Node3D.new()
@@ -647,34 +652,34 @@ func _make_view_arm(arm_name: String, is_left: bool) -> Node3D:
 	var upper := MeshInstance3D.new()
 	upper.name = "Upper"
 	var upper_mesh := CylinderMesh.new()
-	upper_mesh.top_radius = 0.040
-	upper_mesh.bottom_radius = 0.034
+	upper_mesh.top_radius = 0.058
+	upper_mesh.bottom_radius = 0.049
 	upper_mesh.height = 1.0
-	upper_mesh.radial_segments = 8
+	upper_mesh.radial_segments = 10
 	upper.mesh = upper_mesh
 	upper.material_override = sleeve
 	upper.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Плечо видно коротким сегментом от локтя вниз — читается сгиб руки.
 	upper.visible = true
 	arm.add_child(upper)
 
 	var forearm := MeshInstance3D.new()
 	forearm.name = "Forearm"
 	var forearm_mesh := CylinderMesh.new()
-	forearm_mesh.top_radius = 0.030
-	forearm_mesh.bottom_radius = 0.024
+	forearm_mesh.top_radius = 0.047
+	forearm_mesh.bottom_radius = 0.036
 	forearm_mesh.height = 1.0
-	forearm_mesh.radial_segments = 8
+	forearm_mesh.radial_segments = 10
 	forearm.mesh = forearm_mesh
 	forearm.material_override = sleeve
 	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	forearm.visible = true
 	arm.add_child(forearm)
 
 	# Ладонь и большой палец — на конце предплечья.
 	var palm := MeshInstance3D.new()
 	palm.name = "Palm"
 	var palm_mesh := BoxMesh.new()
-	palm_mesh.size = Vector3(0.055, 0.032, 0.090)
+	palm_mesh.size = Vector3(0.062, 0.036, 0.10)
 	palm.mesh = palm_mesh
 	palm.material_override = glove
 	palm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -729,32 +734,38 @@ func _update_view_arms() -> void:
 		if _view_arm_right != null:
 			_view_arm_right.visible = false
 		return
-	# QA-fix TASK-0022: кисти с пальцами + предплечья, уходящие за нижний
-	# край кадра — руки не «висят в воздухе» и не закрывают полэкрана.
+	# Руки идут от плеч у нижних углов кадра к кистям на оружии:
+	# видно плечо -> локоть -> предплечье -> кисть, а не «парящие кисти».
 	var cam_xf := camera.global_transform
 	if wrist_left_marker != null and _view_arm_left != null:
-		var l_start: Vector3 = wrist_left_marker.global_position + cam_xf.basis * Vector3(-0.18, -0.26, 0.12)
-		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true, l_start)
+		var l_shoulder: Vector3 = cam_xf * Vector3(-0.22, -0.26, -0.02)
+		var l_pole: Vector3 = cam_xf.basis * Vector3(-0.55, -1.0, 0.05)
+		_place_view_hand(_view_arm_left, wrist_left_marker.global_transform, true, l_shoulder, l_pole)
 	if wrist_right_marker != null and _view_arm_right != null:
-		var r_start: Vector3 = wrist_right_marker.global_position + cam_xf.basis * Vector3(0.18, -0.26, 0.12)
-		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false, r_start)
+		var r_shoulder: Vector3 = cam_xf * Vector3(0.22, -0.26, -0.02)
+		var r_pole: Vector3 = cam_xf.basis * Vector3(0.55, -1.0, 0.05)
+		_place_view_hand(_view_arm_right, wrist_right_marker.global_transform, false, r_shoulder, r_pole)
 
-func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, forearm_start: Vector3) -> void:
+func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, shoulder: Vector3, pole: Vector3) -> void:
 	arm.visible = true
+	# Корень руки совмещаем с кистевым маркером оружия — ладонь и пальцы
+	# остаются в системе координат оружия и двигаются вместе с отдачей.
+	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
+
+	var wrist := marker_xf.origin
+	var elbow := _solve_elbow(shoulder, wrist, pole)
 	var upper := arm.get_node_or_null("Upper") as MeshInstance3D
 	var forearm := arm.get_node_or_null("Forearm") as MeshInstance3D
 	if upper != null:
-		upper.visible = false
+		_place_limb_segment(upper, shoulder, elbow)
 	if forearm != null:
-		# Длинные предплечья убраны: они всё равно читались как «сосиски».
-		forearm.visible = false
+		_place_limb_segment(forearm, elbow, wrist)
+
 	var cuff := arm.get_node_or_null("Cuff") as MeshInstance3D
 	if cuff != null:
 		cuff.visible = true
 		cuff.position = Vector3(0.0, -0.016, 0.085)
 		cuff.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
-	# Корень руки совмещаем с кистевым маркером оружия (масштаб оружия учтён).
-	arm.global_transform = Transform3D(marker_xf.basis.orthonormalized(), marker_xf.origin)
 	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
 	if palm != null:
 		palm.visible = true
@@ -775,6 +786,22 @@ func _place_view_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, forear
 		finger.position = Vector3(finger_x + float(finger_index) * 0.020, -0.020, -0.085)
 		finger.rotation = Vector3(deg_to_rad(72.0), 0.0, deg_to_rad(6.0 if is_left else -6.0))
 
+## Двухзвенная IK: положение локтя по длинам плеча/предплечья и полюсу сгиба.
+func _solve_elbow(shoulder: Vector3, wrist: Vector3, pole: Vector3) -> Vector3:
+	var delta := wrist - shoulder
+	var distance := delta.length()
+	if distance < 0.05:
+		return shoulder + Vector3.DOWN * 0.1
+	var direction := delta / distance
+	var max_reach := VIEW_ARM_UPPER + VIEW_ARM_LOWER - 0.01
+	var reach := clampf(distance, 0.05, max_reach)
+	var along := (VIEW_ARM_UPPER * VIEW_ARM_UPPER - VIEW_ARM_LOWER * VIEW_ARM_LOWER + reach * reach) / (2.0 * reach)
+	var height := sqrt(maxf(VIEW_ARM_UPPER * VIEW_ARM_UPPER - along * along, 0.0001))
+	var bend := pole - direction * pole.dot(direction)
+	if bend.length_squared() < 0.001:
+		bend = Vector3.DOWN
+	return shoulder + direction * along + bend.normalized() * height
+
 func _place_limb_segment(mesh_inst: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 	var d := b - a
 	var l := d.length()
@@ -789,6 +816,16 @@ func _place_limb_segment(mesh_inst: MeshInstance3D, a: Vector3, b: Vector3) -> v
 	right = right.normalized()
 	var fwd := up.cross(right).normalized()
 	mesh_inst.global_transform = Transform3D(Basis(right, up * l, fwd), (a + b) * 0.5)
+
+func _update_viewmodel_visibility(scoped: bool) -> void:
+	if weapon_root == null:
+		return
+	if is_dead:
+		return
+	# Во время гранаты/лечения/лопаты видимостью управляют их состояния.
+	if is_healing or grenade_anim_state != GrenadeActionState.IDLE or is_shovel_equipped:
+		return
+	weapon_root.visible = not scoped
 
 func _set_aiming(enabled: bool) -> void:
 	if aiming == enabled or is_dead or input_locked:
@@ -1315,12 +1352,12 @@ func _launch_drone() -> void:
 	# Раньше тело было скрыто (первый вид), и в FPV казалось, что персонаж пропал.
 	if player_body != null and is_instance_valid(player_body):
 		player_body.visible = true
+		if player_body.has_method("set_external_view"):
+			player_body.call("set_external_view", true)
 		if player_body.has_method("set_motion"):
 			player_body.call("set_motion", 0.0, false)
 		if player_body.has_method("set_stance"):
 			player_body.call("set_stance", stance)
-		if player_body.has_method("set_look_down"):
-			player_body.call("set_look_down", 0.0)
 	camera.current = false
 	if drone != null and drone.has_node("DroneCamera/DroneListener"):
 		(drone.get_node("DroneCamera/DroneListener") as AudioListener3D).make_current()
@@ -1351,6 +1388,8 @@ func _end_drone_control() -> void:
 		mobile_controls.set_drone_mode(false)
 	# Возврат к первому виду: тело снова скрыто, чтобы не закрывать обзор.
 	if player_body != null and is_instance_valid(player_body) and not is_dead:
+		if player_body.has_method("set_external_view"):
+			player_body.call("set_external_view", false)
 		player_body.visible = false
 	if not OS.has_feature("mobile") and not is_dead:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1511,14 +1550,14 @@ func _physics_process(delta: float) -> void:
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
 	shovel_action_cooldown = maxf(0.0, shovel_action_cooldown - delta)
 	_update_grenade_animation(delta)
-	if crosshair != null:
-		var is_kar98k_scope := aiming and str(_weapon_data().id) == "kar98k"
-		if crosshair.has_method("set_sniper_scope"):
-			crosshair.call("set_sniper_scope", is_kar98k_scope)
-		crosshair.visible = not is_dead and (is_kar98k_scope or not aiming)
-	weapon_kick = lerpf(weapon_kick, 0.0, clampf(delta * 14.0, 0.0, 1.0))
 	var blend := 1.0 - exp(-delta * 13.0)
 	aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
+	var scoped_ads := aiming and str(_weapon_data().id) == "kar98k" and aim_blend > 0.85
+	if crosshair != null:
+		if crosshair.has_method("set_sniper_scope"):
+			crosshair.call("set_sniper_scope", scoped_ads)
+		crosshair.visible = not is_dead and active_drone == null
+	_update_viewmodel_visibility(scoped_ads)
 	_update_camera_fov(delta)
 	var planar_speed := Vector2(velocity.x, velocity.z).length()
 	if planar_speed > 0.4 and is_on_floor():
@@ -2202,14 +2241,21 @@ func _finish_heal_visual() -> void:
 		weapon_root.visible = true
 
 func _build_grenade_view() -> void:
-	if grenade_view_root != null and is_instance_valid(grenade_view_root):
+	# По умолчанию в руках осколочная; дымовая подменяет модель при замахе.
+	_ensure_grenade_view("frag")
+
+func _ensure_grenade_view(payload: String) -> void:
+	if grenade_view_root != null and is_instance_valid(grenade_view_root) and _grenade_view_payload == payload:
 		return
-	grenade_view_root = WEAPON_MESHES.make_grenade_view_model()
+	if grenade_view_root != null and is_instance_valid(grenade_view_root):
+		grenade_view_root.queue_free()
+	grenade_view_root = WEAPON_MESHES.make_smoke_view_model() if payload == "smoke" else WEAPON_MESHES.make_grenade_view_model()
+	_grenade_view_payload = payload
 	if grenade_view_root == null:
 		return
 	grenade_view_root.name = "GrenadeView"
 	grenade_view_root.position = Vector3(0.18, -0.16, -0.38)
-	grenade_view_root.scale = Vector3.ONE * 0.60
+	grenade_view_root.scale = Vector3.ONE * 0.72
 	grenade_view_root.visible = false
 	camera.add_child(grenade_view_root)
 
@@ -2238,6 +2284,7 @@ func _start_grenade_hold(payload: String = "frag") -> void:
 	if is_dead or input_locked or is_healing or active_drone != null or is_reloading or is_vaulting:
 		return
 	_grenade_payload = payload
+	_ensure_grenade_view(payload)
 	is_grenade_held = true
 	if grenade_anim_state == GrenadeActionState.IDLE or grenade_anim_state == GrenadeActionState.RECOVER:
 		grenade_anim_state = GrenadeActionState.EQUIP
@@ -2253,9 +2300,10 @@ func _start_grenade_hold(payload: String = "frag") -> void:
 			if grenade_safety_lever != null:
 				grenade_safety_lever.rotation = Vector3.ZERO
 				grenade_safety_lever.visible = true
-			# Гранату держит ОДНА рука — вторая не дублируется на экране.
+			# Левая рука видна, пока тянет чеку; после рывка убирается.
 			if grenade_hand_left != null:
-				grenade_hand_left.visible = false
+				grenade_hand_left.visible = true
+				grenade_hand_left.position.x = -0.075
 		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -8.0, 1.35)
 
 func _release_grenade_throw() -> void:
@@ -2267,6 +2315,11 @@ func _release_grenade_throw() -> void:
 	elif grenade_anim_state == GrenadeActionState.PULL_PIN or grenade_anim_state == GrenadeActionState.EQUIP:
 		pass
 
+func _grenade_throw_origin() -> Vector3:
+	if grenade_view_root != null and is_instance_valid(grenade_view_root):
+		return grenade_view_root.global_position
+	return camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+
 func _spawn_thrown_grenade() -> void:
 	if grenade_has_spawned:
 		return
@@ -2277,9 +2330,8 @@ func _spawn_thrown_grenade() -> void:
 		smoke_grenades -= 1
 		_refresh_equipment()
 		var smoke := SMOKE_SCRIPT.new()
-		var smoke_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
 		var smoke_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
-		smoke.position = smoke_pos
+		smoke.position = _grenade_throw_origin()
 		smoke.linear_velocity = smoke_dir.normalized() * 13.5 + velocity * 0.4
 		smoke.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 		smoke.thrower_name = "Player"
@@ -2287,6 +2339,7 @@ func _spawn_thrown_grenade() -> void:
 		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
 		if grenade_safety_lever != null:
 			grenade_safety_lever.visible = false
+		_hide_grenade_view_after_throw()
 		return
 	if grenades <= 0:
 		return
@@ -2299,11 +2352,9 @@ func _spawn_thrown_grenade() -> void:
 		g.position = global_position + Vector3(0.0, 0.45, 0.0)
 		g.linear_velocity = Vector3(randf_range(-0.6, 0.6), 1.2, randf_range(-0.6, 0.6))
 	else:
-		# QA-fix TASK-0022: граната вылетает из кисти (ниже и правее камеры),
-		# а не «из головы», и бросается с весом — медленнее и ниже.
-		var spawn_pos := camera.global_position + camera.global_transform.basis.x * 0.24 - camera.global_transform.basis.y * 0.34 - camera.global_transform.basis.z * 0.48
+		# Граната вылетает из кисти, а не из центра камеры.
 		var throw_dir := -camera.global_transform.basis.z + Vector3.UP * 0.20
-		g.position = spawn_pos
+		g.position = _grenade_throw_origin()
 		g.linear_velocity = throw_dir.normalized() * 14.5 + velocity * 0.45
 	g.angular_velocity = Vector3(randf_range(-10.0, 10.0), randf_range(-12.0, 12.0), randf_range(-8.0, 8.0))
 	g.thrower_name = "Player"
@@ -2312,6 +2363,11 @@ func _spawn_thrown_grenade() -> void:
 	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -3.0, 1.4)
 	if grenade_safety_lever != null:
 		grenade_safety_lever.visible = false
+	_hide_grenade_view_after_throw()
+
+func _hide_grenade_view_after_throw() -> void:
+	if grenade_view_root != null and is_instance_valid(grenade_view_root):
+		grenade_view_root.visible = false
 
 func _update_grenade_animation(delta: float) -> void:
 	if grenade_anim_state == GrenadeActionState.IDLE:
@@ -2376,7 +2432,7 @@ func _update_grenade_animation(delta: float) -> void:
 				var throw_target_rot := Vector3(deg_to_rad(-38.0), deg_to_rad(10.0), deg_to_rad(-14.0))
 				grenade_view_root.position = grenade_view_root.position.lerp(throw_target_pos, delta * 26.0)
 				grenade_view_root.rotation = grenade_view_root.rotation.lerp(throw_target_rot, delta * 26.0)
-			if swing_progress >= 0.40 and not grenade_has_spawned:
+			if swing_progress >= 0.72 and not grenade_has_spawned:
 				_spawn_thrown_grenade()
 			if grenade_anim_timer <= 0.0:
 				grenade_anim_state = GrenadeActionState.RECOVER
