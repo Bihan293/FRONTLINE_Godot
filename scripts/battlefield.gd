@@ -49,6 +49,15 @@ func _layout():
 		return COUNTRYSIDE_LAYOUT
 	return BATTLEFIELD_LAYOUT
 
+## Высота земли для точки, выбранной на карте. Пустой Callable — плоская карта.
+func _terrain_height_sampler() -> Callable:
+	var map_name := str(get_tree().get_meta("selected_map", "BATTLEFIELD"))
+	if map_name == "VILLAGE":
+		return Callable(VILLAGE_LAYOUT, "terrain_height_at")
+	if map_name == "COUNTRYSIDE":
+		return Callable(COUNTRYSIDE_LAYOUT, "height_at")
+	return Callable()
+
 var hud: CanvasLayer
 var score_label: Label
 var killfeed_container: VBoxContainer
@@ -391,7 +400,10 @@ func _flush_merged_boxes() -> void:
 func _build_diggable_ground(data: Dictionary) -> void:
 	var size: Vector3 = data.size
 	var ground = DIGGABLE_GROUND_SCRIPT.new()
-	ground.configure(Vector2(size.x, size.z), 2.0, _mat(data.color, true))
+	var height_sampler := Callable()
+	if str(get_tree().get_meta("selected_map", "BATTLEFIELD")) == "VILLAGE":
+		height_sampler = Callable(VILLAGE_LAYOUT, "terrain_height_at")
+	ground.configure(Vector2(size.x, size.z), 2.0, _mat(data.color, true), height_sampler)
 	ground.position = data.pos + Vector3(0.0, size.y * 0.5, 0.0)
 	add_child(ground)
 
@@ -475,8 +487,18 @@ func open_tactical_deploy() -> void:
 	# Создаем тактический интерфейс спавна и выбора экипировки
 	var deploy_ui = TACTICAL_DEPLOY_SCRIPT.new()
 	add_child(deploy_ui)
+	_deploy_ui = deploy_ui
+	deploy_ui.tree_exited.connect(func(): _deploy_ui = null)
 	var base_spawns: Array = _layout().spawns_red() if team_name.contains("RED") else _layout().spawns_iron()
-	deploy_ui.setup(team_name, sector_data, base_spawns)
+	deploy_ui.setup(
+		team_name,
+		sector_data,
+		base_spawns,
+		_layout().boxes(),
+		_terrain_height_sampler(),
+		str(player.get("player_role")),
+		int(player.get("role_primary_weapon_index"))
+	)
 
 	deploy_ui.deployed.connect(func(spawn_pos: Vector3, role_name: String, primary_idx: int):
 		_on_player_tactical_deployed(spawn_pos, role_name, primary_idx, overhead_cam)
@@ -801,7 +823,7 @@ func _process_reinforcement_queue(delta: float) -> void:
 			continue
 		_reinforcement_queue.remove_at(i)
 		_spawn_reinforcement(str(item.team))
-		_reinforcement_spawn_timer = 0.45
+		_reinforcement_spawn_timer = 0.9
 		return
 
 func _update_ticket_bleed(delta: float) -> void:
