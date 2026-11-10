@@ -75,11 +75,12 @@ scenes (.tscn)
 
 1. **Сделано:** `MatchState`, удалён мёртвый экран деплоя из меню,
    типизированный `WeaponDef`/каталог.
-2. **Следующее:** вынести из `player.gd` `WeaponController` (патроны, огонь,
-   перезарядка) и `ViewModel` (оружие/руки/граната) в отдельные компоненты.
-3. Разбить `soldier_bot.gd` на `BotMotor`, `BotCombat`, `BotPerception`.
-4. Вынести HUD и мир `battlefield.gd` в `BattlefieldHUD`/`BattlefieldWorld`.
-5. Перевести меню, деплой и HUD в `.tscn`-сцены.
-6. Включить `gdlint` в CI после того, как долг опустится до нуля.
+2. **Сделано:** `WeaponController` (слоты/патроны/перезарядка) и
+   `PlayerWeaponView` + `PlayerViewArms` (модель, вспышка, покачивание, IK-руки).
+3. **Следующее:** вынести `PlayerHUD`, `PlayerGrenades`, `PlayerVehicles`.
+4. Разбить `soldier_bot.gd` на `BotMotor`, `BotCombat`, `BotPerception`.
+5. Вынести HUD и мир `battlefield.gd` в `BattlefieldHUD`/`BattlefieldWorld`.
+6. Перевести меню, деплой и HUD в `.tscn`-сцены.
+7. Включить `gdlint` в CI после того, как долг опустится до нуля.
 
 Каждый этап — отдельный PR, игра остаётся запускаемой после каждого коммита.

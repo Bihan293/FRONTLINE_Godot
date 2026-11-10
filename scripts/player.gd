@@ -49,17 +49,28 @@ var indoor_factor := 0.0
 var _acoustic_timer := 0.0
 var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
-var weapon_root: Node3D
-var weapon_mount: Node3D
-var weapon_muzzle: Node3D
+var _weapon_view: FRONTLINEPlayerWeaponView
+var _weapon_view_state := FRONTLINEWeaponViewState.new()
+var weapon_root: Node3D:
+	get: return _weapon_view.root if _weapon_view != null else null
+var weapon_mount: Node3D:
+	get: return _weapon_view.mount if _weapon_view != null else null
+var weapon_muzzle: Node3D:
+	get: return _weapon_view.muzzle if _weapon_view != null else null
+var weapon_base: Vector3:
+	get: return _weapon_view.base_position if _weapon_view != null else Vector3.ZERO
+	set(value): if _weapon_view != null: _weapon_view.base_position = value
+var weapon_aim_position: Vector3:
+	get: return _weapon_view.aim_position if _weapon_view != null else Vector3.ZERO
+	set(value): if _weapon_view != null: _weapon_view.aim_position = value
+var muzzle_flash: MeshInstance3D:
+	get: return _weapon_view.flash if _weapon_view != null else null
+var muzzle_flash_time: float:
+	get: return _weapon_view.flash_timer if _weapon_view != null else 0.0
+	set(value): if _weapon_view != null: _weapon_view.flash_timer = value
 var drone_controller_anchor: Marker3D
 var drone_controller_view: Node3D
-var weapon_base := Vector3.ZERO
-var weapon_aim_position := Vector3(0.0, -0.075, -0.48)
-var muzzle_flash: MeshInstance3D
-var muzzle_flash_time := 0.0
 var weapon_kick := 0.0
-var _weapon_rot_smooth := Vector3.ZERO
 var sprint_anim := 0.0
 var landing_anim := 0.0
 var _was_on_floor := true
@@ -264,115 +275,24 @@ func _build_weapon() -> void:
 	drone_controller_anchor.name = "DroneControllerAnchor"
 	drone_controller_anchor.position = Vector3(0.20, -0.14, -0.46)
 	camera.add_child(drone_controller_anchor)
-	weapon_root = Node3D.new()
-	weapon_root.name = "ViewModel"
-	weapon_root.position = Vector3(0.24, -0.23, -0.60)
-	# 0.72 — оружие читается реальным, но не занимает пол-экрана.
-	weapon_root.scale = Vector3.ONE * 0.72
-	weapon_base = weapon_root.position
-	camera.add_child(weapon_root)
-	weapon_mount = Node3D.new()
-	weapon_mount.name = "WeaponMount"
-	weapon_root.add_child(weapon_mount)
+	_weapon_view = FRONTLINEPlayerWeaponView.new()
+	_weapon_view.name = "WeaponView"
+	camera.add_child(_weapon_view)
+	_weapon_view.setup(camera)
 	_view_arms = FRONTLINEPlayerViewArms.new()
 	_view_arms.name = "ViewArms"
 	camera.add_child(_view_arms)
 	_view_arms.setup(camera, weapon_root)
+	_weapon_view.attach_arms(_view_arms)
 	_equip_weapon_visual()
 	_build_grenade_view()
 	_build_heal_view()
 
 func _equip_weapon_visual() -> void:
-	if weapon_mount == null or _view_arms == null:
+	if _weapon_view == null:
 		return
-	for child in weapon_mount.get_children():
-		child.queue_free()
-	muzzle_flash = null
-	weapon_muzzle = null
-	var weapon_id: String = "entrenching_shovel" if is_shovel_equipped else str(_weapon_data().id)
-	var model: Node3D = WEAPON_MESHES.make_weapon(weapon_id)
-	if model == null:
-		push_error("FRONTLINE: cannot build weapon model " + weapon_id)
-		return
-	weapon_mount.add_child(model)
-	if is_shovel_equipped:
-		weapon_base = Vector3(0.10, -0.13, -0.46)
-		weapon_aim_position = Vector3(0.02, -0.08, -0.45)
-		_view_arms.set_hand_offsets(Vector3(-0.02, -0.04, -0.24), Vector3(0.01, -0.05, 0.03))
-		return
-	var muzzle_anchor := model.get_node_or_null("Muzzle") as Node3D
-	if muzzle_anchor == null:
-		push_error("FRONTLINE: weapon has no muzzle marker " + weapon_id)
-		return
-	weapon_muzzle = muzzle_anchor
-	muzzle_flash = MeshInstance3D.new()
-	var flash_mesh := SphereMesh.new()
-	flash_mesh.radius = 0.055
-	flash_mesh.height = 0.11
-	muzzle_flash.mesh = flash_mesh
-	var flash_mat := StandardMaterial3D.new()
-	flash_mat.albedo_color = Color(1.0, 0.75, 0.25)
-	flash_mat.emission_enabled = true
-	flash_mat.emission = Color(1.0, 0.55, 0.12)
-	flash_mat.emission_energy_multiplier = 5.0
-	flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	muzzle_flash.material_override = flash_mat
-	muzzle_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	muzzle_flash.visible = false
-	muzzle_flash.name = "MuzzleFlash"
-	muzzle_anchor.add_child(muzzle_flash)
-
-	# Уникальный реалистичный хват и положение для каждого класса оружия (Dummy War style)
-	var hip_pos := Vector3(0.08, -0.17, -0.52)
-	var aim_pos := Vector3(0.0, -0.092, -0.52)
-	var left_wrist_offset := Vector3(-0.02, -0.03, -0.18)
-	var right_wrist_offset := Vector3(0.01, -0.06, 0.02)
-
-	match weapon_id:
-		"ak47":
-			hip_pos = Vector3(0.08, -0.17, -0.52)
-			aim_pos = Vector3(-0.0045, -0.070, -0.52)
-			left_wrist_offset = Vector3(-0.02, -0.03, -0.18) # цевьё
-			right_wrist_offset = Vector3(0.01, -0.06, 0.02)
-		"mp40":
-			hip_pos = Vector3(0.075, -0.16, -0.48)
-			aim_pos = Vector3(0.0, -0.0375, -0.48)
-			left_wrist_offset = Vector3(-0.02, -0.04, -0.14) # шахта магазина
-			right_wrist_offset = Vector3(0.01, -0.06, 0.04)
-		"mosin":
-			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.030, -0.50)
-			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # длинное ложе
-			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
-		"m1911":
-			hip_pos = Vector3(0.05, -0.15, -0.44) # вынесенный пистолетный хват
-			aim_pos = Vector3(0.0, -0.023, -0.38)
-			left_wrist_offset = Vector3(-0.03, -0.055, 0.02) # хват второй рукой снизу
-			right_wrist_offset = Vector3(0.01, -0.055, 0.02)
-		"shotgun":
-			hip_pos = Vector3(0.09, -0.18, -0.50)
-			aim_pos = Vector3(0.0, -0.025, -0.46)
-			left_wrist_offset = Vector3(-0.02, -0.04, -0.22) # подвижное цевьё
-			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
-		"ppsh41":
-			hip_pos = Vector3(0.08, -0.17, -0.48)
-			aim_pos = Vector3(0.0, -0.026, -0.46)
-			left_wrist_offset = Vector3(-0.02, -0.035, -0.16) # хват под барабаном
-			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
-		"kar98k":
-			hip_pos = Vector3(0.09, -0.17, -0.54)
-			aim_pos = Vector3(0.0, -0.0375, -0.44) # оптическая ось прицела ZF-39 строго по центру
-			left_wrist_offset = Vector3(-0.02, -0.025, -0.24) # ложе
-			right_wrist_offset = Vector3(0.01, -0.06, 0.03)
-		"panzerfaust":
-			hip_pos = Vector3(0.14, -0.09, -0.46) # удержание на правом плече
-			aim_pos = Vector3(0.0, -0.044, -0.42) # прицельная прорезь точно по центру
-			left_wrist_offset = Vector3(-0.03, -0.02, -0.28) # поддержка трубы спереди
-			right_wrist_offset = Vector3(0.01, 0.03, -0.08) # кнопка спуска сверху
-
-	weapon_base = hip_pos
-	weapon_aim_position = aim_pos
-	_view_arms.set_hand_offsets(left_wrist_offset, right_wrist_offset)
+	var weapon_id := "entrenching_shovel" if is_shovel_equipped else str(_weapon_data().id)
+	_weapon_view.equip(weapon_id, is_shovel_equipped)
 
 func _init_weapon_inventory() -> void:
 	player_role = _normalize_role(MatchState.player_role)
@@ -1414,64 +1334,24 @@ func _physics_process(delta: float) -> void:
 		blood_overlay.color.a = blood_alpha
 	blood_overlay.visible = blood_alpha > 0.004
 
-	# Bodycam / Dummy War физика оружия: вес, покачивание и свободная наводка
-	var run_boost := 1.0 + sprint_anim * 0.9
-	var bob_factor := 0.20 if aiming else 1.0
-	var bob_offset := Vector3(
-		sin(bob_time) * 0.010 * run_boost * bob_factor,
-		absf(cos(bob_time)) * 0.009 * run_boost * bob_factor,
-		0.0
-	)
-	var breath_offset := Vector3(0.0, sin(breathing_time * 1.8) * 0.002, 0.0)
-	var kick_offset := Vector3(0.0, 0.020, 0.05) * weapon_kick
-
-	# Подавление свободного sway при прицеливании для идеального ADS (аудит QA)
-	var sway_mult := 1.0 - aim_blend * 0.90
-	var sway_pos := Vector3(-look_sway.x * 0.85, look_sway.y * 0.85, 0.0) * sway_mult
-	var sway_rot := Vector3(look_sway.y * 1.8, -look_sway.x * 2.2, look_sway.x * 1.5) * sway_mult
+	# Визуал оружия обновляется отдельным компонентом.
 	look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 9.0, 0.0, 1.0))
-
-	var stance_offset := Vector3.ZERO
-	if stance == 1:
-		stance_offset = Vector3(0.0, -0.015, 0.02)
-	elif stance == 2:
-		stance_offset = Vector3(0.0, -0.06, 0.05)
-
-	# Тактический спринт (Low Ready / удержание оружия при беге)
-	var sprint_offset := Vector3(0.06, -0.11, 0.04) * sprint_anim
-	var sprint_rot := Vector3(sprint_anim * 0.20, sprint_anim * 0.12, -sprint_anim * 0.35)
-
-	# Просадка оружия при приземлении
-	var landing_offset := Vector3(0.0, -0.05, 0.03) * landing_anim
-	var landing_rot := Vector3(landing_anim * 0.10, 0.0, 0.0)
-
-	var target_weapon_pos := weapon_base.lerp(weapon_aim_position, aim_blend) + kick_offset + bob_offset + breath_offset + sway_pos + stance_offset + sprint_offset + landing_offset
-	weapon_root.position = weapon_root.position.lerp(target_weapon_pos, clampf(delta * 22.0, 0.0, 1.0))
-
-	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
-	# QA-fix TASK-0022: плавный spring-сглаженный поворот оружия — без рывков
-	# при движении взгляда и отдаче.
-	var target_rot := Vector3(
-		-weapon_kick * 0.22 + sway_rot.x + sprint_rot.x + landing_rot.x,
-		sway_rot.y + sprint_rot.y,
-		sway_rot.z + sprint_rot.z - strafe_roll * 0.40
-	)
-	_weapon_rot_smooth = _weapon_rot_smooth.lerp(target_rot, clampf(delta * 16.0, 0.0, 1.0))
-	weapon_root.rotation = _weapon_rot_smooth
-	_update_view_arms()
-
-	if muzzle_flash_time > 0.0:
-		muzzle_flash_time -= delta
-		if muzzle_flash_time <= 0.0 and muzzle_flash != null:
-			muzzle_flash.visible = false
-
-	if is_reloading:
-		var progress := _weapons.reload_progress()
-		if weapon_mount != null:
-			weapon_mount.rotation.z = sin(progress * PI) * 0.14
-			weapon_mount.rotation.x = -sin(progress * PI) * 0.08
-		if _view_arms != null:
-			_view_arms.set_reload_progress(progress)
+	var view_state := _weapon_view_state
+	view_state.delta = delta
+	view_state.aim_blend = aim_blend
+	view_state.aiming = aiming
+	view_state.weapon_kick = weapon_kick
+	view_state.look_sway = look_sway
+	view_state.bob_time = bob_time
+	view_state.breathing_time = breathing_time
+	view_state.sprint_anim = sprint_anim
+	view_state.landing_anim = landing_anim
+	view_state.stance = stance
+	view_state.strafe_x = mobile_move.x
+	view_state.is_reloading = is_reloading
+	view_state.reload_progress = _weapons.reload_progress()
+	view_state.allow_arms = grenade_anim_state == GrenadeActionState.IDLE
+	_weapon_view.update(view_state)
 
 	if damage_time > 0.0:
 		damage_time -= delta
@@ -1552,6 +1432,8 @@ func _physics_process(delta: float) -> void:
 	player_capsule.height = lerpf(player_capsule.height, target_height, clampf(delta * 10.0, 0.0, 1.0))
 	player_collision.position.y = player_capsule.height * 0.5
 	var target_y := 1.70 if stance == 0 else (1.28 if stance == 1 else 0.52)
+	var run_boost := 1.0 + sprint_anim * 0.9
+	var bob_factor := 0.20 if aiming else 1.0
 	var cam_bob_y := absf(sin(bob_time * 2.0)) * 0.014 * run_boost * bob_factor
 	var cam_bob_x := sin(bob_time) * 0.010 * run_boost * bob_factor
 	var key_q := Input.is_key_pressed(KEY_Q)
@@ -1943,10 +1825,6 @@ func _reload() -> void:
 		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
 
 func _on_weapon_reload_finished() -> void:
-	if weapon_mount != null:
-		weapon_mount.rotation = Vector3.ZERO
-	if _view_arms != null:
-		_view_arms.set_reload_progress(0.0)
 	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 
 ## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
