@@ -23,6 +23,7 @@ var _failures: Array[String] = []
 func _ready() -> void:
 	await get_tree().process_frame
 	_test_weapon_definitions()
+	_test_weapon_controller()
 	await _test_diggable_ground()
 	_test_minimap_alignment()
 	_test_combat_roles_and_drone()
@@ -1120,6 +1121,28 @@ func _test_main_menu_match_state() -> void:
 	_check(not MatchState.has_spawn_position, "MatchState did not clear spawn")
 
 	MatchState.configure("BATTLEFIELD", "CONQUEST", "IRON LEGION", "ASSAULT", 7, 1)
+
+func _test_weapon_controller() -> void:
+	var controller := FRONTLINEWeaponController.new()
+	controller.configure_role("SNIPER")
+	_check(controller.current_index == 6, "sniper did not start with Kar98k")
+	_check(controller.ammo == 5, "sniper magazine is not 5")
+	_check(controller.role_weapon_indices == [6, 3], "sniper slots are wrong")
+	controller.consume_round()
+	controller.consume_round()
+	_check(controller.ammo == 3, "consume_round did not decrement ammo")
+	_check(controller.start_reload(), "sniper could not start reload")
+	controller.tick(3.0)
+	_check(not controller.is_reloading, "reload did not finish")
+	_check(controller.ammo == 5 and controller.reserve == 43, "reload did not consume reserve correctly")
+	_check(controller.switch_to(3), "sniper could not switch to sidearm")
+	_check(controller.current_index == 3, "sidearm index was not applied")
+	_check(controller.toggle_sidearm(), "toggle_sidearm did not return to primary")
+	_check(controller.current_index == 6, "toggle_sidearm returned to the wrong slot")
+	controller.apply_loadout("MEDIC", 4)
+	_check(controller.current_index == 4, "medic primary override was not applied")
+	_check(controller.ammo == 6, "shotgun magazine is not 6")
+	_check(controller.role_weapon_indices == [4, 3], "medic slots are wrong")
 
 func _report() -> void:
 	if _failures.is_empty():

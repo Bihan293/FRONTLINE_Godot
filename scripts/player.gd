@@ -36,8 +36,6 @@ const TOUCH_SENS := 0.0030
 const SPEED := 5.2
 const SPRINT_SPEED := 7.4
 const JUMP_VELOCITY := 5.4
-const MAG_SIZE := 30
-const RESERVE_START := 150
 const RELOAD_TIME := 2.2
 const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
@@ -90,13 +88,22 @@ var bodycam_time := 0.0
 var bodycam_rec_dot: Label = null
 var bodycam_osd_label: Label = null
 var bodycam_vignette: ColorRect = null
-var current_weapon_index := 0
-var last_primary_weapon_index := 0
+var _weapons := FRONTLINEWeaponController.new()
+var current_weapon_index: int:
+	get: return _weapons.current_index
+	set(value): _weapons.current_index = value
+var last_primary_weapon_index: int:
+	get: return _weapons.last_primary_index
+	set(value): _weapons.last_primary_index = value
+var role_primary_weapon_index: int:
+	get: return _weapons.role_primary_index
+	set(value): _weapons.role_primary_index = value
+var role_weapon_indices: Array[int]:
+	get: return _weapons.role_weapon_indices
+	set(value): _weapons.role_weapon_indices = value
 var is_shovel_equipped := false
 var carried_soil := 0
 var shovel_action_cooldown := 0.0
-var ammo_by_weapon: Array[int] = []
-var reserve_by_weapon: Array[int] = []
 var nearby_field_pickups: Array[Node3D] = []
 
 var left_arm_pivot: Node3D
@@ -112,11 +119,21 @@ var pitch := 0.0
 var yaw := 0.0
 var recoil := Vector2.ZERO
 var stance := 0
-var fire_cooldown := 0.0
-var ammo := MAG_SIZE
-var reserve_ammo := RESERVE_START
-var is_reloading := false
-var reload_timer := 0.0
+var fire_cooldown: float:
+	get: return _weapons.fire_cooldown
+	set(value): _weapons.fire_cooldown = value
+var ammo: int:
+	get: return _weapons.ammo
+	set(value): _weapons.ammo = value
+var reserve_ammo: int:
+	get: return _weapons.reserve
+	set(value): _weapons.reserve = value
+var is_reloading: bool:
+	get: return _weapons.is_reloading
+	set(value): _weapons.is_reloading = value
+var reload_timer: float:
+	get: return _weapons.reload_timer
+	set(value): _weapons.reload_timer = value
 
 # Снаряжение игрока
 var grenades := 3
@@ -132,8 +149,6 @@ var heal_bandage: Node3D
 var heal_progress_bar: ProgressBar
 var throwable_cooldown := 0.0
 var player_role := "ASSAULT"
-var role_primary_weapon_index := 0
-var role_weapon_indices: Array[int] = [0, 3]
 var active_drone: CharacterBody3D = null
 var drone_charge_available := true
 var drone_vertical_input := 0.0
@@ -205,6 +220,8 @@ func _ready() -> void:
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
+	_weapons.ammo_changed.connect(_refresh_ammo)
+	_weapons.reload_finished.connect(_on_weapon_reload_finished)
 	_init_weapon_inventory()
 	_build_player()
 	_build_weapon()
@@ -363,10 +380,6 @@ func _equip_weapon_visual() -> void:
 		wrist_right_marker.position = right_wrist_offset
 
 func _init_weapon_inventory() -> void:
-	for definition in FRONTLINEWeaponCatalog.all():
-		ammo_by_weapon.append(int(definition.magazine))
-		reserve_by_weapon.append(int(definition.reserve))
-
 	player_role = _normalize_role(MatchState.player_role)
 	_configure_role_loadout(player_role)
 
@@ -379,10 +392,11 @@ func _init_weapon_inventory() -> void:
 			grenades = maxi(0, grenades - 1)
 			medkits += 1
 
-	# Ручная настройка на экране спавна: оружие и количество снаряжения.
 	var chosen_primary := MatchState.primary_weapon_index
 	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
-		_set_primary_slot(chosen_primary)
+		_weapons.set_primary_slot(chosen_primary)
+	_weapons.select_primary(true)
+
 	var chosen_grenades := MatchState.grenades_override
 	if chosen_grenades >= 0:
 		grenades = chosen_grenades
@@ -394,12 +408,7 @@ func _init_weapon_inventory() -> void:
 		medkits = chosen_medkits
 	var chosen_rockets := MatchState.rockets_override
 	if chosen_rockets >= 0:
-		reserve_by_weapon[7] = chosen_rockets
-
-	current_weapon_index = role_primary_weapon_index
-	last_primary_weapon_index = role_primary_weapon_index
-	ammo = ammo_by_weapon[current_weapon_index]
-	reserve_ammo = reserve_by_weapon[current_weapon_index]
+		_weapons.set_reserve_for(7, chosen_rockets)
 
 func _normalize_role(role: String) -> String:
 	match role:
@@ -408,76 +417,56 @@ func _normalize_role(role: String) -> String:
 		_:
 			return "ASSAULT"
 
-## Единственное место, где задаются роль, оружие и стартовое снаряжение.
+## Единственное место, где задаются роль и стартовое снаряжение.
+## Оружейные слоты и патроны живут в FRONTLINEWeaponController.
 func _configure_role_loadout(role: String) -> void:
 	player_role = _normalize_role(role)
+	_weapons.configure_role(player_role)
 	match player_role:
 		"SNIPER":
-			role_primary_weapon_index = 6
-			role_weapon_indices = [6, SIDEARM_INDEX]
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
 			drone_charge_available = false
 		"ANTI_TANK":
-			role_primary_weapon_index = 7
-			role_weapon_indices = [7, 4, SIDEARM_INDEX]
 			grenades = 1
 			smoke_grenades = 1
 			medkits = 2
 			drone_charge_available = false
 		"MEDIC":
-			role_primary_weapon_index = 1
-			role_weapon_indices = [1, SIDEARM_INDEX]
 			grenades = 2
 			smoke_grenades = 2
 			medkits = 5
 			drone_charge_available = false
 		"RADIO_OPERATOR":
-			role_primary_weapon_index = 5
-			role_weapon_indices = [5, SIDEARM_INDEX]
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
 			drone_charge_available = true
 		_:
 			player_role = "ASSAULT"
-			role_primary_weapon_index = 0
-			role_weapon_indices = [0, SIDEARM_INDEX]
 			grenades = 3
 			smoke_grenades = 2
 			medkits = 2
 			drone_charge_available = false
 
 func _set_primary_slot(index: int) -> void:
-	if index < 0 or index >= FRONTLINEWeaponCatalog.count():
-		return
-	role_primary_weapon_index = index
-	role_weapon_indices = [index]
-	if index != SIDEARM_INDEX:
-		role_weapon_indices.append(SIDEARM_INDEX)
+	_weapons.set_primary_slot(index)
 
 ## Публичный вход для экрана деплоя: роль и основное оружие переносятся
 ## между смертями, а не сбрасываются на ASSAULT.
 func apply_loadout(role: String, primary_index: int) -> void:
 	_configure_role_loadout(role)
 	if primary_index >= 0 and primary_index < FRONTLINEWeaponCatalog.count():
-		_set_primary_slot(primary_index)
-	current_weapon_index = role_primary_weapon_index
-	last_primary_weapon_index = role_primary_weapon_index
-	ammo = ammo_by_weapon[current_weapon_index]
-	reserve_ammo = reserve_by_weapon[current_weapon_index]
+		_weapons.set_primary_slot(primary_index)
+	_weapons.select_primary(true)
 	is_shovel_equipped = false
 	_equip_weapon_visual()
 	_refresh_ammo()
 	_refresh_equipment()
 
 func _weapon_data() -> FRONTLINEWeaponDef:
-	return FRONTLINEWeaponCatalog.get_def(current_weapon_index)
-
-func _store_weapon_ammo() -> void:
-	ammo_by_weapon[current_weapon_index] = ammo
-	reserve_by_weapon[current_weapon_index] = reserve_ammo
+	return _weapons.current_def()
 
 func _switch_weapon(index: int) -> void:
 	if is_dead or index < 0 or index >= FRONTLINEWeaponCatalog.count() or grenade_anim_state != GrenadeActionState.IDLE:
@@ -491,18 +480,11 @@ func _switch_weapon(index: int) -> void:
 			_equip_weapon_visual()
 			_refresh_ammo()
 		return
-	_store_weapon_ammo()
-	is_reloading = false
-	reload_timer = 0.0
-	fire_cooldown = minf(fire_cooldown, 0.22)
+	if not _weapons.switch_to(index):
+		return
 	_set_aiming(false)
 	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
 		mobile_controls.call("reset_aim")
-	if index != SIDEARM_INDEX:
-		last_primary_weapon_index = index
-	current_weapon_index = index
-	ammo = ammo_by_weapon[index]
-	reserve_ammo = reserve_by_weapon[index]
 	weapon_kick = 0.0
 	if weapon_mount != null:
 		weapon_mount.rotation = Vector3.ZERO
@@ -598,7 +580,7 @@ func _toggle_shovel() -> void:
 	if is_dead or input_locked or active_drone != null or grenade_anim_state != GrenadeActionState.IDLE:
 		return
 	is_shovel_equipped = not is_shovel_equipped
-	is_reloading = false
+	_weapons.cancel_reload()
 	_set_aiming(false)
 	if mobile_controls != null:
 		mobile_controls.reset_aim()
@@ -1576,7 +1558,7 @@ func _physics_process(delta: float) -> void:
 	COMBAT_AUDIO.listener_pos = camera.global_position
 	COMBAT_AUDIO.listener_valid = true
 
-	fire_cooldown = maxf(0.0, fire_cooldown - delta)
+	_weapons.tick(delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
 	shovel_action_cooldown = maxf(0.0, shovel_action_cooldown - delta)
 	_update_grenade_animation(delta)
@@ -1687,28 +1669,13 @@ func _physics_process(delta: float) -> void:
 			muzzle_flash.visible = false
 
 	if is_reloading:
-		reload_timer -= delta
-		var reload_total: float = _weapon_data().reload_time
-		var progress := 1.0 - clampf(reload_timer / maxf(0.01, reload_total), 0.0, 1.0)
+		var progress := _weapons.reload_progress()
 		if weapon_mount != null:
 			weapon_mount.rotation.z = sin(progress * PI) * 0.14
 			weapon_mount.rotation.x = -sin(progress * PI) * 0.08
 		if left_arm_pivot != null:
 			var reach_offset := Vector3(0.0, -0.10 * sin(progress * PI), 0.06 * sin(progress * PI))
 			left_arm_pivot.position = left_arm_base + reach_offset
-		if reload_timer <= 0.0:
-			var need := int(_weapon_data().magazine) - ammo
-			var take := mini(need, reserve_ammo)
-			ammo += take
-			reserve_ammo -= take
-			is_reloading = false
-			if weapon_mount != null:
-				weapon_mount.rotation = Vector3.ZERO
-			if left_arm_pivot != null:
-				left_arm_pivot.position = left_arm_base
-			_store_weapon_ammo()
-			_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
-			_refresh_ammo()
 
 	if damage_time > 0.0:
 		damage_time -= delta
@@ -1995,10 +1962,9 @@ func _shoot() -> void:
 			_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
 			fire_cooldown = 0.25
 		return
-	ammo -= 1
+	if not _weapons.consume_round():
+		return
 	fire_cooldown = float(weapon.fire_interval)
-	_store_weapon_ammo()
-	_refresh_ammo()
 	_play_player_shot_sfx(str(weapon.id), float(weapon.sound_pitch))
 
 	# QA-fix TASK-0022: попадание считается ДО отдачи. Раньше recoil успевал
@@ -2175,12 +2141,17 @@ func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _regio
 func _reload() -> void:
 	if is_shovel_equipped or grenade_anim_state != GrenadeActionState.IDLE:
 		return
-	var weapon := _weapon_data()
-	if is_reloading or is_healing or ammo >= int(weapon.magazine) or reserve_ammo <= 0 or is_dead or input_locked:
+	if is_healing or is_dead or input_locked:
 		return
-	is_reloading = true
-	reload_timer = float(weapon.reload_time)
-	_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
+	if _weapons.start_reload():
+		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
+
+func _on_weapon_reload_finished() -> void:
+	if weapon_mount != null:
+		weapon_mount.rotation = Vector3.ZERO
+	if left_arm_pivot != null:
+		left_arm_pivot.position = left_arm_base
+	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
 
 ## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
 func _build_heal_view() -> void:
@@ -2794,16 +2765,12 @@ func _interact_with_pickup() -> void:
 func can_take_field_ammo(amount: int) -> bool:
 	if is_dead or input_locked or amount <= 0:
 		return false
-	return reserve_ammo < int(_weapon_data().reserve)
+	return _weapons.can_take_reserve()
 
 func take_field_ammo(amount: int) -> int:
 	if not can_take_field_ammo(amount):
 		return 0
-	var before := reserve_ammo
-	reserve_ammo = mini(int(_weapon_data().reserve), reserve_ammo + amount)
-	_store_weapon_ammo()
-	_refresh_ammo()
-	return reserve_ammo - before
+	return _weapons.add_reserve(amount)
 
 func can_take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if is_dead or input_locked or index < 0 or index >= FRONTLINEWeaponCatalog.count():
@@ -2821,46 +2788,22 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	if not can_take_weapon_pickup(index, clip, reserve):
 		return false
 	if index == current_weapon_index:
-		var definition: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
-		var max_mag := int(definition.magazine)
-		var max_reserve := int(definition.reserve)
-		var needed_clip := max_mag - ammo
-		var taken_clip := mini(needed_clip, maxi(0, clip))
-		ammo += taken_clip
-		var leftover_clip := maxi(0, clip) - taken_clip
-		var add_reserve := leftover_clip + maxi(0, reserve)
-		reserve_ammo = mini(max_reserve, reserve_ammo + add_reserve)
-		_store_weapon_ammo()
-		_refresh_ammo()
+		_weapons.refill_current(clip, reserve)
 		return true
 
 	var previous_index := current_weapon_index
 	var previous_clip := ammo
 	var previous_reserve := reserve_ammo
-	_store_weapon_ammo()
-	ammo_by_weapon[previous_index] = 0
-	reserve_by_weapon[previous_index] = 0
+	_weapons.store_current()
+	_weapons.clear_slot(previous_index)
 	_spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
 
-	# Свободный подбор любого оружия: заменяем слот основного оружия в пуле
-	if not role_weapon_indices.has(index):
-		var prev_slot := role_weapon_indices.find(previous_index)
-		if prev_slot >= 0:
-			role_weapon_indices[prev_slot] = index
-		else:
-			role_weapon_indices.insert(0, index)
-
-	current_weapon_index = index
-	var incoming: FRONTLINEWeaponDef = FRONTLINEWeaponCatalog.get_def(index)
-	ammo = mini(incoming.magazine, maxi(0, clip))
-	reserve_ammo = mini(incoming.reserve, maxi(0, reserve))
-	is_reloading = false
-	reload_timer = 0.0
+	_weapons.replace_role_slot(previous_index, index)
+	_weapons.equip_from_pickup(index, clip, reserve)
 	weapon_kick = 0.0
 	_set_aiming(false)
 	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
 		mobile_controls.call("reset_aim")
-	_store_weapon_ammo()
 	_equip_weapon_visual()
 	_refresh_ammo()
 	return true
@@ -2991,27 +2934,19 @@ func respawn() -> void:
 		_view_arm_left.visible = true
 	if _view_arm_right != null:
 		_view_arm_right.visible = true
-	for i in range(FRONTLINEWeaponCatalog.count()):
-		ammo_by_weapon[i] = FRONTLINEWeaponCatalog.get_def(i).magazine
-		reserve_by_weapon[i] = int(FRONTLINEWeaponCatalog.get_def(i).reserve)
 
 	# Роль и основное оружие сохраняются; сбрасываются только патроны и снаряжение.
 	var chosen_primary := role_primary_weapon_index
 	_configure_role_loadout(player_role)
 	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
-		_set_primary_slot(chosen_primary)
-	current_weapon_index = role_primary_weapon_index
+		_weapons.set_primary_slot(chosen_primary)
+	_weapons.select_primary(true)
 
 	is_shovel_equipped = false
 	carried_soil = 0
 	shovel_action_cooldown = 0.0
-	last_primary_weapon_index = current_weapon_index
-	ammo = ammo_by_weapon[current_weapon_index]
-	reserve_ammo = reserve_by_weapon[current_weapon_index]
 	_equip_weapon_visual()
 
-	is_reloading = false
-	reload_timer = 0.0
 	is_healing = false
 	heal_target = null
 	drone_vertical_input = 0.0
