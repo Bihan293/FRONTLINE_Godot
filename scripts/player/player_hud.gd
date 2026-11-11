@@ -7,7 +7,7 @@ class_name FRONTLINEPlayerHUD
 signal pause_resumed
 signal deploy_requested
 
-const PAUSE_MENU = preload("res://scripts/pause_menu.gd")
+const PAUSE_MENU_SCENE = preload("res://scenes/PauseMenu.tscn")
 
 @onready var blood_overlay: ColorRect = %BloodOverlay
 @onready var bodycam_vignette: ColorRect = %BodycamVignette
@@ -173,7 +173,7 @@ func update(delta: float, health: float) -> void:
 		bodycam_osd_label.text = "%04d-%02d-%02d %02d:%02d:%02dZ   BAT 94%%" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second]
 
 func _build_pause_menu(parent: Node) -> void:
-	pause_menu = PAUSE_MENU.new()
+	pause_menu = PAUSE_MENU_SCENE.instantiate() as FRONTLINEPauseMenu
 	parent.add_child(pause_menu)
 	pause_menu.resumed.connect(func(): pause_resumed.emit())
 

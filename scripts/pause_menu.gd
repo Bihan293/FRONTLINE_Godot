@@ -3,123 +3,54 @@ class_name FRONTLINEPauseMenu
 
 ## Внутриигровое меню паузы: останавливает матч, даёт быстрые настройки
 ## управления/графики и выход в главное меню. Работает и на ПК, и на телефоне.
+## Вёрстка живёт в scenes/PauseMenu.tscn, скрипт только связывает события.
 
 signal resumed
 
-const PANEL_SIZE := Vector2(600.0, 600.0)
+@onready var _main_box: VBoxContainer = %MainBox
+@onready var _settings_box: VBoxContainer = %SettingsBox
+@onready var _settings_content: VBoxContainer = %SettingsContent
+@onready var _continue_button: Button = %ContinueButton
+@onready var _settings_button: Button = %SettingsButton
+@onready var _menu_button: Button = %MenuButton
+@onready var _back_button: Button = %SettingsBackButton
 
 var _is_open := false
-var _main_box: VBoxContainer
-var _settings_box: VBoxContainer
 var _sliders: Array[HSlider] = []
 
 func _ready() -> void:
-	layer = 40
-	process_mode = Node.PROCESS_MODE_ALWAYS
-	visible = false
-	_build()
+	_continue_button.pressed.connect(close)
+	_settings_button.pressed.connect(_show_settings)
+	_menu_button.pressed.connect(_return_to_menu)
+	_back_button.pressed.connect(_show_main)
+	_build_settings_rows()
 
-func _build() -> void:
-	var root := Control.new()
-	root.name = "PauseRoot"
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(root)
-
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.02, 0.03, 0.02, 0.72)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	root.add_child(dim)
-
-	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	panel.offset_left = -PANEL_SIZE.x * 0.5
-	panel.offset_right = PANEL_SIZE.x * 0.5
-	panel.offset_top = -PANEL_SIZE.y * 0.5
-	panel.offset_bottom = PANEL_SIZE.y * 0.5
-	root.add_child(panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	panel.add_child(margin)
-
-	var column := VBoxContainer.new()
-	column.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_theme_constant_override("separation", 14)
-	margin.add_child(column)
-
-	var title := Label.new()
-	title.text = "ПАУЗА"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color(0.88, 0.91, 0.84))
-	column.add_child(title)
-
-	var hint := Label.new()
-	hint.text = "Бой остановлен. ESC или кнопка ниже — продолжить."
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_font_size_override("font_size", 14)
-	hint.add_theme_color_override("font_color", Color(0.64, 0.69, 0.63))
-	column.add_child(hint)
-
-	_main_box = VBoxContainer.new()
-	_main_box.add_theme_constant_override("separation", 14)
-	column.add_child(_main_box)
-
-	_add_button(_main_box, "ПРОДОЛЖИТЬ", close, 58)
-	_add_button(_main_box, "НАСТРОЙКИ", _show_settings, 54)
-	_add_button(_main_box, "В ГЛАВНОЕ МЕНЮ", _return_to_menu, 54)
-
-	_settings_box = VBoxContainer.new()
-	_settings_box.add_theme_constant_override("separation", 10)
-	_settings_box.visible = false
-	column.add_child(_settings_box)
-	_build_settings(_settings_box)
-
-func _build_settings(parent: VBoxContainer) -> void:
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 340)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	parent.add_child(scroll)
-
-	var content := VBoxContainer.new()
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 10)
-	scroll.add_child(content)
-
-	_add_slider(content, "ЧУВСТВИТЕЛЬНОСТЬ", GameSettings.look_sensitivity, GameSettings.MIN_LOOK_SENSITIVITY, GameSettings.MAX_LOOK_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_look_sensitivity)
-	_add_slider(content, "ЧУВСТВ. ПРИЦЕЛА", GameSettings.aim_sensitivity, GameSettings.MIN_AIM_SENSITIVITY, GameSettings.MAX_AIM_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_aim_sensitivity)
-	_add_slider(content, "УГОЛ ОБЗОРА (FOV)", GameSettings.fov, GameSettings.MIN_FOV, GameSettings.MAX_FOV, 1.0, 1.0, "°", GameSettings.set_fov)
-	_add_slider(content, "ОБЩАЯ ГРОМКОСТЬ", GameSettings.master_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_master_volume)
-	_add_slider(content, "ЭФФЕКТЫ (SFX)", GameSettings.sfx_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_sfx_volume)
-	_add_slider(content, "ОКРУЖЕНИЕ", GameSettings.ambience_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_ambience_volume)
+func _build_settings_rows() -> void:
+	_add_slider(_settings_content, "ЧУВСТВИТЕЛЬНОСТЬ", GameSettings.look_sensitivity, GameSettings.MIN_LOOK_SENSITIVITY, GameSettings.MAX_LOOK_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_look_sensitivity)
+	_add_slider(_settings_content, "ЧУВСТВ. ПРИЦЕЛА", GameSettings.aim_sensitivity, GameSettings.MIN_AIM_SENSITIVITY, GameSettings.MAX_AIM_SENSITIVITY, 0.05, 100.0, "%", GameSettings.set_aim_sensitivity)
+	_add_slider(_settings_content, "УГОЛ ОБЗОРА (FOV)", GameSettings.fov, GameSettings.MIN_FOV, GameSettings.MAX_FOV, 1.0, 1.0, "°", GameSettings.set_fov)
+	_add_slider(_settings_content, "ОБЩАЯ ГРОМКОСТЬ", GameSettings.master_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_master_volume)
+	_add_slider(_settings_content, "ЭФФЕКТЫ (SFX)", GameSettings.sfx_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_sfx_volume)
+	_add_slider(_settings_content, "ОКРУЖЕНИЕ", GameSettings.ambience_volume, 0.0, 1.0, 0.05, 100.0, "%", GameSettings.set_ambience_volume)
 
 	var invert := CheckBox.new()
 	invert.text = "ИНВЕРТИРОВАТЬ ОСЬ Y"
 	invert.button_pressed = GameSettings.invert_y
 	invert.add_theme_font_size_override("font_size", 16)
 	invert.toggled.connect(func(value: bool): GameSettings.set_invert_y(value))
-	content.add_child(invert)
+	_settings_content.add_child(invert)
 
-	var quality := _add_button(content, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, 48)
+	var quality := _add_button(_settings_content, "КАЧЕСТВО: " + GameSettings.quality_name(), func(): pass, 48)
 	quality.pressed.connect(func():
 		GameSettings.cycle_quality()
 		quality.text = "КАЧЕСТВО: " + GameSettings.quality_name()
 	)
 
-	var hud_btn := _add_button(content, "ИЗМЕНИТЬ РАСПОЛОЖЕНИЕ КНОПОК HUD", _open_hud_customizer, 48)
+	var hud_btn := _add_button(_settings_content, "ИЗМЕНИТЬ РАСПОЛОЖЕНИЕ КНОПОК HUD", _open_hud_customizer, 48)
 	hud_btn.add_theme_font_size_override("font_size", 15)
 
-	var reset := _add_button(content, "СБРОСИТЬ УПРАВЛЕНИЕ", _reset_controls, 44)
+	var reset := _add_button(_settings_content, "СБРОСИТЬ УПРАВЛЕНИЕ", _reset_controls, 44)
 	reset.add_theme_font_size_override("font_size", 14)
-
-	var back := _add_button(parent, "НАЗАД", _show_main, 52)
-	back.add_theme_font_size_override("font_size", 16)
 
 func _open_hud_customizer() -> void:
 	var customizer_script: Script = load("res://scripts/hud_customizer.gd")

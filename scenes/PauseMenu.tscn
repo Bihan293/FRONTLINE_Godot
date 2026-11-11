@@ -1,0 +1,109 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="1_xjd8x"]
+
+[node name="PauseMenu" type="CanvasLayer"]
+process_mode = 3
+layer = 40
+visible = false
+script = ExtResource("1_xjd8x")
+
+[node name="PauseRoot" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Dim" type="ColorRect" parent="PauseRoot"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.02, 0.03, 0.02, 0.72)
+
+[node name="Panel" type="PanelContainer" parent="PauseRoot"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -300.0
+offset_right = 300.0
+offset_bottom = 300.0
+
+[node name="Margin" type="MarginContainer" parent="PauseRoot/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 24
+
+[node name="Column" type="VBoxContainer" parent="PauseRoot/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="Title" type="Label" parent="PauseRoot/Panel/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 34
+theme_override_colors/font_color = Color(0.88, 0.91, 0.84, 1)
+text = "ПАУЗА"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="PauseRoot/Panel/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.64, 0.69, 0.63, 1)
+text = "Бой остановлен. ESC или кнопка ниже — продолжить."
+horizontal_alignment = 1
+
+[node name="MainBox" type="VBoxContainer" parent="PauseRoot/Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="ContinueButton" type="Button" parent="PauseRoot/Panel/Margin/Column/MainBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "ПРОДОЛЖИТЬ"
+
+[node name="SettingsButton" type="Button" parent="PauseRoot/Panel/Margin/Column/MainBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "НАСТРОЙКИ"
+
+[node name="MenuButton" type="Button" parent="PauseRoot/Panel/Margin/Column/MainBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "В ГЛАВНОЕ МЕНЮ"
+
+[node name="SettingsBox" type="VBoxContainer" parent="PauseRoot/Panel/Margin/Column"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SettingsScroll" type="ScrollContainer" parent="PauseRoot/Panel/Margin/Column/SettingsBox"]
+custom_minimum_size = Vector2(0, 340)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SettingsContent" type="VBoxContainer" parent="PauseRoot/Panel/Margin/Column/SettingsBox/SettingsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="SettingsBackButton" type="Button" parent="PauseRoot/Panel/Margin/Column/SettingsBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "НАЗАД"

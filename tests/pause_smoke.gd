@@ -4,6 +4,8 @@ extends Node
 ## Запуск:
 ##   godot --headless --path . res://tests/pause_smoke.tscn --quit-after 600
 
+const PAUSE_MENU_SCENE = preload("res://scenes/PauseMenu.tscn")
+
 var _failures: Array[String] = []
 
 func _ready() -> void:
@@ -32,12 +34,18 @@ func _test_settings() -> void:
 	_check(is_equal_approx(GameSettings.look_sensitivity, 1.0), "reset controls failed")
 
 func _test_pause_menu() -> void:
-	var menu := FRONTLINEPauseMenu.new()
+	var menu: CanvasLayer = PAUSE_MENU_SCENE.instantiate()
 	add_child(menu)
 	_check(not menu.visible, "pause menu must start hidden")
 	menu.open()
 	_check(menu.visible, "pause menu did not open")
 	_check(get_tree().paused, "tree was not paused")
+	menu.call("_show_settings")
+	var settings_box: Control = menu.get("_settings_box")
+	_check(settings_box != null and settings_box.visible, "pause settings did not open")
+	var settings_content: Control = menu.get("_settings_content")
+	_check(settings_content != null and settings_content.get_child_count() > 0, "pause settings are empty")
+	menu.call("_show_main")
 	menu.close()
 	_check(not menu.visible, "pause menu did not close")
 	_check(not get_tree().paused, "tree stayed paused")
