@@ -16,6 +16,8 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT_DIR))
 	if "hud_only" in OS.get_cmdline_user_args():
 		await _capture_hud_only()
+	elif "menu_only" in OS.get_cmdline_user_args():
+		await _capture_main_menu()
 	elif "deploy_new" in OS.get_cmdline_user_args():
 		await _capture_new_deploy()
 	elif "village_hud" in OS.get_cmdline_user_args():
@@ -105,6 +107,9 @@ func _capture_main_menu() -> void:
 	add_child(menu)
 	await _wait_frames(3)
 	await _capture("01_main_menu")
+	menu.call("_show_maps")
+	await _wait_frames(3)
+	await _capture("01b_menu_maps")
 	menu.call("_show_settings")
 	await _wait_frames(3)
 	await _capture("02_settings")

@@ -1,12 +1,299 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
-[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_vu2b7"]
+[ext_resource type="Script" path="res://scripts/map_preview.gd" id="2_huhvl"]
+[ext_resource type="Script" path="res://scripts/battlefield_map_preview.gd" id="3_y7fix"]
+[ext_resource type="Script" path="res://scripts/village_map_preview.gd" id="4_bnhk8"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
-anchors_preset = 15
+anchors_preset = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-script = ExtResource("1")
+script = ExtResource("1_vu2b7")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.035, 0.047, 0.052, 1)
+
+[node name="Shell" type="VBoxContainer" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 44.0
+offset_top = 28.0
+offset_right = -44.0
+offset_bottom = -28.0
+theme_override_constants/separation = 18
+
+[node name="Header" type="Label" parent="Shell"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(0.88, 0.9, 0.88, 1)
+text = "FRONTLINE     /     MAIN MENU"
+autowrap_mode = 3
+
+[node name="Line" type="ColorRect" parent="Shell"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+color = Color(0.48, 0.52, 0.48, 1)
+
+[node name="Screens" type="Control" parent="Shell"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MainScreen" type="VBoxContainer" parent="Shell/Screens"]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="TopSpacer" type="Control" parent="Shell/Screens/MainScreen"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Center" type="VBoxContainer" parent="Shell/Screens/MainScreen"]
+custom_minimum_size = Vector2(430, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 14
+
+[node name="TitleLabel" type="Label" parent="Shell/Screens/MainScreen/Center"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 54
+theme_override_colors/font_color = Color(0.93, 0.94, 0.9, 1)
+text = "FRONTLINE"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="SubtitleLabel" type="Label" parent="Shell/Screens/MainScreen/Center"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.62, 0.68, 0.67, 1)
+text = "TACTICAL WARFARE  •  DUMMY WAR STYLE  •  v0.4.0"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="PlayButton" type="Button" parent="Shell/Screens/MainScreen/Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 62)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "ИГРАТЬ"
+
+[node name="SettingsButton" type="Button" parent="Shell/Screens/MainScreen/Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "НАСТРОЙКИ"
+
+[node name="ExitButton" type="Button" parent="Shell/Screens/MainScreen/Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "ВЫХОД"
+
+[node name="BottomSpacer" type="Control" parent="Shell/Screens/MainScreen"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="FooterLabel" type="Label" parent="Shell/Screens/MainScreen"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.5, 0.56, 0.55, 1)
+text = "ANDROID  •  GODOT 4  •  FRONTLINE COMBAT"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="MapScreen" type="HBoxContainer" parent="Shell/Screens"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/separation = 24
+
+[node name="MapList" type="VBoxContainer" parent="Shell/Screens/MapScreen"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModeButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "РЕЖИМ: ЗАХВАТ (CONQUEST)"
+
+[node name="DifficultyButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "СЛОЖНОСТЬ: БОЕЦ"
+
+[node name="SquadButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "СИЛЫ: 14 БОЙЦОВ (7x7)"
+
+[node name="AvailableMapsLabel" type="Label" parent="Shell/Screens/MapScreen/MapList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+theme_override_colors/font_color = Color(0.68, 0.73, 0.7, 1)
+text = "ДОСТУПНЫЕ КАРТЫ"
+autowrap_mode = 3
+
+[node name="BattlefieldButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 75)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "BATTLEFIELD (ФРОНТ)
+Окопы и нейтральная полоса (240x180м)"
+
+[node name="VillageButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 75)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "VILLAGE (ДЕРЕВНЯ)
+Улицы, церковь, мельница (180x150м)"
+
+[node name="CountrysideButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 75)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "COUNTRYSIDE (ПРИГОРОД)
+Холмы, поля, лесополосы, места под дома (216×168м)"
+
+[node name="PolygonButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 65)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "POLYGON (ПОЛИГОН)
+Тренировочное стрельбище"
+
+[node name="HintLabel" type="Label" parent="Shell/Screens/MapScreen/MapList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.55, 0.61, 0.6, 1)
+text = "Выбери карту слева для просмотра обзора."
+autowrap_mode = 3
+
+[node name="MapBackButton" type="Button" parent="Shell/Screens/MapScreen/MapList"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "НАЗАД"
+
+[node name="PreviewPanel" type="PanelContainer" parent="Shell/Screens/MapScreen"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PreviewVBox" type="VBoxContainer" parent="Shell/Screens/MapScreen/PreviewPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MapPlaceholder" type="CenterContainer" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PlaceholderLabel" type="Label" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapPlaceholder"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.58, 0.64, 0.62, 1)
+text = "ВЫБЕРИ КАРТУ СЛЕВА"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="MapDetails" type="VBoxContainer" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="PolygonPreview" type="Control" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(560, 260)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_huhvl")
+
+[node name="BattlefieldPreview" type="Control" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(560, 260)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("3_y7fix")
+
+[node name="VillagePreview" type="Control" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(560, 260)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("4_bnhk8")
+
+[node name="MapTitle" type="Label" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "КАРТА"
+autowrap_mode = 3
+
+[node name="MapDesc" type="Label" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.72, 0.77, 0.74, 1)
+text = "Описание"
+autowrap_mode = 3
+
+[node name="PlayOnMapButton" type="Button" parent="Shell/Screens/MapScreen/PreviewPanel/PreviewVBox/MapDetails"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "ИГРАТЬ НА ЭТОЙ КАРТЕ"
+
+[node name="SettingsScreen" type="VBoxContainer" parent="Shell/Screens"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="SettingsScroll" type="ScrollContainer" parent="Shell/Screens/SettingsScreen"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SettingsContent" type="VBoxContainer" parent="Shell/Screens/SettingsScreen/SettingsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="SettingsBackButton" type="Button" parent="Shell/Screens/SettingsScreen"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "НАЗАД"
