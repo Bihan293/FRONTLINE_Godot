@@ -2,20 +2,10 @@ extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
-const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
-const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
-const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const PLAYER_HUD_SCENE = preload("res://scenes/PlayerHUD.tscn")
 
-const SFX_SHOT = preload("res://assets/audio/shot.wav")
-const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
-const SFX_RELOAD_OUT = preload("res://assets/audio/reload_out.ogg")
-const SFX_RELOAD_IN = preload("res://assets/audio/reload_in.wav")
-const SFX_UI = preload("res://assets/audio/ui_click.ogg")
-const SFX_HIT_FLESH = preload("res://assets/audio/hit_flesh.ogg")
-const SFX_KILL = preload("res://assets/audio/kill.ogg")
 const SFX_FOOTSTEPS = [
 	preload("res://assets/audio/footstep_000.ogg"),
 	preload("res://assets/audio/footstep_001.ogg"),
@@ -27,8 +17,6 @@ const TOUCH_SENS := 0.0030
 const SPEED := 5.2
 const SPRINT_SPEED := 7.4
 const JUMP_VELOCITY := 5.4
-const RELOAD_TIME := 2.2
-const FIRE_INTERVAL := 0.10
 const MAX_HEALTH := 100.0
 const SIDEARM_INDEX := 3 # M1911 is carried as a backup sidearm by every role.
 
@@ -61,11 +49,21 @@ var muzzle_flash_time: float:
 	get: return _weapon_view.flash_timer if _weapon_view != null else 0.0
 	set(value): if _weapon_view != null: _weapon_view.flash_timer = value
 var weapon_kick := 0.0
-var sprint_anim := 0.0
-var landing_anim := 0.0
-var _was_on_floor := true
-var bob_time := 0.0
-var breathing_time := 0.0
+var _locomotion := FRONTLINEPlayerLocomotion.new()
+var sprint_anim: float:
+	get:
+		return _locomotion.sprint_anim
+var landing_anim: float:
+	get:
+		return _locomotion.landing_anim
+	set(value):
+		_locomotion.landing_anim = value
+var bob_time: float:
+	get:
+		return _locomotion.bob_time
+var breathing_time: float:
+	get:
+		return _locomotion.breathing_time
 var aim_blend := 0.0
 var aiming := false
 var look_sway := Vector2.ZERO
@@ -83,6 +81,7 @@ var cam_roll := 0.0
 var last_applied_yaw := 0.0
 var cam_shake_trauma := 0.0
 var _equipment := FRONTLINEPlayerEquipment.new()
+var _combat := FRONTLINEPlayerCombat.new()
 var _weapons: FRONTLINEWeaponController:
 	get:
 		return _equipment.weapons
@@ -222,7 +221,6 @@ var mounted_vehicle: Node3D:
 	get: return _vehicles.vehicle
 var _prompt_timer := 0.0
 var mobile_fire := false
-var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu:
 	get: return _player_hud.pause_menu if _player_hud != null else null
 
@@ -256,6 +254,7 @@ func _ready() -> void:
 	add_to_group("player")
 	_health.setup(self, MAX_HEALTH)
 	_equipment.setup(self)
+	_combat.setup(self)
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
@@ -269,6 +268,7 @@ func _ready() -> void:
 	_healing.setup(self, camera, MAX_HEALTH)
 	_drone.setup(self, camera, audio_listener)
 	_shovel.setup(self, camera)
+	_locomotion.setup(self, SPEED, SPRINT_SPEED)
 	_build_weapon()
 	add_child(_grenades)
 	_grenades.setup(self, camera, weapon_root)
@@ -693,14 +693,6 @@ func _physics_process(delta: float) -> void:
 		_player_hud.set_crosshair_visible(not is_dead and active_drone == null)
 	_update_viewmodel_visibility(scoped_ads)
 	_update_camera_fov(delta)
-	var planar_speed := Vector2(velocity.x, velocity.z).length()
-	if planar_speed > 0.4 and is_on_floor():
-		bob_time += delta * (11.0 if planar_speed > SPEED + 0.5 else 7.5)
-		_audio.update_footsteps(delta, planar_speed, true, SPEED)
-	else:
-		bob_time = fposmod(bob_time, TAU)
-		breathing_time += delta
-
 	_healing.tick(delta)
 
 	# Визуал оружия обновляется отдельным компонентом.
@@ -725,57 +717,10 @@ func _physics_process(delta: float) -> void:
 	if mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
 		_shoot()
 
-	var input_vec := mobile_move
-	input_vec.x += float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
-	input_vec.y += float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
-	input_vec = input_vec.limit_length(1.0)
-
-	if stance == 0 and input_vec.length() > 0.92:
-		sprint_hold += delta
-	else:
-		sprint_hold = 0.0
-
-	var current_speed := SPEED
-	if (Input.is_key_pressed(KEY_SHIFT) or sprint_hold > 0.7) and stance == 0:
-		current_speed = SPRINT_SPEED
-	if player_role == "ASSAULT" and current_speed == SPRINT_SPEED:
-		current_speed *= 1.08
-	if stance == 1:
-		current_speed *= 0.55
-	elif stance == 2:
-		current_speed *= 0.25
-
-	# Вес оружия и замедление при ранении (TASK-0006)
-	var weapon_weight_factor := 1.0
-	match str(_weapon_data().id):
-		"m1911": weapon_weight_factor = 1.02
-		"mp40", "ppsh41": weapon_weight_factor = 0.97
-		"ak47", "shotgun": weapon_weight_factor = 0.94
-		"mosin", "kar98k": weapon_weight_factor = 0.90
-		"panzerfaust": weapon_weight_factor = 0.80
-
-	if health < 35.0:
-		current_speed = minf(current_speed * 0.88, SPEED * 0.92)
-
-	var direction := (transform.basis * Vector3(input_vec.x, 0.0, input_vec.y)).normalized()
-	var target_vel := direction * (current_speed * weapon_weight_factor)
-	var accel := 28.0 if direction.length_squared() > 0.01 else 20.0
-	velocity.x = move_toward(velocity.x, target_vel.x, accel * delta * current_speed)
-	velocity.z = move_toward(velocity.z, target_vel.z, accel * delta * current_speed)
-	if not is_on_floor():
-		velocity.y -= 18.0 * delta
-	var fall_speed := velocity.y
-	move_and_slide()
-	_vault.try_step_up()
-
-	var on_floor := is_on_floor()
-	if on_floor and not _was_on_floor and fall_speed < -3.0:
-		landing_anim = 1.0
-		_play_sfx(sfx_footstep, SFX_FOOTSTEPS[0], -2.5, 0.74) # Глухой тактический звук приземления и снаряжения
-	_was_on_floor = on_floor
-	landing_anim = maxf(0.0, landing_anim - delta * 5.0)
-	var sprint_target := 1.0 if (planar_speed > SPEED + 0.4 and not aiming and stance == 0 and on_floor) else 0.0
-	sprint_anim = lerpf(sprint_anim, sprint_target, clampf(delta * 8.0, 0.0, 1.0))
+	_locomotion.process(delta)
+	var planar_speed := _locomotion.planar_speed
+	var current_speed := _locomotion.current_speed
+	var on_floor := _locomotion.on_floor
 
 	if _player_hud != null:
 		_player_hud.update(delta, health)
@@ -898,171 +843,19 @@ func _up_action() -> void:
 		velocity.y = JUMP_VELOCITY
 
 func _shoot() -> void:
-	if _grenades.is_busy():
-		return
-	if is_shovel_equipped:
-		_use_shovel_action(false)
-		return
-	if is_healing:
-		_cancel_healing()
-	if is_reloading or fire_cooldown > 0.0 or is_dead or input_locked:
-		return
-	var weapon := _weapon_data()
-	if ammo <= 0:
-		if reserve_ammo > 0 and not is_reloading:
-			_reload()
-		else:
-			_play_sfx(sfx_empty, SFX_EMPTY, -5.0, randf_range(0.95, 1.05))
-			fire_cooldown = 0.25
-		return
-	if not _weapons.consume_round():
-		return
-	fire_cooldown = float(weapon.fire_interval)
-	_audio.play_shot(str(weapon.id))
-
-	# QA-fix TASK-0022: попадание считается ДО отдачи. Раньше recoil успевал
-	# повернуть камеру на ~1.5-2°, и снайперская пуля в прицеле уходила выше
-	# цели (в зуме это стабильный промах «не регает урон»).
-	var pre_recoil_dir := -camera.global_transform.basis.z
-	var pre_aim_end := camera.global_position + pre_recoil_dir * float(weapon.range_m)
-	var pre_aim_query := PhysicsRayQueryParameters3D.create(camera.global_position, pre_aim_end)
-	pre_aim_query.collision_mask = RAY_COLLISION_MASK
-	pre_aim_query.exclude = [get_rid()]
-	pre_aim_query.collide_with_areas = true
-	var pre_aim_hit := get_world_3d().direct_space_state.intersect_ray(pre_aim_query)
-	var pre_aim_point: Vector3 = pre_aim_hit.get("position", pre_aim_end)
-
-	if str(weapon.id) == "panzerfaust":
-		recoil.y = minf(recoil.y + 0.055, 0.18)
-		recoil.x = clampf(recoil.x + randf_range(-0.015, 0.015), -0.06, 0.06)
-		weapon_kick = 0.16
-		if muzzle_flash != null:
-			muzzle_flash.visible = true
-			muzzle_flash_time = 0.08
-		_apply_look()
-		var shoot_dir := pre_recoil_dir
-		var desired_spawn := camera.global_position + shoot_dir * 0.45 + camera.global_transform.basis.x * 0.14 - camera.global_transform.basis.y * 0.08
-		var wall_query := PhysicsRayQueryParameters3D.create(camera.global_position, desired_spawn)
-		wall_query.collision_mask = WORLD_LAYER_MASK
-		wall_query.exclude = [get_rid()]
-		var wall_hit := get_world_3d().direct_space_state.intersect_ray(wall_query)
-		var spawn_pos := desired_spawn
-		if not wall_hit.is_empty():
-			spawn_pos = wall_hit.position - shoot_dir * 0.10
-
-		var rocket = ROCKET_PROJECTILE_SCRIPT.new()
-		get_parent().add_child(rocket)
-		var player_team: String = MatchState.player_team
-		rocket.launch(spawn_pos, shoot_dir, "Player", player_team, self)
-		return
-
-	var casing_pos := camera.global_position + camera.global_transform.basis.x * 0.22 - camera.global_transform.basis.y * 0.12 - camera.global_transform.basis.z * 0.35
-	var casing_vel := camera.global_transform.basis.x * 2.6 + camera.global_transform.basis.y * 1.4 - camera.global_transform.basis.z * 0.4
-	HIT_EFFECTS.spawn_casing(get_parent(), casing_pos, casing_vel)
-
-	var kick_strength: float = 0.08
-	var trauma_add: float = 0.18
-	match str(weapon.id):
-		"shotgun":
-			kick_strength = 0.22
-			trauma_add = 0.45
-			recoil.y = minf(recoil.y + 0.038, 0.16)
-			recoil.x = clampf(recoil.x + randf_range(-0.015, 0.015), -0.05, 0.05)
-		"mosin", "kar98k":
-			kick_strength = 0.18
-			trauma_add = 0.38
-			recoil.y = minf(recoil.y + 0.030, 0.15)
-			recoil.x = clampf(recoil.x + randf_range(-0.012, 0.012), -0.045, 0.045)
-		"ak47":
-			kick_strength = 0.11
-			trauma_add = 0.24
-			recoil.y = minf(recoil.y + randf_range(0.012, 0.020), 0.14)
-			recoil.x = clampf(recoil.x + randf_range(-0.008, 0.008), -0.045, 0.045)
-		"mp40", "ppsh41":
-			kick_strength = 0.07
-			trauma_add = 0.14
-			recoil.y = minf(recoil.y + randf_range(0.006, 0.011), 0.11)
-			recoil.x = clampf(recoil.x + randf_range(-0.005, 0.005), -0.035, 0.035)
-		_:
-			kick_strength = 0.08
-			trauma_add = 0.16
-			recoil.y = minf(recoil.y + randf_range(0.008, 0.014), 0.12)
-			recoil.x = clampf(recoil.x + randf_range(-0.006, 0.006), -0.04, 0.04)
-
-	weapon_kick = kick_strength
-	add_camera_trauma(trauma_add)
-	if muzzle_flash != null:
-		muzzle_flash.visible = true
-		muzzle_flash_time = 0.045
-	_apply_look()
-
-	var spread := float(weapon.spread) * (0.42 if aiming else 1.0)
-	if stance == 0 and (mobile_move.length() > 0.2 or velocity.length() > SPEED + 0.5):
-		spread += 0.012
-	var bullet_origin := weapon_muzzle.global_position if is_instance_valid(weapon_muzzle) else camera.global_position
-	# The camera ray selects the point the player is aiming at; it never applies
-	# damage. The actual round travels from the muzzle to that point and collides
-	# along its own path, preserving the visible muzzle-to-sight parallax.
-	var aim_point := pre_aim_point
-	var base_direction := (aim_point - bullet_origin).normalized()
-	var player_team: String = MatchState.player_team
-	var pellet_count := int(weapon.pellets)
-	for pellet_index in range(pellet_count):
-		var dir := base_direction
-		dir = dir.rotated(camera.global_transform.basis.y, randf_range(-spread, spread))
-		dir = dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread))
-		_spawn_ballistic_bullet(
-			bullet_origin,
-			dir,
-			float(weapon.muzzle_velocity),
-			int(weapon.damage),
-			float(weapon.range_m),
-			"Player",
-			player_team,
-			self
-		)
+	_combat.shoot()
 
 func _use_shovel_action(place_soil: bool) -> void:
 	_shovel.use_action(place_soil)
 
-func _spawn_ballistic_bullet(origin: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node) -> bool:
-	var world := get_parent()
-	if world == null:
-		return false
-	if world.has_method("spawn_bullet_projectile"):
-		return bool(world.call("spawn_bullet_projectile", origin, direction, speed, damage, range_m, owner_name, owner_team, owner))
-	var bullet = BULLET_PROJECTILE_SCRIPT.new()
-	world.add_child(bullet)
-	bullet.configure(origin, direction, speed, damage, range_m, owner_name, owner_team, owner)
-	return true
-
-func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, _region: String) -> void:
-	if not is_instance_valid(actor) or damage_applied <= 0:
-		return
-	_pop_damage(damage_applied)
-	var world := get_parent()
-	if world != null and world.has_method("record_player_damage"):
-		world.call("record_player_damage", damage_applied)
-	if not actor.is_in_group("explosive_barrels"):
-		_play_sfx(sfx_hit, SFX_HIT_FLESH, -4.0, randf_range(0.9, 1.1))
-	if _player_hud != null:
-		_player_hud.flash_hit()
-	if was_alive and actor.is_in_group("damageable_actor") and "health" in actor and float(actor.get("health")) <= 0.0:
-		# QA-fix TASK-0022: вместо «pew»-джингла — глухой звук попадания.
-		_play_sfx(sfx_kill, SFX_HIT_FLESH, -6.0, randf_range(0.72, 0.82))
-		if world != null and world.has_method("add_kill"):
-			world.call("add_kill")
+func on_projectile_hit(actor: Node, damage_applied: int, was_alive: bool, region: String) -> void:
+	_combat.on_projectile_hit(actor, damage_applied, was_alive, region)
 
 func _reload() -> void:
-	if is_shovel_equipped or _grenades.is_busy():
-		return
-	if is_healing or is_dead or input_locked:
-		return
-	if _weapons.start_reload():
-		_play_sfx(sfx_reload_out, SFX_RELOAD_OUT, -6.0, 1.0)
+	_combat.reload()
 
 func _on_weapon_reload_finished() -> void:
-	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
+	_combat.on_reload_finished()
 
 func _on_grenade_sound(stream: AudioStream, volume_db: float, pitch: float) -> void:
 	_play_sfx(sfx_reload_in, stream, volume_db, pitch)
