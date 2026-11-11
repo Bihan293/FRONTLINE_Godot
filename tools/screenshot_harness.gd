@@ -18,6 +18,8 @@ func _ready() -> void:
 		await _capture_hud_only()
 	elif "menu_only" in OS.get_cmdline_user_args():
 		await _capture_main_menu()
+	elif "customizer" in OS.get_cmdline_user_args():
+		await _capture_customizer()
 	elif "deploy_new" in OS.get_cmdline_user_args():
 		await _capture_new_deploy()
 	elif "village_hud" in OS.get_cmdline_user_args():
@@ -68,6 +70,15 @@ func _capture_new_deploy() -> void:
 		await _wait_frames(80)
 		await _capture("12_fp_arms")
 	battlefield.queue_free()
+
+func _capture_customizer() -> void:
+	var packed: PackedScene = load("res://scenes/HUDCustomizer.tscn")
+	var customizer: CanvasLayer = packed.instantiate()
+	add_child(customizer)
+	await _wait_frames(3)
+	await _capture("13_hud_customizer")
+	customizer.queue_free()
+	await _wait_frames(2)
 
 func _capture_hud_only() -> void:
 	MatchState.map_name = "BATTLEFIELD"

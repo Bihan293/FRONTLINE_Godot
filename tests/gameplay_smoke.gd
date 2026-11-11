@@ -13,7 +13,7 @@ const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const TACTICAL_DEPLOY = preload("res://scenes/TacticalDeploy.tscn")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
-const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
+const HUD_CUSTOMIZER_SCENE = preload("res://scenes/HUDCustomizer.tscn")
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
 const STREET_PROPS_SCRIPT = preload("res://scripts/tactical_street_props.gd")
 const COMMERCIAL_PROPS_SCRIPT = preload("res://scripts/tactical_commercial_props.gd")
@@ -937,11 +937,10 @@ func _test_field_pickup_weapon_swap_and_ammo() -> void:
 	await get_tree().process_frame
 
 func _test_hud_customizer_input() -> void:
-	var HUD_CUSTOMIZER_SCRIPT = load("res://scripts/hud_customizer.gd")
-	_check(HUD_CUSTOMIZER_SCRIPT != null, "hud_customizer.gd missing")
-	if HUD_CUSTOMIZER_SCRIPT == null:
+	_check(HUD_CUSTOMIZER_SCENE != null, "HUDCustomizer scene missing")
+	if HUD_CUSTOMIZER_SCENE == null:
 		return
-	var customizer = HUD_CUSTOMIZER_SCRIPT.new()
+	var customizer = HUD_CUSTOMIZER_SCENE.instantiate()
 	add_child(customizer)
 	await get_tree().process_frame
 

@@ -60,11 +60,10 @@ scenes (.tscn)
 - HUD обновляется по событиям, а не каждый кадр.
 - Никаких `set_meta("map_details", node)` для доступа к элементам.
 
-Главное меню, экран деплоя, HUD игрока, боевой HUD и меню паузы уже
-переведены в `scenes/MainMenu.tscn`, `scenes/TacticalDeploy.tscn`,
-`scenes/PlayerHUD.tscn`, `scenes/BattlefieldHUD.tscn` и `scenes/PauseMenu.tscn`;
-их скрипты только связывают события и заполняют динамические списки.
-HUD-кастомайзер пока строится кодом — это следующий этап.
+Все основные экраны — главное меню, деплой, HUD игрока, боевой HUD, пауза и
+HUD-кастомайзер — живут в `scenes/*.tscn`. Их скрипты только связывают
+события и заполняют динамические списки; новый UI не строится целиком в
+`_ready`.
 
 ## 6. Тесты и приёмка
 
@@ -86,9 +85,9 @@ HUD-кастомайзер пока строится кодом — это сл�
    разбит на движение, визуал, стрельбу и восприятие.
 6. **Сделано:** `BattlefieldHUD` и `BattlefieldWorld` — battlefield разбит на
    HUD, мир и оркестрацию.
-7. **Сделано:** `scenes/TacticalDeploy.tscn`, `scenes/MainMenu.tscn`,
-   `scenes/PlayerHUD.tscn`, `scenes/BattlefieldHUD.tscn` и
-   `scenes/PauseMenu.tscn`. Следующее — HUD-кастомайзер.
+7. **Сделано:** все UI-экраны в `.tscn`: `TacticalDeploy`, `MainMenu`,
+   `PlayerHUD`, `BattlefieldHUD`, `PauseMenu`, `HUDCustomizer`.
+   UI-слой закрыт; следующее — `gdlint` в CI (п. 8).
 8. Включить `gdlint` в CI после того, как долг опустится до нуля.
 
 Каждый этап — отдельный PR, игра остаётся запускаемой после каждого коммита.

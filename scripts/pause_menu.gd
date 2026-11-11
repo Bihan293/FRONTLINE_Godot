@@ -7,6 +7,8 @@ class_name FRONTLINEPauseMenu
 
 signal resumed
 
+const HUD_CUSTOMIZER_SCENE = preload("res://scenes/HUDCustomizer.tscn")
+
 @onready var _main_box: VBoxContainer = %MainBox
 @onready var _settings_box: VBoxContainer = %SettingsBox
 @onready var _settings_content: VBoxContainer = %SettingsContent
@@ -53,15 +55,13 @@ func _build_settings_rows() -> void:
 	reset.add_theme_font_size_override("font_size", 14)
 
 func _open_hud_customizer() -> void:
-	var customizer_script: Script = load("res://scripts/hud_customizer.gd")
-	if customizer_script != null:
-		var customizer = customizer_script.new()
-		get_tree().root.add_child(customizer)
-		customizer.closed.connect(func():
-			var mc = get_tree().get_first_node_in_group("mobile_controls")
-			if mc != null and mc.has_method("queue_redraw"):
-				mc.call("queue_redraw")
-		)
+	var customizer = HUD_CUSTOMIZER_SCENE.instantiate()
+	get_tree().root.add_child(customizer)
+	customizer.closed.connect(func():
+		var mc = get_tree().get_first_node_in_group("mobile_controls")
+		if mc != null and mc.has_method("queue_redraw"):
+			mc.call("queue_redraw")
+	)
 
 func _add_button(parent: Control, text: String, callback: Callable, height: int) -> Button:
 	var button := Button.new()

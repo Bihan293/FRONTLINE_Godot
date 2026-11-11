@@ -1,0 +1,71 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/hud_customizer.gd" id="1_4h88e"]
+
+[node name="HUDCustomizer" type="CanvasLayer"]
+process_mode = 3
+layer = 120
+script = ExtResource("1_4h88e")
+
+[node name="CustomizerRoot" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Background" type="ColorRect" parent="CustomizerRoot"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.02, 0.04, 0.03, 0.85)
+
+[node name="TopPanel" type="PanelContainer" parent="CustomizerRoot"]
+layout_mode = 0
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = -16.0
+offset_bottom = 68.0
+
+[node name="TopBox" type="HBoxContainer" parent="CustomizerRoot/TopPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Title" type="Label" parent="CustomizerRoot/TopPanel/TopBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.85, 0.9, 0.82, 1)
+text = "НАСТРОЙКА КНОПОК: Перетащите кнопки пальцем"
+
+[node name="PresetButton" type="Button" parent="CustomizerRoot/TopPanel/TopBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(170, 42)
+layout_mode = 2
+text = "ПРЕСЕТ"
+
+[node name="ScaleButton" type="Button" parent="CustomizerRoot/TopPanel/TopBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(125, 42)
+layout_mode = 2
+text = "РАЗМЕР"
+
+[node name="ResetButton" type="Button" parent="CustomizerRoot/TopPanel/TopBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 42)
+layout_mode = 2
+text = "СБРОС"
+
+[node name="SaveButton" type="Button" parent="CustomizerRoot/TopPanel/TopBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 42)
+layout_mode = 2
+text = "СОХРАНИТЬ И ВЫЙТИ"
+
+[node name="Canvas" type="Control" parent="CustomizerRoot"]
+unique_name_in_owner = true
+anchors_preset = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2

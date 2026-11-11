@@ -29,6 +29,8 @@ extends Control
 @onready var _map_desc: Label = %MapDesc
 @onready var _settings_content: VBoxContainer = %SettingsContent
 
+const HUD_CUSTOMIZER_SCENE = preload("res://scenes/HUDCustomizer.tscn")
+
 const DIFFICULTY_NAMES := ["НОВИЧОК", "БОЕЦ", "ВЕТЕРАН"]
 const SQUAD_OPTIONS := [7, 10, 14]
 const SQUAD_LABELS := ["14 БОЙЦОВ (7x7)", "20 БОЙЦОВ (10x10)", "28 БОЙЦОВ (14x14)"]
@@ -236,9 +238,7 @@ func _add_slider(caption: String, value: float, min_value: float, max_value: flo
 	row.add_child(slider)
 
 func _open_hud_customizer() -> void:
-	var customizer_script: Script = load("res://scripts/hud_customizer.gd")
-	if customizer_script != null:
-		add_child(customizer_script.new())
+	add_child(HUD_CUSTOMIZER_SCENE.instantiate())
 
 func _quit() -> void:
 	get_tree().quit()
