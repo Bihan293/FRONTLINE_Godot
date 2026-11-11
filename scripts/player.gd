@@ -1308,45 +1308,17 @@ func _refresh_equipment() -> void:
 
 func register_field_pickup(pickup: Node3D) -> void:
 	_pickups.register(pickup)
-	_refresh_pickup_prompt()
+	_pickups.refresh_prompt()
 
 func unregister_field_pickup(pickup: Node3D) -> void:
 	_pickups.unregister(pickup)
-	_refresh_pickup_prompt()
-
-func _nearest_field_pickup() -> Node3D:
-	return _pickups.nearest_field_pickup()
+	_pickups.refresh_prompt()
 
 func _refresh_pickup_prompt() -> void:
-	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
-		_vehicles.vehicle = null
-	var target := _pickups.prompt_target()
-	if _player_hud != null:
-		var prompt_text := ""
-		if target != null and target.has_method("prompt_text"):
-			prompt_text = str(target.call("prompt_text", OS.has_feature("mobile")))
-		_player_hud.set_pickup_prompt(prompt_text)
-	if mobile_controls != null:
-		mobile_controls.set_interact_visible(target != null)
+	_pickups.refresh_prompt()
 
 func _interact_with_pickup() -> void:
-	if is_dead or input_locked:
-		return
-	if mounted_vehicle != null:
-		_exit_vehicle()
-		return
-	var enterable := _nearest_enterable()
-	if enterable != null:
-		_enter_vehicle(enterable)
-		_refresh_pickup_prompt()
-		return
-	var pickup := _nearest_field_pickup()
-	if pickup == null or not pickup.has_method("collect"):
-		return
-	if bool(pickup.call("collect", self)):
-		_pickups.unregister(pickup)
-		_refresh_pickup_prompt()
-		_play_sfx(sfx_ui, SFX_UI, -2.0, 1.12)
+	_pickups.interact()
 
 func can_take_field_ammo(amount: int) -> bool:
 	return _pickups.can_take_field_ammo(amount)
@@ -1361,19 +1333,7 @@ func take_weapon_pickup(index: int, clip: int, reserve: int) -> bool:
 	return _pickups.take_weapon(index, clip, reserve)
 
 func _spawn_weapon_drop(index: int, clip: int, reserve: int) -> void:
-	var parent := get_parent()
-	if parent == null:
-		return
-	var drop_pos := global_position + transform.basis.x * 0.75 + transform.basis.z * 0.45 + Vector3.UP * 0.75
-	var drop_velocity := transform.basis.x * 1.0 + transform.basis.z * 0.6 + Vector3.UP * 1.5
-	if parent.has_method("spawn_weapon_pickup"):
-		parent.call("spawn_weapon_pickup", drop_pos, index, clip, reserve, drop_velocity)
-		return
-	var dropped = FIELD_PICKUP_SCRIPT.new()
-	dropped.configure_weapon(index, clip, reserve)
-	parent.add_child(dropped)
-	dropped.global_position = drop_pos
-	dropped.launch(drop_velocity)
+	_pickups.spawn_weapon_drop(index, clip, reserve)
 
 func _pop_damage(amount: int) -> void:
 	if _player_hud != null:

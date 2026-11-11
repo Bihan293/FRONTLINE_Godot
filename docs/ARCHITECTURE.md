@@ -89,7 +89,7 @@ HUD-кастомайзер — живут в `scenes/*.tscn`. Их скрипт�
    `PlayerHUD`, `BattlefieldHUD`, `PauseMenu`, `HUDCustomizer`.
    UI-слой закрыт.
 8. **Сделано:** `PlayerVault`, `PlayerHealing`, `PlayerDrone`, `PlayerAudio`.
-   `player.gd` уменьшен с 1958 до 1510 строк.
+   `player.gd` уменьшен с 1958 до 1469 строк.
 9. Включить `gdlint` в CI после того, как долг опустится до нуля.
 
 Каждый этап — отдельный PR, игра остаётся запускаемой после каждого коммита.

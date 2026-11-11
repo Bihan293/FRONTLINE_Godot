@@ -2,7 +2,10 @@ extends RefCounted
 class_name FRONTLINEPlayerPickups
 
 ## Полевые подборы: близость, подсказки, патроны и замена оружия.
-## Не владеет HUD и камерой — игрок забирает текст и обновляет UI.
+## Компонент сам обновляет подсказку и мобильную кнопку взаимодействия.
+
+const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
+const SFX_UI = preload("res://assets/audio/ui_click.ogg")
 
 var nearby: Array[Node3D] = []
 var _player: CharacterBody3D
@@ -47,6 +50,59 @@ func nearest_field_pickup() -> Node3D:
 			nearest_distance = distance
 			nearest = pickup
 	return nearest
+
+func refresh_prompt() -> void:
+	var vehicles = _player.get("_vehicles")
+	if vehicles != null:
+		var vehicle = vehicles.get("vehicle")
+		if vehicle != null and not is_instance_valid(vehicle):
+			vehicles.set("vehicle", null)
+	var target := prompt_target()
+	var hud = _player.get("_player_hud")
+	if hud != null:
+		var prompt_text := ""
+		if target != null and target.has_method("prompt_text"):
+			prompt_text = str(target.call("prompt_text", OS.has_feature("mobile")))
+		hud.call("set_pickup_prompt", prompt_text)
+	var controls = _player.get("mobile_controls")
+	if controls != null:
+		controls.call("set_interact_visible", target != null)
+
+func interact() -> void:
+	if bool(_player.get("is_dead")) or bool(_player.get("input_locked")):
+		return
+	var mounted = _player.get("mounted_vehicle")
+	if mounted != null and is_instance_valid(mounted):
+		_player.call("_exit_vehicle")
+		return
+	var enterable: Node3D = _player.call("_nearest_enterable")
+	if enterable != null:
+		_player.call("_enter_vehicle", enterable)
+		refresh_prompt()
+		return
+	var pickup := nearest_field_pickup()
+	if pickup == null or not pickup.has_method("collect"):
+		return
+	if bool(pickup.call("collect", _player)):
+		unregister(pickup)
+		refresh_prompt()
+		_player.call("_play_sfx", _player.get("sfx_ui"), SFX_UI, -2.0, 1.12)
+
+func spawn_weapon_drop(index: int, clip: int, reserve: int) -> void:
+	var parent := _player.get_parent()
+	if parent == null:
+		return
+	var basis := _player.global_transform.basis
+	var drop_pos := _player.global_position + basis.x * 0.75 + basis.z * 0.45 + Vector3.UP * 0.75
+	var drop_velocity := basis.x * 1.0 + basis.z * 0.6 + Vector3.UP * 1.5
+	if parent.has_method("spawn_weapon_pickup"):
+		parent.call("spawn_weapon_pickup", drop_pos, index, clip, reserve, drop_velocity)
+		return
+	var dropped = FIELD_PICKUP_SCRIPT.new()
+	dropped.configure_weapon(index, clip, reserve)
+	parent.add_child(dropped)
+	dropped.global_position = drop_pos
+	dropped.launch(drop_velocity)
 
 func prompt_target() -> Node3D:
 	var mounted = _player.get("mounted_vehicle")
@@ -93,7 +149,7 @@ func take_weapon(index: int, clip: int, reserve: int) -> bool:
 	var previous_reserve := int(_player.get("reserve_ammo"))
 	weapons.call("store_current")
 	weapons.call("clear_slot", previous_index)
-	_player.call("_spawn_weapon_drop", previous_index, previous_clip, previous_reserve)
+	spawn_weapon_drop(previous_index, previous_clip, previous_reserve)
 	weapons.call("replace_role_slot", previous_index, index)
 	weapons.call("equip_from_pickup", index, clip, reserve)
 	_player.set("weapon_kick", 0.0)
