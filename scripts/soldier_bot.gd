@@ -74,11 +74,15 @@ var combat_strafe_dir := Vector3.ZERO
 var _last_target_id := 0
 
 # Узлы модели
-var _hitboxes: Array[Area3D] = []
-var _visuals: FRONTLINEBotVisuals
+var _body := FRONTLINEBotBody.new()
+var _visuals: FRONTLINEBotVisuals:
+	get:
+		return _body.visuals
 # Антизастревание: решение принимается до move_and_slide, а не после.
 # QA-optimization: кэш акустики (4 Гц вместо каждого выстрела).
-var _self_rids: Array[RID] = []
+var _self_rids: Array[RID]:
+	get:
+		return _body.self_rids
 # Обход препятствий считается один раз за кадр по итоговому направлению.
 var _avoid_timer := 0.0
 var _avoid_in := Vector3.ZERO
@@ -169,21 +173,9 @@ func _ready() -> void:
 		if (bot_weapon_index == 1 or bot_weapon_index == 4) and randf() < 0.35:
 			bot_role = "MEDIC"
 
-	var t_collide0 := Time.get_ticks_usec()
-	_build_body_collision()
-	var t_visual0 := Time.get_ticks_usec()
-	_build_visuals()
-	var t_rest0 := Time.get_ticks_usec()
-	_build_hitboxes()
-	_rebuild_self_rids()
+	_body.build(self, team_name, soldier_name, bot_weapon_index, bot_role)
 	if profile_build:
-		var t_end := Time.get_ticks_usec()
-		print("BOT_BUILD collide=%.2f visuals=%.2f rest=%.2f total=%.2f" % [
-			float(t_visual0 - t_collide0) / 1000.0,
-			float(t_rest0 - t_visual0) / 1000.0,
-			float(t_end - t_rest0) / 1000.0,
-			float(t_end - t_build) / 1000.0
-		])
+		print("BOT_BUILD total=%.2f" % [float(Time.get_ticks_usec() - t_build) / 1000.0])
 
 	_perception = PERCEPTION.new()
 	_perception.setup(self, randf())
@@ -207,51 +199,6 @@ func _cache_map_data() -> void:
 	else:
 		_sector_positions = PackedFloat32Array([-52.0, 0.0, 52.0])
 		_enemy_base_z = 56.0
-
-func _build_body_collision() -> void:
-	var body_collision := CollisionShape3D.new()
-	body_collision.name = "BodyCollision"
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.32
-	capsule.height = 1.8
-	body_collision.shape = capsule
-	body_collision.position.y = capsule.height * 0.5
-	add_child(body_collision)
-
-static var _visual_template_cache: Dictionary = {}
-
-func _build_visuals() -> void:
-	_visuals = FRONTLINEBotVisuals.new()
-	_visuals.name = "BotVisuals"
-	add_child(_visuals)
-	_visuals.setup(team_name, soldier_name, bot_weapon_index, bot_role)
-
-func _build_hitboxes() -> void:
-	var shape_head := BoxShape3D.new()
-	shape_head.size = Vector3(0.38, 0.38, 0.38)
-	_add_hitbox("head", Vector3(0, 1.76, 0), shape_head)
-
-	var shape_torso := BoxShape3D.new()
-	shape_torso.size = Vector3(0.55, 0.70, 0.36)
-	_add_hitbox("chest", Vector3(0, 1.20, 0), shape_torso)
-
-	var shape_legs := BoxShape3D.new()
-	shape_legs.size = Vector3(0.52, 0.85, 0.38)
-	_add_hitbox("leg", Vector3(0, 0.42, 0), shape_legs)
-
-func _add_hitbox(region: String, local_pos: Vector3, shape: Shape3D) -> void:
-	var area := Area3D.new()
-	area.collision_layer = HITBOX_LAYER_MASK
-	area.collision_mask = 0
-	area.set_meta("owner_actor", self)
-	area.set_meta("region", region)
-	area.add_to_group("damageable")
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	area.add_child(cs)
-	area.position = local_pos
-	_visuals.add_child(area)
-	_hitboxes.append(area)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -476,21 +423,14 @@ func _try_heal_nearby_ally() -> void:
 				break
 
 func _get_self_collision_rids() -> Array[RID]:
-	# QA-optimization: массив RID собирается один раз, а не на каждый рейкаст.
-	if _self_rids.is_empty():
-		_rebuild_self_rids()
-	return _self_rids
+	return _body.projectile_rids()
 
 func _rebuild_self_rids() -> void:
-	_self_rids.clear()
-	_self_rids.append(get_rid())
-	for hitbox in _hitboxes:
-		if is_instance_valid(hitbox):
-			_self_rids.append(hitbox.get_rid())
+	_body.rebuild_self_rids()
 
 ## Публичный кэш для пуль (bullet_projectile больше не обходит дерево бота).
 func get_projectile_rids() -> Array[RID]:
-	return _get_self_collision_rids()
+	return _body.projectile_rids()
 
 ## Тактическое поведение в бою (Dummy War Tactical Firefight)
 func _combat_behavior(delta: float) -> void:
@@ -740,9 +680,7 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	# расталкивания и миникарты до самого удаления.
 	remove_from_group("bots")
 	remove_from_group("damageable_actor")
-	for group_bot in _hitboxes:
-		if is_instance_valid(group_bot):
-			group_bot.remove_from_group("damageable")
+	_body.disable_hitboxes()
 	var hit_dir := (global_position - attacker_pos).normalized()
 	hit_dir.y = 0.0
 	velocity = hit_dir * 3.2 + Vector3.UP * 1.0
@@ -750,9 +688,6 @@ func _die(attacker_pos: Vector3, region: String, killer_name: String) -> void:
 	collision_layer = 0
 	collision_mask = WORLD_LAYER_MASK
 
-	# Отключаем хитбоксы попаданий
-	for hb in _hitboxes:
-		hb.collision_layer = 0
 
 	# Выбрасываем оружие на землю
 	if _visuals != null and _visuals.weapon_mesh() != null:
