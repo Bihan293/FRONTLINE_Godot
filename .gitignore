@@ -7,3 +7,5 @@
 build/
 *.keystore
 .import/
+
+gdtoolkit/

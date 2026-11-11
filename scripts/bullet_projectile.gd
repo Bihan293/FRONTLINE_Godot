@@ -80,14 +80,14 @@ func _physics_process(delta: float) -> void:
 		return
 	_face_velocity()
 
-static var _SHARED_MESH: BoxMesh = null
-static var _MAT_CACHE: Dictionary = {}
+static var _shared_mesh: BoxMesh = null
+static var _mat_cache: Dictionary = {}
 
 static func _get_tracer_material(team: String) -> StandardMaterial3D:
 	var is_red := team.to_upper().contains("RED") or team.to_upper().contains("SOVIET")
 	var key := "tracer_red" if is_red else "tracer_iron"
-	if _MAT_CACHE.has(key):
-		return _MAT_CACHE[key]
+	if _mat_cache.has(key):
+		return _mat_cache[key]
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.emission_enabled = true
@@ -100,19 +100,19 @@ static func _get_tracer_material(team: String) -> StandardMaterial3D:
 		mat.albedo_color = Color(1.0, 0.55, 0.12)
 		mat.emission = Color(1.0, 0.48, 0.10)
 	mat.emission_energy_multiplier = 7.0
-	_MAT_CACHE[key] = mat
+	_mat_cache[key] = mat
 	return mat
 
 func _build_visual() -> void:
-	if _SHARED_MESH == null:
-		_SHARED_MESH = BoxMesh.new()
+	if _shared_mesh == null:
+		_shared_mesh = BoxMesh.new()
 		# Длина 1 м, но смещена вперёд от дула: задняя грань не пересекает камеру
 		# и не закрывает полэкрана, как старый блок 1.95 м вокруг центра пули.
-		_SHARED_MESH.size = Vector3(0.04, 0.04, 1.0)
+		_shared_mesh.size = Vector3(0.04, 0.04, 1.0)
 
 	_visual = MeshInstance3D.new()
 	_visual.name = "VisibleBullet"
-	_visual.mesh = _SHARED_MESH
+	_visual.mesh = _shared_mesh
 	_visual.position = Vector3(0.0, 0.0, -0.5)
 	_visual.visibility_range_end = 140.0
 	_visual.material_override = _get_tracer_material(shooter_team)

@@ -1,0 +1,8 @@
+max-file-lines: 1600
+max-public-methods: 40
+max-returns: 20
+
+disable:
+- max-line-length
+- class-definitions-order
+- duplicated-load

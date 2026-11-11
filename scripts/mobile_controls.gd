@@ -461,7 +461,7 @@ func _draw_equip_slot(center: Vector2, radius: float) -> void:
 	var text_sz := font.get_string_size(_equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
 	draw_string(font, center + Vector2(-text_sz.x * 0.5, radius + 13.0), _equip_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 10, Color(0.92, 0.95, 0.90, 0.85))
 
-func _draw_button(center: Vector2, radius: float, label: String, id: String, color: Color, font: Font, font_size: int) -> void:
+func _draw_button(center: Vector2, radius: float, _label: String, id: String, _color: Color, _font: Font, _font_size: int) -> void:
 	var state_id := id
 	match id:
 		"detonate": state_id = "fire"

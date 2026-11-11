@@ -67,6 +67,11 @@ jobs:
       - name: Import project resources
         run: godot --headless --path . --import
 
+      - name: Lint GDScript
+        run: |
+          python3 -m pip install --quiet gdtoolkit==4.5.0
+          python3 -m gdtoolkit.linter scripts tests tools
+
       - name: Run gameplay smoke tests
         run: |
           run_smoke() {

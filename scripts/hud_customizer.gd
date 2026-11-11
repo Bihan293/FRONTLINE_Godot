@@ -97,7 +97,7 @@ func _get_base_layout(s: Vector2, sc: float, preset: int) -> Dictionary:
 			"sidearm": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 245.0 * sc),
 			"shovel": Vector2(minf(s.x - 210.0, 520.0 * sc), s.y - 135.0 * sc),
 		}
-	elif preset == 1:
+	if preset == 1:
 		# Компактный
 		return {
 			"joy": Vector2(125.0 * sc, s.y - 130.0 * sc),
@@ -117,7 +117,7 @@ func _get_base_layout(s: Vector2, sc: float, preset: int) -> Dictionary:
 			"sidearm": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 190.0 * sc),
 			"shovel": Vector2(maxf(210.0, s.x - 385.0 * sc), s.y - 100.0 * sc),
 		}
-	elif preset == 2:
+	if preset == 2:
 		# Разреженный
 		return {
 			"joy": Vector2(175.0 * sc, s.y - 175.0 * sc),

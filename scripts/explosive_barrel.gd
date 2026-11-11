@@ -176,7 +176,7 @@ func _process(delta: float) -> void:
 			explode("Взрыв бочки")
 
 ## Принятие урона пулями, осколками и взрывными волнами
-func receive_hit(damage: int, hit_pos: Vector3, region: String = "barrel", attacker_name: String = "") -> int:
+func receive_hit(damage: int, hit_pos: Vector3, _region: String = "barrel", attacker_name: String = "") -> int:
 	if is_exploded:
 		return 0
 

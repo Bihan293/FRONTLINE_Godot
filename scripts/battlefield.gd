@@ -383,7 +383,7 @@ func report_gunshot(pos: Vector3, shooter_team: String) -> void:
 		if is_instance_valid(bot) and not bot.is_dead and bot.team_name != shooter_team:
 			bot.hear_gunshot(pos)
 
-func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, weapon_name: String) -> void:
+func _on_soldier_killed(victim: FRONTLINESoldierBot, killer_name: String, _weapon_name: String) -> void:
 	_match.on_bot_killed(victim)
 
 	# Добавление в киллфид

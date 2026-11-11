@@ -126,7 +126,7 @@ func driver_eye_height() -> float:
 func interaction_radius() -> float:
 	return 4.4
 
-func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Unknown") -> int:
+func receive_hit(damage: int, attacker_pos: Vector3, _region: String = "chest", _attacker_name: String = "Unknown") -> int:
 	if destroyed:
 		return 0
 	health -= float(damage)
