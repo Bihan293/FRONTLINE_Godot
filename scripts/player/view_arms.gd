@@ -15,6 +15,12 @@ var wrist_right: Node3D
 var left_pivot: Node3D
 var left_base := Vector3.ZERO
 
+var _manual_pose := false
+var _manual_left := Transform3D.IDENTITY
+var _manual_right := Transform3D.IDENTITY
+var _manual_left_visible := true
+var _manual_right_visible := true
+
 var _camera: Camera3D
 var _weapon_root: Node3D
 
@@ -40,6 +46,22 @@ func setup(camera: Camera3D, weapon_root: Node3D) -> void:
 	left_arm = _make_arm("ViewArmL", true)
 	right_arm = _make_arm("ViewArmR", false)
 
+## Ручная поза в пространстве камеры: граната, бинт, добивание.
+func set_manual_pose(left_xf: Transform3D, right_xf: Transform3D, show_left := true, show_right := true) -> void:
+	_manual_pose = true
+	_manual_left = left_xf
+	_manual_right = right_xf
+	_manual_left_visible = show_left
+	_manual_right_visible = show_right
+
+func clear_manual_pose() -> void:
+	_manual_pose = false
+	_manual_left_visible = true
+	_manual_right_visible = true
+
+func has_manual_pose() -> bool:
+	return _manual_pose
+
 func set_hand_offsets(left_offset: Vector3, right_offset: Vector3) -> void:
 	left_base = left_offset
 	left_pivot.position = left_offset
@@ -55,18 +77,28 @@ func set_reload_progress(progress: float) -> void:
 func update(visible: bool) -> void:
 	if _camera == null or left_arm == null or right_arm == null:
 		return
-	if not visible or not _weapon_root.visible:
+	if not visible:
 		left_arm.visible = false
 		right_arm.visible = false
 		return
 	var cam_xf := _camera.global_transform
+	var l_shoulder: Vector3 = cam_xf * Vector3(-0.34, -0.38, -0.10)
+	var l_pole: Vector3 = cam_xf.basis * Vector3(-0.75, -0.85, 0.08)
+	var r_shoulder: Vector3 = cam_xf * Vector3(0.34, -0.38, -0.10)
+	var r_pole: Vector3 = cam_xf.basis * Vector3(0.75, -0.85, 0.08)
+	if _manual_pose:
+		if _manual_left_visible:
+			_place_hand(left_arm, cam_xf * _manual_left, true, l_shoulder, l_pole)
+		else:
+			left_arm.visible = false
+		if _manual_right_visible:
+			_place_hand(right_arm, cam_xf * _manual_right, false, r_shoulder, r_pole)
+		else:
+			right_arm.visible = false
+		return
 	if wrist_left != null:
-		var l_shoulder: Vector3 = cam_xf * Vector3(-0.30, -0.28, -0.01)
-		var l_pole: Vector3 = cam_xf.basis * Vector3(-0.65, -1.0, 0.05)
 		_place_hand(left_arm, wrist_left.global_transform, true, l_shoulder, l_pole)
 	if wrist_right != null:
-		var r_shoulder: Vector3 = cam_xf * Vector3(0.30, -0.28, -0.01)
-		var r_pole: Vector3 = cam_xf.basis * Vector3(0.65, -1.0, 0.05)
 		_place_hand(right_arm, wrist_right.global_transform, false, r_shoulder, r_pole)
 
 func _make_arm(arm_name: String, is_left: bool) -> Node3D:
@@ -84,8 +116,8 @@ func _make_arm(arm_name: String, is_left: bool) -> Node3D:
 	var upper := MeshInstance3D.new()
 	upper.name = "Upper"
 	var upper_mesh := CylinderMesh.new()
-	upper_mesh.top_radius = 0.052
-	upper_mesh.bottom_radius = 0.044
+	upper_mesh.top_radius = 0.045
+	upper_mesh.bottom_radius = 0.038
 	upper_mesh.height = 1.0
 	upper_mesh.radial_segments = 10
 	upper.mesh = upper_mesh
@@ -97,8 +129,8 @@ func _make_arm(arm_name: String, is_left: bool) -> Node3D:
 	var forearm := MeshInstance3D.new()
 	forearm.name = "Forearm"
 	var forearm_mesh := CylinderMesh.new()
-	forearm_mesh.top_radius = 0.042
-	forearm_mesh.bottom_radius = 0.033
+	forearm_mesh.top_radius = 0.036
+	forearm_mesh.bottom_radius = 0.028
 	forearm_mesh.height = 1.0
 	forearm_mesh.radial_segments = 10
 	forearm.mesh = forearm_mesh
@@ -128,8 +160,8 @@ func _make_arm(arm_name: String, is_left: bool) -> Node3D:
 	var cuff := MeshInstance3D.new()
 	cuff.name = "Cuff"
 	var cuff_mesh := CylinderMesh.new()
-	cuff_mesh.top_radius = 0.030
-	cuff_mesh.bottom_radius = 0.033
+	cuff_mesh.top_radius = 0.026
+	cuff_mesh.bottom_radius = 0.030
 	cuff_mesh.height = 0.10
 	cuff_mesh.radial_segments = 8
 	cuff.mesh = cuff_mesh
@@ -141,12 +173,21 @@ func _make_arm(arm_name: String, is_left: bool) -> Node3D:
 		var finger := MeshInstance3D.new()
 		finger.name = "Finger%d" % finger_index
 		var finger_mesh := BoxMesh.new()
-		finger_mesh.size = Vector3(0.019, 0.022, 0.060)
+		finger_mesh.size = Vector3(0.018, 0.020, 0.042)
 		finger.mesh = finger_mesh
 		finger.material_override = glove
 		finger.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		finger.set_meta("finger_index", finger_index)
 		arm.add_child(finger)
+		var tip := MeshInstance3D.new()
+		tip.name = "Finger%dTip" % finger_index
+		var tip_mesh := BoxMesh.new()
+		tip_mesh.size = Vector3(0.017, 0.018, 0.034)
+		tip.mesh = tip_mesh
+		tip.material_override = glove
+		tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tip.set_meta("finger_index", finger_index)
+		arm.add_child(tip)
 
 	arm.set_meta("is_left", is_left)
 	if _camera != null:
@@ -174,21 +215,26 @@ func _place_hand(arm: Node3D, marker_xf: Transform3D, is_left: bool, shoulder: V
 	var palm := arm.get_node_or_null("Palm") as MeshInstance3D
 	if palm != null:
 		palm.visible = true
-		palm.position = Vector3(0.0, -0.012, -0.055)
-		palm.rotation = Vector3(deg_to_rad(-8.0), deg_to_rad(8.0 if is_left else -8.0), 0.0)
+		palm.position = Vector3(0.0, -0.010, -0.052)
+		palm.rotation = Vector3(deg_to_rad(-6.0), deg_to_rad(6.0 if is_left else -6.0), 0.0)
 	var thumb := arm.get_node_or_null("Thumb") as MeshInstance3D
 	if thumb != null:
 		thumb.visible = true
-		thumb.position = Vector3(0.05 if is_left else -0.05, 0.012, -0.048)
-		thumb.rotation = Vector3(deg_to_rad(14.0), 0.0, deg_to_rad(20.0 if is_left else -20.0))
+		thumb.position = Vector3(0.052 if is_left else -0.052, 0.008, -0.052)
+		thumb.rotation = Vector3(deg_to_rad(20.0), 0.0, deg_to_rad(48.0 if is_left else -48.0))
 	var finger_x := -0.030
 	for finger_index in range(4):
+		var x := finger_x + float(finger_index) * 0.020
 		var finger := arm.get_node_or_null("Finger%d" % finger_index) as MeshInstance3D
-		if finger == null:
-			continue
-		finger.visible = true
-		finger.position = Vector3(finger_x + float(finger_index) * 0.020, -0.020, -0.085)
-		finger.rotation = Vector3(deg_to_rad(72.0), 0.0, deg_to_rad(6.0 if is_left else -6.0))
+		if finger != null:
+			finger.visible = true
+			finger.position = Vector3(x, -0.018, -0.060)
+			finger.rotation = Vector3(deg_to_rad(48.0), 0.0, deg_to_rad(4.0 if is_left else -4.0))
+		var tip := arm.get_node_or_null("Finger%dTip" % finger_index) as MeshInstance3D
+		if tip != null:
+			tip.visible = true
+			tip.position = Vector3(x, -0.044, -0.090)
+			tip.rotation = Vector3(deg_to_rad(108.0), 0.0, deg_to_rad(4.0 if is_left else -4.0))
 
 func _solve_elbow(shoulder: Vector3, wrist: Vector3, pole: Vector3) -> Vector3:
 	var delta := wrist - shoulder

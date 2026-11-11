@@ -38,11 +38,8 @@ func build_view() -> void:
 	_camera.add_child(root)
 
 	var sleeve := StandardMaterial3D.new()
-	sleeve.albedo_color = Color(0.24, 0.25, 0.19)
+	sleeve.albedo_color = Color(0.20, 0.19, 0.14)
 	sleeve.roughness = 0.95
-	var glove_mat := StandardMaterial3D.new()
-	glove_mat.albedo_color = Color(0.33, 0.26, 0.19)
-	glove_mat.roughness = 0.9
 
 	# Предплечье, которое перевязываем.
 	var forearm := MeshInstance3D.new()
@@ -53,8 +50,8 @@ func build_view() -> void:
 	f_mesh.radial_segments = 8
 	forearm.mesh = f_mesh
 	forearm.material_override = sleeve
-	forearm.position = Vector3(-0.16, -0.24, -0.42)
-	forearm.rotation = Vector3(deg_to_rad(74.0), 0.0, deg_to_rad(-24.0))
+	forearm.position = Vector3(-0.14, -0.30, -0.76)
+	forearm.rotation = Vector3(deg_to_rad(72.0), 0.0, deg_to_rad(-18.0))
 	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(forearm)
 
@@ -69,27 +66,16 @@ func build_view() -> void:
 	r_mesh.radial_segments = 10
 	roll.mesh = r_mesh
 	var bandage_mat := StandardMaterial3D.new()
-	bandage_mat.albedo_color = Color(0.88, 0.85, 0.74)
+	bandage_mat.albedo_color = Color(0.76, 0.72, 0.60)
 	bandage_mat.roughness = 1.0
 	roll.material_override = bandage_mat
 	roll.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
 	roll.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	bandage.add_child(roll)
-	bandage.position = Vector3(0.02, -0.18, -0.42)
+	bandage.position = Vector3(0.0, -0.24, -0.74)
+	bandage.scale = Vector3.ONE * 0.64
 	root.add_child(bandage)
 	heal_bandage = bandage
-
-	# Кисть, держащая бинт.
-	var hand := MeshInstance3D.new()
-	var h_mesh := BoxMesh.new()
-	h_mesh.size = Vector3(0.06, 0.034, 0.095)
-	hand.mesh = h_mesh
-	hand.material_override = glove_mat
-	hand.position = Vector3(0.09, -0.20, -0.40)
-	hand.rotation = Vector3(deg_to_rad(18.0), deg_to_rad(-12.0), 0.0)
-	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(hand)
-
 	heal_view_root = root
 
 func use() -> void:
@@ -121,6 +107,10 @@ func use() -> void:
 	is_healing = true
 	heal_hold = true
 	heal_anim_time = 0.0
+	_player.call("_set_aiming", false)
+	var weapon_root = _player.get("weapon_root")
+	if weapon_root != null:
+		weapon_root.visible = true
 	heal_timer = HEAL_DURATION
 	_player.call("_play_sfx", _player.get("sfx_reload_in"), SFX_RELOAD_IN, -4.0, 1.0)
 	_player.call("_refresh_equipment")
@@ -149,6 +139,9 @@ func reset() -> void:
 	heal_anim_time = 0.0
 	if heal_view_root != null and is_instance_valid(heal_view_root):
 		heal_view_root.visible = false
+	_player.call("_clear_action_hands")
+	_player.call("_set_weapon_mesh_visible", true)
+	_player.call("_set_weapon_action_offset", Vector3.ZERO)
 
 func tick(delta: float) -> void:
 	if not is_healing:
@@ -176,20 +169,25 @@ func tick(delta: float) -> void:
 
 func _update_visual(delta: float) -> void:
 	heal_anim_time += delta
+	var entry := _ease(clampf(heal_anim_time / 0.28, 0.0, 1.0))
+	var weapon_offset := Vector3(0.0, -0.18 * entry, 0.0)
+	_player.call("_set_weapon_action_offset", weapon_offset)
+	_player.call("_set_weapon_mesh_visible", false)
 	if heal_view_root != null and is_instance_valid(heal_view_root):
 		heal_view_root.visible = true
-	var weapon_root: Node3D = _player.get("weapon_root")
-	if weapon_root != null:
-		weapon_root.visible = false
+		heal_view_root.position = Vector3(0.0, -0.10 * (1.0 - entry), 0.0)
 	if heal_bandage != null and is_instance_valid(heal_bandage):
 		var t := heal_anim_time
 		# Бинт наматывается по кругу вокруг предплечья.
 		heal_bandage.position = Vector3(
-			0.03 + sin(t * 7.5) * 0.055,
-			-0.185 + cos(t * 6.0) * 0.05,
-			-0.42 + cos(t * 7.5) * 0.02
+			0.0 + sin(t * 5.2) * 0.040,
+			-0.24 + cos(t * 4.2) * 0.035,
+			-0.74 + cos(t * 5.2) * 0.015
 		)
-		heal_bandage.rotation = Vector3(t * 2.4, t * 1.7, t * 2.1)
+		heal_bandage.rotation = Vector3(t * 2.0, t * 1.35, t * 1.7)
+	var right_pos := Vector3(0.30, -0.48, -0.62).lerp(heal_bandage.position + Vector3(0.075, 0.015, 0.01), entry) if heal_bandage != null else Vector3(0.08, -0.22, -0.62)
+	var right_xf := Transform3D(Basis.from_euler(Vector3(deg_to_rad(-24.0), deg_to_rad(38.0), deg_to_rad(6.0))), right_pos)
+	_player.call("_set_action_hands", right_xf, right_xf, false, true)
 	var hud = _player.get("_player_hud")
 	if hud != null:
 		hud.call("set_heal_progress", clampf(1.0 - heal_timer / HEAL_DURATION, 0.0, 1.0))
@@ -198,11 +196,18 @@ func _finish_visual() -> void:
 	heal_anim_time = 0.0
 	if heal_view_root != null and is_instance_valid(heal_view_root):
 		heal_view_root.visible = false
+		heal_view_root.position = Vector3.ZERO
 	var hud = _player.get("_player_hud")
 	if hud != null:
 		hud.call("set_heal_progress", -1.0)
+	_player.call("_clear_action_hands")
+	_player.call("_set_weapon_mesh_visible", true)
+	_player.call("_set_weapon_action_offset", Vector3.ZERO)
 	var weapon_root: Node3D = _player.get("weapon_root")
 	var grenades = _player.get("_grenades")
 	var grenade_busy := grenades != null and bool(grenades.call("is_busy"))
 	if weapon_root != null and not bool(_player.get("is_dead")) and not bool(_player.get("is_shovel_equipped")) and not grenade_busy:
 		weapon_root.visible = true
+
+func _ease(value: float) -> float:
+	return smoothstep(0.0, 1.0, value)

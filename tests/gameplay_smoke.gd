@@ -37,6 +37,7 @@ func _ready() -> void:
 	await _test_role_weapon_restrictions()
 	await _test_vehicles()
 	await _test_heal_animation()
+	await _test_grenade_and_heal_animation_flow()
 	await _test_tactical_bot_ai()
 	await _test_ballistic_bullet_tracers()
 	await _test_toggle_lean()
@@ -483,10 +484,15 @@ func _test_parkour_and_grenade_hold() -> void:
 		_check(int(p.get("grenade_anim_state")) > 0, "grenade_anim_state did not advance from IDLE")
 
 		p.call("_release_grenade_throw")
-		_check(not bool(p.get("is_grenade_held")), "grenade hold flag still active after release")
-		for _step in range(4):
+		_check(bool(p.get("is_grenade_held")), "first release must keep grenade raised")
+		for _step in range(5):
+			p.call("_update_grenade_animation", 0.2)
+		p.call("_start_grenade_hold")
+		p.call("_release_grenade_throw")
+		for _step in range(10):
 			p.call("_update_grenade_animation", 0.2)
 		_check(int(p.get("grenades")) < 3, "grenade throw did not consume a grenade")
+		_check(not bool(p.get("is_grenade_held")), "grenade hold stuck after throw")
 
 		p.queue_free()
 		await get_tree().process_frame
@@ -640,6 +646,60 @@ func _test_bodycam_kinematics_and_camera_safety() -> void:
 		player.call("_physics_process", 0.016)
 		_check(absf(cam.position.x) >= 0.0, "camera lean calculation failed")
 
+	player.queue_free()
+	await get_tree().process_frame
+
+func _advance_player_physics(player: CharacterBody3D, seconds: float) -> void:
+	for _i in range(int(seconds * 60.0)):
+		player.call("_physics_process", 1.0 / 60.0)
+
+func _test_grenade_and_heal_animation_flow() -> void:
+	var player: CharacterBody3D = PLAYER_SCRIPT.new()
+	add_child(player)
+	await get_tree().process_frame
+	var grenades = player.get("_grenades")
+	var initial_grenades := int(grenades.get("grenade_count"))
+	player.call("_start_grenade_hold")
+	_advance_player_physics(player, 0.8)
+	_check(grenades.call("is_holding"), "grenade was not raised after first press")
+	_check(not bool(player.get("weapon_mesh_visible")), "weapon mesh still visible while holding grenade")
+	_check(float(player.get("weapon_action_offset").y) < -0.2, "weapon was not lowered for grenade")
+	player.call("_start_grenade_hold")
+	_advance_player_physics(player, 0.6)
+	player.call("_release_grenade_throw")
+	_advance_player_physics(player, 0.3)
+	_check(int(grenades.get("grenade_count")) == initial_grenades - 1, "grenade was not thrown after pin pull")
+	_advance_player_physics(player, 0.9)
+	_check(not grenades.call("is_busy"), "grenade action did not recover")
+	_check(bool(player.get("weapon_mesh_visible")), "weapon mesh did not return after grenade")
+	_check(Vector3(player.get("weapon_action_offset")).length() < 0.001, "weapon offset stuck after grenade")
+
+	player.set("health", 40.0)
+	player.set("medkits", 3)
+	player.call("_use_heal")
+	_advance_player_physics(player, 0.3)
+	_check(bool(player.get("is_healing")), "heal did not start")
+	var heal_view: Node3D = player.get("heal_view_root")
+	_check(heal_view != null and heal_view.visible, "heal hand view not visible")
+	_check(not bool(player.get("weapon_mesh_visible")), "weapon mesh still visible during heal")
+	_advance_player_physics(player, 2.2)
+	_check(not bool(player.get("is_healing")), "heal did not finish")
+	_check(float(player.get("health")) > 40.0, "heal did not restore health")
+	_check(bool(player.get("weapon_mesh_visible")), "weapon mesh did not return after heal")
+
+	var initial_smoke := int(player.get("smoke_grenades"))
+	player.call("_start_smoke_hold")
+	_advance_player_physics(player, 0.8)
+	_check(bool(grenades.call("is_holding")), "smoke was not raised after first press")
+	_check(not bool(player.get("weapon_mesh_visible")), "weapon mesh still visible while holding smoke")
+	player.call("_start_smoke_hold")
+	_advance_player_physics(player, 0.6)
+	player.call("_release_grenade_throw")
+	_advance_player_physics(player, 0.3)
+	_check(int(player.get("smoke_grenades")) == initial_smoke - 1, "smoke was not thrown from the hand")
+	_advance_player_physics(player, 0.9)
+	_check(not grenades.call("is_busy"), "smoke action did not recover")
+	_check(bool(player.get("weapon_mesh_visible")), "weapon mesh did not return after smoke")
 	player.queue_free()
 	await get_tree().process_frame
 
@@ -878,11 +938,12 @@ func _test_first_person_hands() -> void:
 			_check(not arm_l.visible, "_view_arm_left stayed visible when weapon_root was hidden")
 			_check(not arm_r.visible, "_view_arm_right stayed visible when weapon_root was hidden")
 		weapon_root.visible = true
-		player.set("grenade_anim_state", 1)
+		player.call("_set_action_hands", Transform3D(), Transform3D(), true, true)
 		player.call("_update_view_arms")
 		if arm_l != null and arm_r != null:
-			_check(not arm_l.visible, "_view_arm_left stayed visible during grenade cooking")
-			_check(not arm_r.visible, "_view_arm_right stayed visible during grenade cooking")
+			_check(arm_l.visible, "action hands not visible for grenade pose")
+			_check(arm_r.visible, "action hands not visible for grenade pose")
+		player.call("_clear_action_hands")
 
 	player.queue_free()
 	await get_tree().process_frame
@@ -1054,8 +1115,7 @@ func _test_heal_animation() -> void:
 	_check(heal_view != null, "heal view model missing")
 	_check(heal_view != null and heal_view.visible, "heal bandage not visible during heal")
 	_check(heal_bar != null and heal_bar.visible, "green heal progress bar not visible")
-	var weapon_root: Node3D = player.get("weapon_root")
-	_check(weapon_root == null or not weapon_root.visible, "weapon still on screen during heal")
+	_check(not bool(player.get("weapon_mesh_visible")), "weapon mesh still on screen during heal")
 	for _i in range(170):
 		await get_tree().physics_frame
 	_check(float(player.get("health")) > 40.0, "healing did not restore health")

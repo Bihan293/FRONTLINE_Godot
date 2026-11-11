@@ -45,6 +45,7 @@ func equip(weapon_id: String, is_shovel: bool) -> void:
 		push_error("FRONTLINE: cannot build weapon model " + weapon_id)
 		return
 	mount.add_child(model)
+	mount.visible = true
 
 	if is_shovel:
 		base_position = Vector3(0.10, -0.13, -0.46)
@@ -125,6 +126,10 @@ func set_view_visible(value: bool) -> void:
 	if root != null:
 		root.visible = value
 
+func set_weapon_visible(value: bool) -> void:
+	if mount != null:
+		mount.visible = value
+
 func update(state: FRONTLINEWeaponViewState) -> void:
 	if root == null or mount == null:
 		return
@@ -154,8 +159,10 @@ func update(state: FRONTLINEWeaponViewState) -> void:
 	var landing_offset := Vector3(0.0, -0.05, 0.03) * state.landing_anim
 	var landing_rot := Vector3(state.landing_anim * 0.10, 0.0, 0.0)
 
-	var target_pos := base_position.lerp(aim_position, state.aim_blend) + kick_offset + bob_offset + breath_offset + sway_pos + stance_offset + sprint_offset + landing_offset
+	var target_pos := base_position.lerp(aim_position, state.aim_blend) + kick_offset + bob_offset + breath_offset + sway_pos + stance_offset + sprint_offset + landing_offset + state.action_offset
 	root.position = root.position.lerp(target_pos, clampf(delta * 22.0, 0.0, 1.0))
+	if mount != null:
+		mount.visible = state.weapon_visible
 
 	var strafe_roll := -state.strafe_x * deg_to_rad(2.2) if not state.aiming else 0.0
 	var target_rot := Vector3(
@@ -171,7 +178,7 @@ func update(state: FRONTLINEWeaponViewState) -> void:
 	mount.rotation.x = -sin(reload_progress * PI) * 0.08
 	if _view_arms != null:
 		_view_arms.set_reload_progress(reload_progress)
-		_view_arms.update(state.allow_arms and root.visible)
+		_view_arms.update(state.allow_arms)
 
 	if flash_timer > 0.0:
 		flash_timer -= delta

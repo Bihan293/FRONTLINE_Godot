@@ -51,6 +51,8 @@ var muzzle_flash_time: float:
 	get: return _weapon_view.flash_timer if _weapon_view != null else 0.0
 	set(value): if _weapon_view != null: _weapon_view.flash_timer = value
 var weapon_kick := 0.0
+var weapon_action_offset := Vector3.ZERO
+var weapon_mesh_visible := true
 var _locomotion := FRONTLINEPlayerLocomotion.new()
 var sprint_anim: float:
 	get:
@@ -368,8 +370,22 @@ func set_drone_controller_feed(feed: Texture2D) -> void:
 func _update_view_arms() -> void:
 	if _view_arms == null:
 		return
-	var visible := weapon_root != null and weapon_root.visible
-	_view_arms.update(visible and not _grenades.is_busy())
+	var manual := _view_arms.has_manual_pose()
+	_view_arms.update(not is_dead and (weapon_root.visible or manual))
+
+func _set_weapon_mesh_visible(value: bool) -> void:
+	weapon_mesh_visible = value
+
+func _set_weapon_action_offset(offset: Vector3) -> void:
+	weapon_action_offset = offset
+
+func _set_action_hands(left_xf: Transform3D, right_xf: Transform3D, show_left := true, show_right := true) -> void:
+	if _view_arms != null:
+		_view_arms.set_manual_pose(left_xf, right_xf, show_left, show_right)
+
+func _clear_action_hands() -> void:
+	if _view_arms != null:
+		_view_arms.clear_manual_pose()
 
 func _update_viewmodel_visibility(scoped: bool) -> void:
 	if weapon_root == null:
@@ -530,7 +546,9 @@ func _physics_process(delta: float) -> void:
 	view_state.strafe_x = mobile_move.x
 	view_state.is_reloading = is_reloading
 	view_state.reload_progress = _weapons.reload_progress()
-	view_state.allow_arms = not _grenades.is_busy()
+	view_state.allow_arms = not is_dead and (weapon_root.visible or (_view_arms != null and _view_arms.has_manual_pose()))
+	view_state.action_offset = weapon_action_offset
+	view_state.weapon_visible = weapon_mesh_visible
 	_weapon_view.update(view_state)
 
 	if mobile_fire or (not OS.has_feature("mobile") and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
@@ -639,6 +657,9 @@ func _try_step_up() -> void:
 
 func _try_vault() -> bool:
 	return _vault.try_vault()
+
+func _start_smoke_hold() -> void:
+	_grenades.start_hold("smoke")
 
 func _throw_smoke() -> void:
 	_grenades.throw_smoke()

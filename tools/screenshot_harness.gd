@@ -20,6 +20,8 @@ func _ready() -> void:
 		await _capture_main_menu()
 	elif "customizer" in OS.get_cmdline_user_args():
 		await _capture_customizer()
+	elif "actions" in OS.get_cmdline_user_args():
+		await _capture_actions()
 	elif "deploy_new" in OS.get_cmdline_user_args():
 		await _capture_new_deploy()
 	elif "village_hud" in OS.get_cmdline_user_args():
@@ -71,6 +73,53 @@ func _capture_new_deploy() -> void:
 		await _capture("12_fp_arms")
 	battlefield.queue_free()
 
+func _capture_actions() -> void:
+	MatchState.map_name = "BATTLEFIELD"
+	MatchState.mode = "CONQUEST"
+	MatchState.player_team = "IRON LEGION"
+	MatchState.skip_deploy_screen = true
+	var packed: PackedScene = load(BATTLEFIELD_SCENE)
+	var battlefield := packed.instantiate() as Node3D
+	add_child(battlefield)
+	await _wait_frames(12)
+	var player_node := get_tree().get_first_node_in_group("player")
+	_clear_dead_bots()
+	_prepare_player(player_node, Vector3(-28.0, 0.4, 22.0), -0.9)
+	await _wait_frames(4)
+	_prepare_player(player_node, Vector3(-28.0, 0.4, 22.0), -0.9)
+	player_node.call("_start_grenade_hold")
+	_advance_player(player_node, 0.14)
+	await _capture("19_grenade_lower")
+	_advance_player(player_node, 0.66)
+	await _capture("20_grenade_hold")
+	player_node.call("_start_grenade_hold")
+	_advance_player(player_node, 0.30)
+	await _capture("21_grenade_pin_pull")
+	_advance_player(player_node, 0.40)
+	await _capture("22_grenade_armed")
+	player_node.call("_release_grenade_throw")
+	_advance_player(player_node, 0.18)
+	await _capture("23_grenade_throw")
+	_advance_player(player_node, 0.80)
+	player_node.set("health", 42.0)
+	player_node.set("medkits", 3)
+	player_node.call("_use_heal")
+	_advance_player(player_node, 0.18)
+	await _capture("24_heal_start")
+	_advance_player(player_node, 0.70)
+	await _capture("25_heal_mid")
+	player_node.call("_on_heal_released")
+	_advance_player(player_node, 0.40)
+	player_node.call("_start_smoke_hold")
+	_advance_player(player_node, 0.80)
+	await _capture("26_smoke_hold")
+	player_node.call("_start_smoke_hold")
+	_advance_player(player_node, 0.60)
+	player_node.call("_release_grenade_throw")
+	_advance_player(player_node, 0.20)
+	await _capture("27_smoke_throw")
+	battlefield.queue_free()
+
 func _capture_customizer() -> void:
 	var packed: PackedScene = load("res://scenes/HUDCustomizer.tscn")
 	var customizer: CanvasLayer = packed.instantiate()
@@ -100,6 +149,11 @@ func _capture_hud_only() -> void:
 func _wait_frames(count: int) -> void:
 	for _i in range(count):
 		await get_tree().process_frame
+
+func _advance_player(player_node: Node, seconds: float) -> void:
+	var ticks := int(seconds * 60.0)
+	for _i in range(ticks):
+		player_node.call("_physics_process", 1.0 / 60.0)
 
 func _capture(file_name: String) -> void:
 	await RenderingServer.frame_post_draw

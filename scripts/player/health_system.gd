@@ -175,6 +175,9 @@ func respawn() -> void:
 		camera.rotation = Vector3.ZERO
 	_player.set("pitch", 0.0)
 	_player.set("yaw", 0.0)
+	_player.set("weapon_mesh_visible", true)
+	_player.set("weapon_action_offset", Vector3.ZERO)
+	_player.call("_clear_action_hands")
 	_player.call("_refresh_ammo")
 	_player.call("_refresh_health")
 	_player.call("_refresh_equipment")

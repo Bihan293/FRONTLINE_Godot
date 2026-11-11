@@ -18,3 +18,5 @@ var strafe_x := 0.0
 var is_reloading := false
 var reload_progress := 0.0
 var allow_arms := true
+var action_offset := Vector3.ZERO
+var weapon_visible := true

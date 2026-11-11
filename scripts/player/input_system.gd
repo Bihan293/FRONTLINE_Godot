@@ -35,7 +35,15 @@ func build_mobile_controls() -> void:
 		mobile_controls.grenade_changed.connect(_on_grenade_changed)
 	else:
 		mobile_controls.grenade_pressed.connect(func(): _player.call("_throw_grenade"))
-	mobile_controls.smoke_pressed.connect(func(): _player.call("_throw_smoke"))
+	if mobile_controls.has_signal("smoke_changed"):
+		mobile_controls.smoke_changed.connect(func(pressed: bool):
+			if pressed:
+				_player.call("_start_smoke_hold")
+			else:
+				_player.call("_release_grenade_throw")
+		)
+	else:
+		mobile_controls.smoke_pressed.connect(func(): _player.call("_throw_smoke"))
 	mobile_controls.heal_pressed.connect(func(): _player.call("_use_heal"))
 	if mobile_controls.has_signal("heal_released"):
 		mobile_controls.heal_released.connect(func(): _player.call("_on_heal_released"))
@@ -87,6 +95,9 @@ func handle(event: InputEvent) -> void:
 		if healing != null:
 			healing.call("release_hold")
 		return
+	if event is InputEventKey and not event.pressed and (event.keycode == KEY_X or event.keycode == KEY_T):
+		_player.call("_release_grenade_throw")
+		return
 	var drone = _player.get("_drone")
 	if drone != null and bool(drone.call("handle_input", event)):
 		return
@@ -135,7 +146,7 @@ func handle(event: InputEvent) -> void:
 		elif event.keycode == KEY_SPACE:
 			_player.call("_up_action")
 		elif event.keycode == KEY_X or event.keycode == KEY_T:
-			_player.call("_throw_smoke")
+			_player.call("_start_smoke_hold")
 		elif event.keycode == KEY_H:
 			_player.call("_use_heal")
 		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
