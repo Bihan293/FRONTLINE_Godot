@@ -95,9 +95,22 @@ var role_primary_weapon_index: int:
 var role_weapon_indices: Array[int]:
 	get: return _weapons.role_weapon_indices
 	set(value): _weapons.role_weapon_indices = value
-var is_shovel_equipped := false
-var carried_soil := 0
-var shovel_action_cooldown := 0.0
+var _shovel := FRONTLINEPlayerShovel.new()
+var is_shovel_equipped: bool:
+	get:
+		return _shovel.equipped
+	set(value):
+		_shovel.equipped = value
+var carried_soil: int:
+	get:
+		return _shovel.carried_soil
+	set(value):
+		_shovel.carried_soil = value
+var shovel_action_cooldown: float:
+	get:
+		return _shovel.action_cooldown
+	set(value):
+		_shovel.action_cooldown = value
 var _pickups := FRONTLINEPlayerPickups.new()
 
 var _view_arms: FRONTLINEPlayerViewArms
@@ -173,10 +186,23 @@ var smoke_grenades: int:
 	set(value): _grenades.smoke_count = value
 
 # Здоровье и статус игрока
-var health := MAX_HEALTH
-var is_dead := false
+var _health := FRONTLINEPlayerHealth.new()
+var health: float:
+	get:
+		return _health.health
+	set(value):
+		_health.health = value
+var is_dead: bool:
+	get:
+		return _health.is_dead
+	set(value):
+		_health.is_dead = value
+var respawn_position: Vector3:
+	get:
+		return _health.respawn_position
+	set(value):
+		_health.respawn_position = value
 var input_locked := false
-var respawn_position := Vector3.ZERO
 
 var _player_hud: FRONTLINEPlayerHUD
 var hud: CanvasLayer:
@@ -221,6 +247,7 @@ var sfx_kill: AudioStreamPlayer:
 
 func _ready() -> void:
 	add_to_group("player")
+	_health.setup(self, MAX_HEALTH)
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
@@ -233,6 +260,7 @@ func _ready() -> void:
 	_build_player()
 	_healing.setup(self, camera, MAX_HEALTH)
 	_drone.setup(self, camera, audio_listener)
+	_shovel.setup(self, camera)
 	_build_weapon()
 	add_child(_grenades)
 	_grenades.setup(self, camera, weapon_root)
@@ -488,21 +516,10 @@ func _toggle_sidearm() -> void:
 		_switch_weapon(SIDEARM_INDEX)
 
 func _toggle_shovel() -> void:
-	if is_dead or input_locked or active_drone != null or _grenades.is_busy():
-		return
-	is_shovel_equipped = not is_shovel_equipped
-	_weapons.cancel_reload()
-	_set_aiming(false)
-	if mobile_controls != null:
-		mobile_controls.reset_aim()
-	_equip_weapon_visual()
-	_refresh_ammo()
+	_shovel.toggle()
 
 func _on_shovel_button() -> void:
-	if is_shovel_equipped and carried_soil > 0:
-		_use_shovel_action(true)
-	else:
-		_toggle_shovel()
+	_shovel.on_button()
 
 func _build_body() -> void:
 	var team := MatchState.player_team
@@ -825,7 +842,7 @@ func _physics_process(delta: float) -> void:
 
 	_weapons.tick(delta)
 	throwable_cooldown = maxf(0.0, throwable_cooldown - delta)
-	shovel_action_cooldown = maxf(0.0, shovel_action_cooldown - delta)
+	_shovel.tick(delta)
 	_update_grenade_animation(delta)
 	var blend := 1.0 - exp(-delta * 13.0)
 	aim_blend = lerpf(aim_blend, 1.0 if aiming else 0.0, blend)
@@ -1164,46 +1181,8 @@ func _shoot() -> void:
 			self
 		)
 
-func _shovel_target(ground: Node3D) -> Vector3:
-	var forward := -camera.global_transform.basis.z
-	forward.y = 0.0
-	if forward.length_squared() < 0.001:
-		return Vector3.INF
-	forward = forward.normalized()
-	var guess := global_position + forward * 1.45
-	guess = ground.call("clamp_to_map", guess)
-	var floor_y := float(ground.call("surface_height_at", guess))
-	var ray_from := camera.global_position
-	var ray_to := Vector3(guess.x, floor_y - 0.25, guess.z)
-	var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to)
-	query.collision_mask = WORLD_LAYER_MASK
-	query.exclude = [get_rid()]
-	query.collide_with_areas = false
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty() or hit.get("collider") != ground:
-		return Vector3.INF
-	return hit.position
-
 func _use_shovel_action(place_soil: bool) -> void:
-	if not is_shovel_equipped or is_dead or input_locked or shovel_action_cooldown > 0.0:
-		return
-	var ground := get_tree().get_first_node_in_group("diggable_ground") as Node3D
-	if ground == null:
-		return
-	var target := _shovel_target(ground)
-	if target == Vector3.INF:
-		return
-	shovel_action_cooldown = 0.55
-	if place_soil:
-		if carried_soil <= 0 or not bool(ground.call("place_soil_at", target)):
-			return
-		carried_soil -= 1
-	else:
-		if carried_soil >= 6 or not bool(ground.call("dig_at", target)):
-			return
-		carried_soil += 1
-	_refresh_ammo()
-	_refresh_equipment()
+	_shovel.use_action(place_soil)
 
 func _spawn_ballistic_bullet(origin: Vector3, direction: Vector3, speed: float, damage: int, range_m: float, owner_name: String, owner_team: String, owner: Node) -> bool:
 	var world := get_parent()
@@ -1336,134 +1315,10 @@ func _spawn_weapon_drop(index: int, clip: int, reserve: int) -> void:
 	_pickups.spawn_weapon_drop(index, clip, reserve)
 
 func _pop_damage(amount: int) -> void:
-	if _player_hud != null:
-		_player_hud.show_damage(amount)
+	_health.pop_damage(amount)
 
 func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", attacker_name: String = "Enemy") -> void:
-	if is_dead:
-		return
-	_cancel_healing()
-	health = maxf(0.0, health - float(damage))
-	if _player_hud != null:
-		_player_hud.flash_blood()
-	_play_sfx(sfx_hit, SFX_HIT_FLESH, 0.0, randf_range(0.9, 1.1))
-
-	var to_attacker := (attacker_pos - global_position).normalized()
-	recoil.y += randf_range(0.02, 0.05)
-	recoil.x += clampf(-to_attacker.x * 0.04, -0.06, 0.06)
-
-	_refresh_health()
-
-	if health <= 0.0:
-		_die(attacker_name, attacker_pos, region)
-
-func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: String = "chest") -> void:
-	_drone.return_to_operator()
-	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
-		_exit_vehicle()
-	_cancel_healing()
-	if camera != null:
-		camera.current = true
-	if mobile_controls != null:
-		mobile_controls.set_drone_mode(false)
-
-	is_dead = true
-	_vault.cancel()
-	_grenades.drop_on_death()
-	health = 0.0
-	velocity = Vector3.ZERO
-	collision_layer = 0
-	if player_body != null and player_body.has_method("set_ragdoll"):
-		var hit_dir := global_position - attacker_pos
-		player_body.visible = true
-		player_body.call("set_ragdoll", true, hit_dir, region == "head")
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	var world := get_parent()
-	if world != null and world.has_method("record_player_death"):
-		world.call("record_player_death")
-	if _player_hud != null:
-		_player_hud.set_pickup_prompt("")
-	if mobile_controls != null:
-		mobile_controls.set_interact_visible(false)
-
-	# Pull back from the eyes so the death is visible as a body, not only a red overlay.
-	camera.position = Vector3(0.0, 2.15, 3.1)
-	camera.rotation = Vector3(deg_to_rad(-27.0), 0.0, 0.0)
-	if weapon_root != null:
-		weapon_root.visible = false
-	if _view_arm_left != null:
-		_view_arm_left.visible = false
-	if _view_arm_right != null:
-		_view_arm_right.visible = false
-	if _player_hud != null:
-		_player_hud.set_crosshair_visible(false)
-		_player_hud.show_death(killer_name)
-		get_tree().create_timer(2.6, false).timeout.connect(func():
-			if is_dead and _player_hud != null and _player_hud.is_death_visible():
-				var parent_node := get_parent()
-				if parent_node != null and parent_node.has_method("open_tactical_deploy"):
-					_player_hud.hide_death()
-					parent_node.call("open_tactical_deploy")
-		)
+	_health.receive_hit(damage, attacker_pos, region, attacker_name)
 
 func respawn() -> void:
-	_drone.return_to_operator()
-	if camera != null:
-		camera.current = true
-
-	is_dead = false
-	_vault.cancel()
-	_grenades.reset()
-	collision_layer = WORLD_LAYER_MASK
-	health = MAX_HEALTH
-	if player_body != null and player_body.has_method("set_ragdoll"):
-		player_body.call("set_ragdoll", false)
-		player_body.visible = false
-	if weapon_root != null:
-		weapon_root.visible = true
-	if _view_arm_left != null:
-		_view_arm_left.visible = true
-	if _view_arm_right != null:
-		_view_arm_right.visible = true
-
-	# Роль и основное оружие сохраняются; сбрасываются только патроны и снаряжение.
-	var chosen_primary := role_primary_weapon_index
-	_configure_role_loadout(player_role)
-	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
-		_weapons.set_primary_slot(chosen_primary)
-	_weapons.select_primary(true)
-
-	is_shovel_equipped = false
-	carried_soil = 0
-	shovel_action_cooldown = 0.0
-	_equip_weapon_visual()
-
-	_healing.reset()
-	_drone.vertical_input = 0.0
-	aiming = false
-	aim_blend = 0.0
-	camera.fov = GameSettings.fov
-	if mobile_controls != null:
-		if mobile_controls.has_method("reset_aim"):
-			mobile_controls.call("reset_aim")
-		if mobile_controls.has_method("set_drone_visible"):
-			mobile_controls.set_drone_visible(player_role == "RADIO_OPERATOR")
-		if mobile_controls.has_method("set_drone_mode"):
-			mobile_controls.set_drone_mode(false)
-	stance = 0
-	lean_amount = 0.0
-	mobile_lean_left = false
-	mobile_lean_right = false
-	position = respawn_position
-	camera.position = Vector3(0, 1.80, -0.10)
-	camera.rotation = Vector3.ZERO
-	pitch = 0.0
-	yaw = 0.0
-	_refresh_ammo()
-	_refresh_health()
-	_refresh_equipment()
-
-	if _player_hud != null:
-		_player_hud.reset_after_respawn()
-	if not OS.has_feature("mobile"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_health.respawn()
