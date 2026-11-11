@@ -54,17 +54,22 @@ var selected_spawn_name := "ГЛАВНАЯ БАЗА"
 var selected_role := "ASSAULT"
 var selected_primary := 0
 
-var _map: FRONTLINEDeploymentMap
+@onready var _map: FRONTLINEDeploymentMap = %DeploymentMap
+@onready var _root: Control = %Root
+@onready var _spawn_label: Label = %SpawnLabel
+@onready var _loadout_summary: Label = %LoadoutSummary
+@onready var _loadout_overlay: Control = %LoadoutOverlay
+@onready var _role_grid: GridContainer = %RoleGrid
+@onready var _primary_grid: GridContainer = %PrimaryGrid
+@onready var _deploy_btn: Button = %DeployButton
+@onready var _loadout_btn: Button = %LoadoutButton
+@onready var _change_btn: Button = %ChangeLoadoutButton
+@onready var _close_btn: Button = %CloseLoadoutButton
+
 var _layout_boxes: Array = []
 var _height_sampler := Callable()
 var _role_buttons: Dictionary = {}
 var _primary_buttons: Dictionary = {}
-var _spawn_label: Label
-var _loadout_summary: Label
-var _loadout_overlay: Control
-var _primary_grid: GridContainer
-var _deploy_btn: Button
-var _root: Control
 
 func setup(p_team: String, p_sectors: Array, p_spawns: Array, p_boxes: Array = [], p_height_sampler := Callable(), p_role: String = "ASSAULT", p_primary: int = -1) -> void:
 	team_name = p_team
@@ -79,196 +84,27 @@ func setup(p_team: String, p_sectors: Array, p_spawns: Array, p_boxes: Array = [
 	selected_primary = p_primary if choices.has(p_primary) else int(choices[0])
 	if not base_spawns.is_empty():
 		selected_spawn = base_spawns[0]
-	_build_ui()
+	_build_role_buttons()
+	_rebuild_primary_buttons()
+	if not _map.position_picked.is_connected(_on_map_picked):
+		_map.position_picked.connect(_on_map_picked)
+	if not _deploy_btn.pressed.is_connected(_on_deploy_clicked):
+		_deploy_btn.pressed.connect(_on_deploy_clicked)
+	if not _loadout_btn.pressed.is_connected(_open_loadout):
+		_loadout_btn.pressed.connect(_open_loadout)
+	if not _change_btn.pressed.is_connected(_open_loadout):
+		_change_btn.pressed.connect(_open_loadout)
+	if not _close_btn.pressed.is_connected(_close_loadout):
+		_close_btn.pressed.connect(_close_loadout)
+	_deploy_btn.disabled = false
 	_map.configure(_layout_boxes, sector_data, base_spawns)
 	_map.set_selected(selected_spawn)
 	_update_texts()
 
-func _build_ui() -> void:
-	_root = Control.new()
-	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_root)
-
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.03, 0.05, 0.06, 0.86)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(dim)
-
-	var top := PanelContainer.new()
-	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_bottom = 64.0
-	top.add_theme_stylebox_override("panel", _style(Color(0.07, 0.09, 0.11, 0.96), Color(0.85, 0.65, 0.20, 0.9)))
-	_root.add_child(top)
-
-	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 14)
-	top.add_child(top_row)
-
-	var title := Label.new()
-	title.text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
-	top_row.add_child(title)
-
-	var team := Label.new()
-	team.text = team_name.to_upper()
-	team.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	team.add_theme_font_size_override("font_size", 16)
-	team.add_theme_color_override("font_color", Color(0.55, 0.80, 1.0))
-	top_row.add_child(team)
-
-	var loadout_btn := Button.new()
-	loadout_btn.text = "LOADOUT / СНАРЯЖЕНИЕ"
-	loadout_btn.custom_minimum_size = Vector2(240, 44)
-	loadout_btn.add_theme_font_size_override("font_size", 16)
-	loadout_btn.pressed.connect(_open_loadout)
-	top_row.add_child(loadout_btn)
-
-	var main := HBoxContainer.new()
-	main.anchor_left = 0.03
-	main.anchor_right = 0.97
-	main.anchor_top = 0.13
-	main.anchor_bottom = 0.84
-	main.add_theme_constant_override("separation", 18)
-	_root.add_child(main)
-
-	var map_panel := PanelContainer.new()
-	map_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	map_panel.size_flags_stretch_ratio = 1.9
-	map_panel.add_theme_stylebox_override("panel", _style(Color(0.05, 0.08, 0.07, 0.92), Color(0.28, 0.40, 0.34, 0.8)))
-	main.add_child(map_panel)
-
-	var map_vbox := VBoxContainer.new()
-	map_vbox.add_theme_constant_override("separation", 6)
-	map_panel.add_child(map_vbox)
-
-	var map_header := Label.new()
-	map_header.text = "ВЫБЕРИ ТОЧКУ ВЫСАДКИ НА КАРТЕ"
-	map_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	map_header.add_theme_font_size_override("font_size", 16)
-	map_header.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
-	map_vbox.add_child(map_header)
-
-	_map = DEPLOY_MAP.new()
-	_map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_map.position_picked.connect(_on_map_picked)
-	map_vbox.add_child(_map)
-
-	var side_panel := PanelContainer.new()
-	side_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_panel.custom_minimum_size = Vector2(300, 0)
-	side_panel.add_theme_stylebox_override("panel", _style(Color(0.06, 0.08, 0.10, 0.92), Color(0.28, 0.40, 0.34, 0.8)))
-	main.add_child(side_panel)
-
-	var side := VBoxContainer.new()
-	side.add_theme_constant_override("separation", 12)
-	side_panel.add_child(side)
-
-	var side_header := Label.new()
-	side_header.text = "ТОЧКА ВЫСАДКИ"
-	side_header.add_theme_font_size_override("font_size", 16)
-	side_header.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
-	side.add_child(side_header)
-
-	_spawn_label = Label.new()
-	_spawn_label.text = "ГЛАВНАЯ БАЗА"
-	_spawn_label.add_theme_font_size_override("font_size", 20)
-	_spawn_label.add_theme_color_override("font_color", Color(0.9, 0.95, 0.9))
-	side.add_child(_spawn_label)
-
-	var hint := Label.new()
-	hint.text = "Нажми на карту, чтобы поставить маркер высадки. Серые здания и стены недоступны."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.add_theme_font_size_override("font_size", 13)
-	hint.add_theme_color_override("font_color", Color(0.68, 0.74, 0.70))
-	side.add_child(hint)
-
-	var separator := HSeparator.new()
-	side.add_child(separator)
-
-	_loadout_summary = Label.new()
-	_loadout_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_loadout_summary.add_theme_font_size_override("font_size", 14)
-	_loadout_summary.add_theme_color_override("font_color", Color(0.85, 0.90, 0.95))
-	side.add_child(_loadout_summary)
-
-	var change_btn := Button.new()
-	change_btn.text = "СМЕНИТЬ КЛАСС И ОРУЖИЕ"
-	change_btn.custom_minimum_size = Vector2(0, 42)
-	change_btn.pressed.connect(_open_loadout)
-	side.add_child(change_btn)
-
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side.add_child(spacer)
-
-	var bottom := HBoxContainer.new()
-	bottom.anchor_left = 0.25
-	bottom.anchor_right = 0.75
-	bottom.anchor_top = 0.87
-	bottom.anchor_bottom = 0.97
-	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
-	_root.add_child(bottom)
-
-	_deploy_btn = Button.new()
-	_deploy_btn.text = "В БОЙ / DEPLOY"
-	_deploy_btn.custom_minimum_size = Vector2(460, 58)
-	_deploy_btn.add_theme_font_size_override("font_size", 24)
-	_deploy_btn.add_theme_color_override("font_color", Color(1.0, 0.92, 0.40))
-	_deploy_btn.add_theme_stylebox_override("normal", _style(Color(0.16, 0.40, 0.20, 0.97), Color(0.40, 0.90, 0.45), 8))
-	_deploy_btn.add_theme_stylebox_override("hover", _style(Color(0.20, 0.50, 0.25, 0.97), Color(0.55, 1.0, 0.55), 8))
-	_deploy_btn.pressed.connect(_on_deploy_clicked)
-	bottom.add_child(_deploy_btn)
-
-	_build_loadout_overlay()
-
-func _build_loadout_overlay() -> void:
-	_loadout_overlay = Control.new()
-	_loadout_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_loadout_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_loadout_overlay.visible = false
-	_root.add_child(_loadout_overlay)
-
-	var dim := ColorRect.new()
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.01, 0.02, 0.03, 0.82)
-	_loadout_overlay.add_child(dim)
-
-	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	panel.anchor_left = 0.16
-	panel.anchor_right = 0.84
-	panel.anchor_top = 0.08
-	panel.anchor_bottom = 0.92
-	panel.add_theme_stylebox_override("panel", _style(Color(0.07, 0.09, 0.11, 0.98), Color(0.85, 0.65, 0.20, 0.9)))
-	_loadout_overlay.add_child(panel)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	panel.add_child(vbox)
-
-	var header := Label.new()
-	header.text = "LOADOUT / КЛАСС И ОРУЖИЕ"
-	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.add_theme_font_size_override("font_size", 22)
-	header.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
-	vbox.add_child(header)
-
-	var role_label := Label.new()
-	role_label.text = "КЛАСС"
-	role_label.add_theme_font_size_override("font_size", 14)
-	role_label.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
-	vbox.add_child(role_label)
-
-	var role_grid := GridContainer.new()
-	role_grid.columns = 2
-	role_grid.add_theme_constant_override("h_separation", 8)
-	role_grid.add_theme_constant_override("v_separation", 6)
-	vbox.add_child(role_grid)
+func _build_role_buttons() -> void:
+	for child in _role_grid.get_children():
+		child.queue_free()
+	_role_buttons.clear()
 	for cls in CLASSES:
 		var role := str(cls.role)
 		var btn := Button.new()
@@ -277,36 +113,17 @@ func _build_loadout_overlay() -> void:
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.add_theme_font_size_override("font_size", 15)
 		btn.pressed.connect(func(): _choose_role(role))
-		role_grid.add_child(btn)
+		_role_grid.add_child(btn)
 		_role_buttons[role] = btn
-
-	var gun_label := Label.new()
-	gun_label.text = "ОСНОВНОЕ ОРУЖИЕ"
-	gun_label.add_theme_font_size_override("font_size", 14)
-	gun_label.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
-	vbox.add_child(gun_label)
-
-	_primary_grid = GridContainer.new()
-	_primary_grid.columns = 2
-	_primary_grid.add_theme_constant_override("h_separation", 8)
-	_primary_grid.add_theme_constant_override("v_separation", 6)
-	vbox.add_child(_primary_grid)
-
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(spacer)
-
-	var close_btn := Button.new()
-	close_btn.text = "ГОТОВО"
-	close_btn.custom_minimum_size = Vector2(0, 46)
-	close_btn.add_theme_font_size_override("font_size", 18)
-	close_btn.pressed.connect(func(): _loadout_overlay.visible = false)
-	vbox.add_child(close_btn)
 
 func _open_loadout() -> void:
 	_rebuild_primary_buttons()
 	_update_texts()
 	_loadout_overlay.visible = true
+
+func _close_loadout() -> void:
+	if _loadout_overlay != null:
+		_loadout_overlay.visible = false
 
 func _choose_role(role: String) -> void:
 	selected_role = _known_role(role)
@@ -389,10 +206,3 @@ func _primaries_for(role: String) -> Array:
 			return cls.primaries
 	return CLASSES[0].primaries
 
-func _style(bg: Color, border: Color, radius: int = 6) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.border_color = border
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(radius)
-	return style

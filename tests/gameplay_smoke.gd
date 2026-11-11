@@ -11,7 +11,7 @@ const SOLDIER_BOT_SCRIPT = preload("res://scripts/soldier_bot.gd")
 const PLAYER_SCRIPT = preload("res://scripts/player.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const BULLET_SCRIPT = preload("res://scripts/bullet_projectile.gd")
-const TACTICAL_DEPLOY = preload("res://scripts/tactical_deploy.gd")
+const TACTICAL_DEPLOY = preload("res://scenes/TacticalDeploy.tscn")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const HUD_CUSTOMIZER_SCRIPT = preload("res://scripts/hud_customizer.gd")
 const TACTICAL_BUILDINGS = preload("res://scripts/tactical_buildings.gd")
@@ -783,9 +783,9 @@ func _test_toggle_lean() -> void:
 
 func _test_tactical_deployment_screen() -> void:
 	# 1. Test FRONTLINETacticalDeploy standalone instantiation and API
-	_check(TACTICAL_DEPLOY != null, "tactical_deploy.gd script missing")
+	_check(TACTICAL_DEPLOY != null, "TacticalDeploy scene missing")
 	if TACTICAL_DEPLOY != null:
-		var deploy_ui = TACTICAL_DEPLOY.new()
+		var deploy_ui = TACTICAL_DEPLOY.instantiate()
 		add_child(deploy_ui)
 		deploy_ui.setup("IRON LEGION", [], [Vector3(0.0, 0.0, 10.0)])
 		_check(deploy_ui.has_signal("deployed"), "tactical deploy UI missing deployed signal")

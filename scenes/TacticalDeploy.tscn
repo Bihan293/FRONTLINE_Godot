@@ -1,0 +1,336 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/tactical_deploy.gd" id="1_8vcln"]
+[ext_resource type="Script" path="res://scripts/ui/deployment_map.gd" id="2_g81wi"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4o4ip"]
+bg_color = Color(0.07, 0.09, 0.11, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.65, 0.2, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dmi5c"]
+bg_color = Color(0.05, 0.08, 0.07, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.28, 0.4, 0.34, 0.8)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fqh0u"]
+bg_color = Color(0.06, 0.08, 0.1, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.28, 0.4, 0.34, 0.8)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8rjht"]
+bg_color = Color(0.2, 0.5, 0.25, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 1, 0.55, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_1i6iv"]
+bg_color = Color(0.16, 0.4, 0.2, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.9, 0.45, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_y0y5y"]
+bg_color = Color(0.07, 0.09, 0.11, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.65, 0.2, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="TacticalDeploy" type="CanvasLayer"]
+layer = 15
+script = ExtResource("1_8vcln")
+
+[node name="Root" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="@ColorRect@3" type="ColorRect" parent="Root"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.03, 0.05, 0.06, 0.86)
+
+[node name="@PanelContainer@4" type="PanelContainer" parent="Root"]
+layout_mode = 0
+anchor_right = 1.0
+offset_bottom = 64.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_4o4ip")
+
+[node name="@HBoxContainer@5" type="HBoxContainer" parent="Root/@PanelContainer@4"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="@Label@6" type="Label" parent="Root/@PanelContainer@4/@HBoxContainer@5"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
+theme_override_font_sizes/font_size = 22
+text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ"
+vertical_alignment = 1
+
+[node name="@Label@7" type="Label" parent="Root/@PanelContainer@4/@HBoxContainer@5"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "IRON LEGION"
+vertical_alignment = 1
+
+[node name="LoadoutButton" type="Button" parent="Root/@PanelContainer@4/@HBoxContainer@5"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "LOADOUT / СНАРЯЖЕНИЕ"
+
+[node name="@HBoxContainer@9" type="HBoxContainer" parent="Root"]
+layout_mode = 0
+anchor_left = 0.03
+anchor_top = 0.13
+anchor_right = 0.97
+anchor_bottom = 0.84
+theme_override_constants/separation = 18
+
+[node name="@PanelContainer@10" type="PanelContainer" parent="Root/@HBoxContainer@9"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.9
+theme_override_styles/panel = SubResource("StyleBoxFlat_dmi5c")
+
+[node name="@VBoxContainer@11" type="VBoxContainer" parent="Root/@HBoxContainer@9/@PanelContainer@10"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="@Label@12" type="Label" parent="Root/@HBoxContainer@9/@PanelContainer@10/@VBoxContainer@11"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.85, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "ВЫБЕРИ ТОЧКУ ВЫСАДКИ НА КАРТЕ"
+horizontal_alignment = 1
+
+[node name="DeploymentMap" type="Control" parent="Root/@HBoxContainer@9/@PanelContainer@10/@VBoxContainer@11"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 300)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_g81wi")
+
+[node name="@PanelContainer@14" type="PanelContainer" parent="Root/@HBoxContainer@9"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_fqh0u")
+
+[node name="@VBoxContainer@15" type="VBoxContainer" parent="Root/@HBoxContainer@9/@PanelContainer@14"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="@Label@16" type="Label" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
+theme_override_font_sizes/font_size = 16
+text = "ТОЧКА ВЫСАДКИ"
+
+[node name="SpawnLabel" type="Label" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.95, 0.9, 1)
+theme_override_font_sizes/font_size = 20
+text = "ГЛАВНАЯ БАЗА"
+
+[node name="@Label@18" type="Label" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.68, 0.74, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+text = "Нажми на карту, чтобы поставить маркер высадки. Серые здания и стены недоступны."
+autowrap_mode = 3
+
+[node name="@HSeparator@19" type="HSeparator" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+layout_mode = 2
+
+[node name="LoadoutSummary" type="Label" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 0.95, 1)
+theme_override_font_sizes/font_size = 14
+text = "КЛАСС: ШТУРМОВИК
+ОРУЖИЕ: AK-47
+
+Универсальный боец: автомат, гранаты Ф-1, дымовая шашка."
+autowrap_mode = 3
+
+[node name="ChangeLoadoutButton" type="Button" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "СМЕНИТЬ КЛАСС И ОРУЖИЕ"
+
+[node name="@Control@22" type="Control" parent="Root/@HBoxContainer@9/@PanelContainer@14/@VBoxContainer@15"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="@HBoxContainer@23" type="HBoxContainer" parent="Root"]
+layout_mode = 0
+anchor_left = 0.25
+anchor_top = 0.87
+anchor_right = 0.75
+anchor_bottom = 0.97
+alignment = 1
+
+[node name="DeployButton" type="Button" parent="Root/@HBoxContainer@23"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 58)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.4, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/hover = SubResource("StyleBoxFlat_8rjht")
+theme_override_styles/normal = SubResource("StyleBoxFlat_1i6iv")
+text = "В БОЙ / DEPLOY"
+
+[node name="LoadoutOverlay" type="Control" parent="Root"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="@ColorRect@26" type="ColorRect" parent="Root/LoadoutOverlay"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.01, 0.02, 0.03, 0.82)
+
+[node name="@PanelContainer@27" type="PanelContainer" parent="Root/LoadoutOverlay"]
+layout_mode = 0
+anchor_left = 0.16
+anchor_top = 0.08
+anchor_right = 0.84
+anchor_bottom = 0.92
+theme_override_styles/panel = SubResource("StyleBoxFlat_y0y5y")
+
+[node name="@VBoxContainer@28" type="VBoxContainer" parent="Root/LoadoutOverlay/@PanelContainer@27"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="@Label@29" type="Label" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
+theme_override_font_sizes/font_size = 22
+text = "LOADOUT / КЛАСС И ОРУЖИЕ"
+horizontal_alignment = 1
+
+[node name="@Label@30" type="Label" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.85, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "КЛАСС"
+
+[node name="RoleGrid" type="GridContainer" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="@Button@32" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28/RoleGrid"]
+modulate = Color(1.15, 1.15, 0.65, 1)
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "ШТУРМОВИК"
+
+[node name="@Button@33" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28/RoleGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "СНАЙПЕР"
+
+[node name="@Button@34" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28/RoleGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "САНИТАР"
+
+[node name="@Button@35" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28/RoleGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "БРОНЕБОЙЩИК"
+
+[node name="@Button@36" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28/RoleGrid"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "РАДИСТ"
+
+[node name="@Label@37" type="Label" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.85, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "ОСНОВНОЕ ОРУЖИЕ"
+
+[node name="PrimaryGrid" type="GridContainer" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="@Control@39" type="Control" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseLoadoutButton" type="Button" parent="Root/LoadoutOverlay/@PanelContainer@27/@VBoxContainer@28"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "ГОТОВО"

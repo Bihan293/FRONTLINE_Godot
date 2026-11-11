@@ -14,7 +14,7 @@ const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const TURRET_SCRIPT = preload("res://scripts/static_turret.gd")
 const JEEP_SCRIPT = preload("res://scripts/jeep.gd")
-const TACTICAL_DEPLOY_SCRIPT = preload("res://scripts/tactical_deploy.gd")
+const TACTICAL_DEPLOY_SCENE = preload("res://scenes/TacticalDeploy.tscn")
 
 const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
@@ -263,7 +263,7 @@ func open_tactical_deploy() -> void:
 	overhead_cam.current = true
 
 	# Создаем тактический интерфейс спавна и выбора экипировки
-	var deploy_ui = TACTICAL_DEPLOY_SCRIPT.new()
+	var deploy_ui = TACTICAL_DEPLOY_SCENE.instantiate()
 	add_child(deploy_ui)
 	_deploy_ui = deploy_ui
 	deploy_ui.tree_exited.connect(func(): _deploy_ui = null)
