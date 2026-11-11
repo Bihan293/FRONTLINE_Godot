@@ -1,6 +1,5 @@
 extends CharacterBody3D
 
-const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
@@ -12,8 +11,6 @@ const SFX_FOOTSTEPS = [
 	preload("res://assets/audio/footstep_002.ogg"),
 ]
 
-const MOUSE_SENS := 0.0022
-const TOUCH_SENS := 0.0030
 const SPEED := 5.2
 const SPRINT_SPEED := 7.4
 const JUMP_VELOCITY := 5.4
@@ -25,8 +22,13 @@ const HITBOX_LAYER_MASK := 1 << 1
 const SOLDIER_LAYER_MASK := 1 << 2
 const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
-var camera: Camera3D
-var audio_listener: AudioListener3D
+var _camera_rig := FRONTLINEPlayerCameraRig.new()
+var camera: Camera3D:
+	get:
+		return _camera_rig.camera
+var audio_listener: AudioListener3D:
+	get:
+		return _camera_rig.audio_listener
 var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var _weapon_view: FRONTLINEPlayerWeaponView
@@ -67,19 +69,11 @@ var breathing_time: float:
 var aim_blend := 0.0
 var aiming := false
 var look_sway := Vector2.ZERO
-var lean_amount := 0.0
-var lean_toggle := 0 # -1: наклон влево, 0: центр, 1: наклон вправо (Toggle Lean)
-var _last_key_q := false
-var _last_key_e := false
-var mobile_lean_left := false
-var mobile_lean_right := false
+var lean_toggle: int:
+	get:
+		return _camera_rig.lean_toggle
 
 # === BODYCAM / DUMMY WAR РЕАЛИЗМ ===
-var cam_yaw := 0.0
-var cam_pitch := 0.0
-var cam_roll := 0.0
-var last_applied_yaw := 0.0
-var cam_shake_trauma := 0.0
 var _equipment := FRONTLINEPlayerEquipment.new()
 var _combat := FRONTLINEPlayerCombat.new()
 var _weapons: FRONTLINEWeaponController:
@@ -214,8 +208,15 @@ var _player_hud: FRONTLINEPlayerHUD
 var hud: CanvasLayer:
 	get: return _player_hud if _player_hud != null else null
 
-var mobile_controls: MobileControls
-var mobile_move := Vector2.ZERO
+var _input := FRONTLINEPlayerInput.new()
+var mobile_controls: MobileControls:
+	get:
+		return _input.mobile_controls
+var mobile_move: Vector2:
+	get:
+		return _input.mobile_move
+	set(value):
+		_input.mobile_move = value
 var _vehicles := FRONTLINEPlayerVehicles.new()
 var mounted_vehicle: Node3D:
 	get: return _vehicles.vehicle
@@ -255,6 +256,7 @@ func _ready() -> void:
 	_health.setup(self, MAX_HEALTH)
 	_equipment.setup(self)
 	_combat.setup(self)
+	_input.setup(self)
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
@@ -265,6 +267,7 @@ func _ready() -> void:
 	_grenades.sound_requested.connect(_on_grenade_sound)
 	_equipment.init_inventory()
 	_build_player()
+	_camera_rig.setup(self)
 	_healing.setup(self, camera, MAX_HEALTH)
 	_drone.setup(self, camera, audio_listener)
 	_shovel.setup(self, camera)
@@ -276,14 +279,10 @@ func _ready() -> void:
 	_vault.setup(self, SPRINT_SPEED)
 	_build_body()
 	_audio.setup(self)
-	_build_mobile_controls()
+	_input.build_mobile_controls()
 	_build_hud()
 	if not OS.has_feature("mobile"):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	cam_yaw = yaw
-	cam_pitch = pitch
-	last_applied_yaw = yaw
-	_apply_look()
 
 func _build_player() -> void:
 	collision_layer = WORLD_LAYER_MASK
@@ -295,17 +294,6 @@ func _build_player() -> void:
 	player_collision.shape = player_capsule
 	player_collision.position.y = 0.975
 	add_child(player_collision)
-	camera = Camera3D.new()
-	camera.position = Vector3(0, 1.70, -0.08) # Нательное крепление бодикамеры (Bodycam)
-	camera.fov = GameSettings.fov
-	# Low-пресет: дальний план 170 м — меньше vertices/overdraw.
-	camera.far = GameSettings.view_distance()
-	camera.current = true
-	add_child(camera)
-	audio_listener = AudioListener3D.new()
-	audio_listener.name = "PlayerAudioListener"
-	camera.add_child(audio_listener)
-	audio_listener.make_current()
 
 func _build_weapon() -> void:
 	_weapon_view = FRONTLINEPlayerWeaponView.new()
@@ -398,20 +386,6 @@ func _set_aiming(enabled: bool) -> void:
 		return
 	aiming = enabled
 
-func _update_camera_fov(delta: float) -> void:
-	if camera == null:
-		return
-	var target_fov := GameSettings.fov
-	if aiming:
-		var wid: String = str(_weapon_data().id)
-		if wid == "kar98k":
-			target_fov *= 0.38
-		elif wid == "mosin":
-			target_fov *= 0.58
-		else:
-			target_fov *= 0.78
-	camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 9.0, 0.0, 1.0))
-
 func open_pause_menu() -> void:
 	if _player_hud != null:
 		_player_hud.open_pause()
@@ -448,52 +422,6 @@ func set_input_locked(locked: bool) -> void:
 func _play_sfx(audio_player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
 	_audio.play(audio_player, stream, volume_db, pitch)
 
-func _touch_ui_enabled() -> bool:
-	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
-
-func _build_mobile_controls() -> void:
-	# На ПК с мышью сенсорные кнопки только засоряют экран.
-	if not _touch_ui_enabled():
-		return
-	var layer := CanvasLayer.new()
-	layer.layer = 20
-	add_child(layer)
-	mobile_controls = MOBILE_CONTROLS.new()
-	layer.add_child(mobile_controls)
-	mobile_controls.move_changed.connect(_on_move_changed)
-	mobile_controls.look_delta.connect(_on_look_delta)
-	mobile_controls.fire_changed.connect(_on_fire_changed)
-	mobile_controls.aim_changed.connect(_set_aiming)
-	mobile_controls.reload_pressed.connect(_reload)
-	mobile_controls.stance_down_pressed.connect(_down_action)
-	mobile_controls.stance_up_pressed.connect(_up_action)
-	if mobile_controls.has_signal("grenade_changed"):
-		mobile_controls.grenade_changed.connect(_on_mobile_grenade_changed)
-	else:
-		mobile_controls.grenade_pressed.connect(_throw_grenade)
-	mobile_controls.smoke_pressed.connect(_throw_smoke)
-	mobile_controls.heal_pressed.connect(_use_heal)
-	if mobile_controls.has_signal("heal_released"):
-		mobile_controls.heal_released.connect(_on_heal_released)
-	mobile_controls.peek_left_changed.connect(_on_mobile_peek_left)
-	mobile_controls.peek_right_changed.connect(_on_mobile_peek_right)
-	mobile_controls.cycle_weapon_pressed.connect(func(): _cycle_weapon(1))
-	if mobile_controls.has_signal("equip_prev_pressed"):
-		mobile_controls.equip_prev_pressed.connect(func(): _cycle_equipment(-1))
-	if mobile_controls.has_signal("equip_next_pressed"):
-		mobile_controls.equip_next_pressed.connect(func(): _cycle_equipment(1))
-	if mobile_controls.has_signal("sidearm_pressed"):
-		mobile_controls.sidearm_pressed.connect(_toggle_sidearm)
-	if mobile_controls.has_signal("shovel_pressed"):
-		mobile_controls.shovel_pressed.connect(_on_shovel_button)
-	mobile_controls.interact_pressed.connect(_interact_with_pickup)
-	if mobile_controls.has_signal("drone_pressed"):
-		mobile_controls.drone_pressed.connect(_launch_drone)
-	if mobile_controls.has_signal("drone_vertical_changed"):
-		mobile_controls.drone_vertical_changed.connect(_on_drone_vertical_changed)
-	if player_role == "RADIO_OPERATOR":
-		mobile_controls.set_drone_visible(true)
-
 func _refresh_equipment_after_hud() -> void:
 	_refresh_equipment_icon()
 
@@ -508,49 +436,18 @@ func _build_hud() -> void:
 	_refresh_equipment()
 
 func _on_move_changed(value: Vector2) -> void:
-	mobile_move = value
+	_input.mobile_move = value
 
 func _on_look_delta(delta: Vector2) -> void:
-	if is_dead:
-		return
-	if _drone.look_delta(delta, TOUCH_SENS):
-		return
-	# QA-sweep bugfix: в технике взгляд идёт через тот же accumulate-путь —
-	# иначе на мобильных камера не вращалась после посадки. Чувствительность
-	# понижена: тяжёлая техника/турель наводится медленнее оружия.
-	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
-		var turret_sense := TOUCH_SENS * 0.62 * GameSettings.sensitivity_scale(false)
-		yaw -= delta.x * turret_sense
-		var mount_touch_pitch := delta.y * turret_sense
-		if GameSettings.invert_y:
-			mount_touch_pitch = -mount_touch_pitch
-		pitch = clampf(pitch - mount_touch_pitch, -1.35, 1.35)
-		return
-	var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
-	var mount_factor := 0.62 if (mounted_vehicle != null and is_instance_valid(mounted_vehicle)) else 1.0
-	var sense := TOUCH_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor * mount_factor
-	yaw -= delta.x * sense
-	var pitch_delta := delta.y * sense
-	if GameSettings.invert_y:
-		pitch_delta = -pitch_delta
-	pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
-	look_sway += Vector2(delta.x, delta.y) * 0.00035
-	look_sway = look_sway.limit_length(0.045)
-
-func _on_fire_changed(pressed: bool) -> void:
-	mobile_fire = pressed
-	if pressed and is_healing:
-		_cancel_healing()
-	if pressed:
-		_drone.detonate()
+	_input.preview_look(delta)
 
 func _on_mobile_peek_left(pressed: bool) -> void:
 	if pressed:
-		lean_toggle = 0 if lean_toggle == -1 else -1
+		_camera_rig.toggle_lean(-1)
 
 func _on_mobile_peek_right(pressed: bool) -> void:
 	if pressed:
-		lean_toggle = 0 if lean_toggle == 1 else 1
+		_camera_rig.toggle_lean(1)
 
 func _on_drone_vertical_changed(direction: float, pressed: bool) -> void:
 	_drone.set_vertical_input(direction, pressed)
@@ -559,85 +456,7 @@ func _launch_drone() -> void:
 	_drone.toggle_launch()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if is_dead or input_locked:
-		return
-	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
-		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			var sense := MOUSE_SENS * GameSettings.sensitivity_scale(false)
-			yaw -= event.relative.x * sense
-			var mount_pitch_delta: float = event.relative.y * sense
-			if GameSettings.invert_y:
-				mount_pitch_delta = -mount_pitch_delta
-			pitch = clampf(pitch - mount_pitch_delta, -1.35, 1.35)
-			look_sway += Vector2(event.relative.x, event.relative.y) * 0.00006
-			look_sway = look_sway.limit_length(0.035)
-		elif event is InputEventKey and event.pressed and not event.echo:
-			if event.keycode == KEY_F:
-				_exit_vehicle()
-			elif event.keycode == KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		return
-	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
-		_vehicles.vehicle = null
-	if event is InputEventKey and not event.pressed and event.keycode == KEY_H:
-		_healing.release_hold()
-		return
-	if _drone.handle_input(event):
-		return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
-		var sense := MOUSE_SENS * GameSettings.sensitivity_scale(aiming) * zoom_factor
-		yaw -= event.relative.x * sense
-		var pitch_delta: float = event.relative.y * sense
-		if GameSettings.invert_y:
-			pitch_delta = -pitch_delta
-		pitch = clampf(pitch - pitch_delta, -1.35, 1.35)
-		look_sway += Vector2(event.relative.x, event.relative.y) * 0.00035
-		look_sway = look_sway.limit_length(0.045)
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not OS.has_feature("mobile"):
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		else:
-			_shoot()
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		if is_shovel_equipped:
-			_use_shovel_action(true)
-		else:
-			_set_aiming(not aiming)
-	elif event is InputEventMouseButton and event.pressed and not OS.has_feature("mobile"):
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_cycle_weapon(-1)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_cycle_weapon(1)
-	elif event is InputEventKey:
-		if event.keycode == KEY_G:
-			if event.pressed and not event.echo:
-				_start_grenade_hold()
-			elif not event.pressed:
-				_release_grenade_throw()
-			return
-		if not event.pressed or event.echo:
-			return
-		if event.keycode == KEY_9:
-			_toggle_sidearm()
-		elif event.keycode == KEY_0 or event.keycode == KEY_B:
-			_toggle_shovel()
-		elif event.keycode == KEY_R:
-			_reload()
-		elif event.keycode == KEY_C:
-			_down_action()
-		elif event.keycode == KEY_SPACE:
-			_up_action()
-		elif event.keycode == KEY_X or event.keycode == KEY_T:
-			_throw_smoke()
-		elif event.keycode == KEY_H:
-			_use_heal()
-		elif event.keycode >= KEY_1 and event.keycode <= KEY_8:
-			_select_weapon_slot(event.keycode - KEY_1)
-		elif event.keycode == KEY_F:
-			_interact_with_pickup()
-		elif event.keycode == KEY_ESCAPE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_input.handle(event)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -692,7 +511,7 @@ func _physics_process(delta: float) -> void:
 		_player_hud.set_scope(scoped_ads)
 		_player_hud.set_crosshair_visible(not is_dead and active_drone == null)
 	_update_viewmodel_visibility(scoped_ads)
-	_update_camera_fov(delta)
+	_camera_rig.update_fov(delta)
 	_healing.tick(delta)
 
 	# Визуал оружия обновляется отдельным компонентом.
@@ -729,44 +548,13 @@ func _physics_process(delta: float) -> void:
 	var target_height := 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
 	player_capsule.height = lerpf(player_capsule.height, target_height, clampf(delta * 10.0, 0.0, 1.0))
 	player_collision.position.y = player_capsule.height * 0.5
-	var target_y := 1.70 if stance == 0 else (1.28 if stance == 1 else 0.52)
-	var run_boost := 1.0 + sprint_anim * 0.9
-	var bob_factor := 0.20 if aiming else 1.0
-	var cam_bob_y := absf(sin(bob_time * 2.0)) * 0.014 * run_boost * bob_factor
-	var cam_bob_x := sin(bob_time) * 0.010 * run_boost * bob_factor
-	var key_q := Input.is_key_pressed(KEY_Q)
-	var key_e := Input.is_key_pressed(KEY_E)
-	if key_q and not _last_key_q:
-		lean_toggle = 0 if lean_toggle == -1 else -1
-	if key_e and not _last_key_e:
-		lean_toggle = 0 if lean_toggle == 1 else 1
-	_last_key_q = key_q
-	_last_key_e = key_e
-	if is_vaulting or planar_speed > SPEED + 0.4 or current_speed >= SPRINT_SPEED - 0.1:
-		lean_toggle = 0
-	var lean_input := float(lean_toggle)
-	var lean_side := lean_input * 0.42
-	if absf(lean_side) > 0.01:
-		var lean_from := global_position + Vector3.UP * target_y
-		var lean_to := lean_from + transform.basis.x * lean_side
-		var lean_query := PhysicsRayQueryParameters3D.create(lean_from, lean_to)
-		lean_query.collision_mask = WORLD_LAYER_MASK
-		lean_query.exclude = [self]
-		lean_query.collide_with_areas = false
-		var lean_hit := get_world_3d().direct_space_state.intersect_ray(lean_query)
-		if lean_hit:
-			var available := maxf(0.0, lean_from.distance_to(lean_hit.position) - 0.12)
-			lean_side = signf(lean_side) * minf(absf(lean_side), available)
-	var lean_target := lean_side / 0.42
-	lean_amount = lerpf(lean_amount, lean_target, clampf(delta * 12.0, 0.0, 1.0))
-	camera.position.y = lerpf(camera.position.y, target_y + cam_bob_y - landing_anim * 0.09, delta * 12.0)
-	camera.position.x = lerpf(camera.position.x, cam_bob_x + lean_amount * 0.42, delta * 12.0)
+	_camera_rig.process_lean_and_position(delta, planar_speed, current_speed)
 	if player_body != null:
 		player_body.set_motion(planar_speed, planar_speed > SPEED + 0.5)
 		player_body.set_stance(stance)
 		var look_down := clampf((-pitch - 0.22) / 0.45, 0.0, 1.0)
 		player_body.set_look_down(look_down)
-	_apply_look(delta)
+	_camera_rig.apply_look(delta)
 
 ## === Техника и турели (TASK-0012) ===
 
@@ -783,48 +571,13 @@ func _nearest_enterable() -> Node3D:
 	return _vehicles.nearest_enterable()
 
 func _apply_look(delta: float = 0.016) -> void:
-	rotation.y = yaw
-	var strafe_roll := -mobile_move.x * deg_to_rad(2.2) if not aiming else 0.0
-
-	# Инерция и упругий лаг нательной камеры (Bodycam)
-	var cam_lag_speed := lerpf(16.0, 38.0, aim_blend)
-	cam_yaw = lerp_angle(cam_yaw, yaw, clampf(delta * cam_lag_speed, 0.0, 1.0))
-	cam_pitch = lerpf(cam_pitch, pitch, clampf(delta * cam_lag_speed, 0.0, 1.0))
-	var yaw_diff := wrapf(cam_yaw - yaw, -PI, PI)
-	var yaw_speed := (yaw - last_applied_yaw) / maxf(delta, 0.001)
-	last_applied_yaw = yaw
-	var turn_roll := clampf(-yaw_speed * 0.010, -deg_to_rad(3.5), deg_to_rad(3.5)) * (1.0 - aim_blend * 0.85)
-
-	# Сотрясение камеры (Травма от выстрелов и взрывов)
-	cam_shake_trauma = maxf(0.0, cam_shake_trauma - delta * 4.2)
-	var shake_mag := cam_shake_trauma * cam_shake_trauma
-	var shake_rot := Vector3(
-		randf_range(-1.0, 1.0) * deg_to_rad(2.2) * shake_mag,
-		randf_range(-1.0, 1.0) * deg_to_rad(1.8) * shake_mag,
-		randf_range(-1.0, 1.0) * deg_to_rad(2.5) * shake_mag
-	)
-
-	var run_boost := 1.0 + sprint_anim * 0.9
-	var bob_factor := 0.20 if aiming else 1.0
-	var cam_bob_roll := cos(bob_time) * deg_to_rad(1.3 * run_boost) * bob_factor if not aiming else 0.0
-
-	var total_roll := -lean_amount * deg_to_rad(9.5) + strafe_roll + turn_roll + cam_bob_roll + shake_rot.z
-	camera.rotation = Vector3(
-		clampf(cam_pitch + recoil.y - landing_anim * deg_to_rad(3.5) + shake_rot.x, -1.45, 1.45),
-		yaw_diff * 0.65 + recoil.x + shake_rot.y,
-		total_roll
-	)
+	_camera_rig.apply_look(delta)
 
 func add_camera_trauma(amount: float) -> void:
-	cam_shake_trauma = clampf(cam_shake_trauma + amount, 0.0, 1.0)
+	_camera_rig.add_trauma(amount)
 
 func apply_explosion_shake(explosion_pos: Vector3, radius: float = 32.0, max_trauma: float = 0.95) -> void:
-	var dist := global_position.distance_to(explosion_pos)
-	if dist < radius:
-		var factor := 1.0 - (dist / radius)
-		add_camera_trauma(factor * max_trauma)
-		recoil.y += factor * 0.08
-		recoil.x += randf_range(-factor, factor) * 0.06
+	_camera_rig.apply_explosion_shake(explosion_pos, radius, max_trauma)
 
 func _down_action() -> void:
 	if is_dead or input_locked:

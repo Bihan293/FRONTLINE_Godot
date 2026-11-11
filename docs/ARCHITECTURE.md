@@ -35,7 +35,7 @@
 | Фабрика контента (меши, layout) | без жёсткого лимита, но только данные/построение |
 | Функция | до 60–80 строк; больше — разбить |
 
-`player.gd` (~960 строк), `soldier_bot.gd` (~730) и `battlefield.gd` (~540) —
+`player.gd` (~710 строк), `soldier_bot.gd` (~730) и `battlefield.gd` (~540) —
 оставшийся технический долг. Новые фичи туда не добавляем без выделения компонента.
 
 ## 4. Направление зависимостей
@@ -90,7 +90,9 @@ HUD-кастомайзер — живут в `scenes/*.tscn`. Их скрипт�
    UI-слой закрыт.
 8. **Сделано:** `PlayerVault`, `PlayerHealing`, `PlayerDrone`, `PlayerAudio`,
    `PlayerHealth`, `PlayerShovel`, `PlayerEquipment`, `PlayerCombat`,
-   `PlayerLocomotion`. `player.gd` уменьшен с 1958 до 958 строк.
+   `PlayerLocomotion`, `PlayerCameraRig`, `PlayerInput`.
+   `player.gd` уменьшен с 1958 до 711 строк; остались сборка узлов,
+   порядок кадра и forwarding-свойства.
 9. **Сделано:** `gdlint` в CI. Конфигурация — `.gdlintrc`; проверяются
    `scripts`, `tests`, `tools`.
 

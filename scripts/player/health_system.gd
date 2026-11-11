@@ -169,8 +169,6 @@ func respawn() -> void:
 			controls.call("set_drone_mode", false)
 	_player.set("stance", 0)
 	_player.set("lean_amount", 0.0)
-	_player.set("mobile_lean_left", false)
-	_player.set("mobile_lean_right", false)
 	_player.position = respawn_position
 	if camera != null:
 		camera.position = Vector3(0, 1.80, -0.10)

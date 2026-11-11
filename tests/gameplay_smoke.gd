@@ -637,7 +637,6 @@ func _test_bodycam_kinematics_and_camera_safety() -> void:
 		_check(cam.position.y < 1.65, "camera did not lower in crouch stance: %f" % cam.position.y)
 
 		# Lean calculation check
-		player.set("mobile_lean_right", true)
 		player.call("_physics_process", 0.016)
 		_check(absf(cam.position.x) >= 0.0, "camera lean calculation failed")
 
