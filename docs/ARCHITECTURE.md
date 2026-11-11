@@ -35,7 +35,7 @@
 | Фабрика контента (меши, layout) | без жёсткого лимита, но только данные/построение |
 | Функция | до 60–80 строк; больше — разбить |
 
-`player.gd` (~960 строк), `soldier_bot.gd` (~800) и `battlefield.gd` (~700) —
+`player.gd` (~960 строк), `soldier_bot.gd` (~730) и `battlefield.gd` (~540) —
 оставшийся технический долг. Новые фичи туда не добавляем без выделения компонента.
 
 ## 4. Направление зависимостей
@@ -81,10 +81,10 @@ HUD-кастомайзер — живут в `scenes/*.tscn`. Их скрипт�
    `PlayerWeaponView` + `PlayerViewArms` (модель, вспышка, покачивание, IK-руки).
 3. **Сделано:** `PlayerHUD` — здоровье, патроны, урон, кровь, смерть, пауза.
 4. **Сделано:** `PlayerGrenades`, `PlayerVehicles`, `PlayerPickups`.
-5. **Сделано:** `BotMotor`, `BotVisuals`, `BotCombat`, `BotPerception` — бот
-   разбит на движение, визуал, стрельбу и восприятие.
-6. **Сделано:** `BattlefieldHUD` и `BattlefieldWorld` — battlefield разбит на
-   HUD, мир и оркестрацию.
+5. **Сделано:** `BotMotor`, `BotVisuals`, `BotCombat`, `BotPerception`,
+   `BotBody` — бот разбит на движение, визуал, стрельбу, восприятие и тело.
+6. **Сделано:** `BattlefieldHUD`, `BattlefieldWorld`, `BattlefieldMatch` —
+   battlefield разбит на HUD, мир, матч и оркестрацию.
 7. **Сделано:** все UI-экраны в `.tscn`: `TacticalDeploy`, `MainMenu`,
    `PlayerHUD`, `BattlefieldHUD`, `PauseMenu`, `HUDCustomizer`.
    UI-слой закрыт.
