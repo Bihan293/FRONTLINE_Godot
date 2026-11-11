@@ -50,6 +50,7 @@ func _ready() -> void:
 	await _test_tactical_commercial_props_pack()
 	await _test_main_menu_match_state()
 	await _test_player_hud_scene()
+	await _test_battlefield_hud_scene()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -1145,6 +1146,24 @@ func _test_player_hud_scene() -> void:
 	_check(bool(hud.call("is_death_visible")), "HUD death screen did not open")
 	hud.call("hide_death")
 	_check(not bool(hud.call("is_death_visible")), "HUD death screen did not close")
+	hud.queue_free()
+	await get_tree().process_frame
+
+func _test_battlefield_hud_scene() -> void:
+	var packed: PackedScene = load("res://scenes/BattlefieldHUD.tscn")
+	_check(packed != null, "BattlefieldHUD scene missing")
+	if packed == null:
+		return
+	var hud: CanvasLayer = packed.instantiate()
+	add_child(hud)
+	await get_tree().process_frame
+	_check(hud.get("score_label") != null, "battle HUD score label missing")
+	_check(hud.get("killfeed_container") != null, "battle HUD killfeed missing")
+	_check(hud.get("compass") != null, "battle HUD compass missing")
+	_check(hud.get("minimap") != null, "battle HUD minimap missing")
+	hud.call("refresh_score", "CONQUEST", 12, 34)
+	var score: Label = hud.get("score_label")
+	_check(score.text.contains("12") and score.text.contains("34"), "battle HUD score text not updated")
 	hud.queue_free()
 	await get_tree().process_frame
 

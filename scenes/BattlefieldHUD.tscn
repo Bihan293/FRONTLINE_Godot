@@ -1,0 +1,63 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/battlefield_hud.gd" id="1_gbrfh"]
+[ext_resource type="Script" path="res://scripts/compass_bar.gd" id="2_ilsyg"]
+[ext_resource type="Script" path="res://scripts/minimap.gd" id="3_6c747"]
+
+[node name="BattlefieldHUD" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_gbrfh")
+
+[node name="TopPanel" type="PanelContainer" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 320.0
+offset_top = 16.0
+offset_right = -320.0
+offset_bottom = 68.0
+
+[node name="TopBox" type="HBoxContainer" parent="TopPanel"]
+layout_mode = 2
+theme_override_constants/separation = 28
+alignment = 1
+
+[node name="ScoreLabel" type="Label" parent="TopPanel/TopBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+
+[node name="SectorBox" type="HBoxContainer" parent="TopPanel/TopBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Killfeed" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+offset_left = 24.0
+offset_top = 320.0
+offset_right = 340.0
+offset_bottom = 470.0
+theme_override_constants/separation = 4
+
+[node name="Compass" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -190.0
+offset_top = 74.0
+offset_right = 190.0
+offset_bottom = 110.0
+script = ExtResource("2_ilsyg")
+
+[node name="Minimap" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 0
+offset_left = 24.0
+offset_top = 124.0
+offset_right = 212.0
+offset_bottom = 312.0
+script = ExtResource("3_6c747")

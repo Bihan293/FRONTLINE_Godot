@@ -15,6 +15,7 @@ const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const TURRET_SCRIPT = preload("res://scripts/static_turret.gd")
 const JEEP_SCRIPT = preload("res://scripts/jeep.gd")
 const TACTICAL_DEPLOY_SCENE = preload("res://scenes/TacticalDeploy.tscn")
+const BATTLEFIELD_HUD_SCENE = preload("res://scenes/BattlefieldHUD.tscn")
 
 const TDM_TARGET_KILLS := 50
 const MAX_ACTIVE_BULLETS := 192
@@ -480,7 +481,7 @@ func add_kill() -> void:
 	score_kills += 1
 
 func _build_hud() -> void:
-	battlefield_hud = FRONTLINEBattlefieldHUD.new()
+	battlefield_hud = BATTLEFIELD_HUD_SCENE.instantiate() as FRONTLINEBattlefieldHUD
 	add_child(battlefield_hud)
 	var layout = _layout()
 	battlefield_hud.setup(sector_data, player, _active_bots, layout.spawns_iron(), layout.spawns_red())
