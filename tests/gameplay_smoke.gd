@@ -49,6 +49,7 @@ func _ready() -> void:
 	await _test_tactical_street_props_pack()
 	await _test_tactical_commercial_props_pack()
 	await _test_main_menu_match_state()
+	await _test_player_hud_scene()
 	_report()
 
 func _check(condition: bool, message: String) -> void:
@@ -1126,6 +1127,26 @@ func _test_main_menu_match_state() -> void:
 	_check(not MatchState.has_spawn_position, "MatchState did not clear spawn")
 
 	MatchState.configure("BATTLEFIELD", "CONQUEST", "IRON LEGION", "ASSAULT", 7, 1)
+
+func _test_player_hud_scene() -> void:
+	var packed: PackedScene = load("res://scenes/PlayerHUD.tscn")
+	_check(packed != null, "PlayerHUD scene missing")
+	if packed == null:
+		return
+	var hud: CanvasLayer = packed.instantiate()
+	add_child(hud)
+	await get_tree().process_frame
+	_check(hud.get("health_label") != null, "HUD health label missing")
+	_check(hud.get("ammo_label") != null, "HUD ammo label missing")
+	_check(hud.get("crosshair") != null, "HUD crosshair missing")
+	var deploy_button := hud.get_node_or_null("%DeployButton") as Button
+	_check(deploy_button != null, "HUD deploy button missing")
+	hud.call("show_death", "TEST")
+	_check(bool(hud.call("is_death_visible")), "HUD death screen did not open")
+	hud.call("hide_death")
+	_check(not bool(hud.call("is_death_visible")), "HUD death screen did not close")
+	hud.queue_free()
+	await get_tree().process_frame
 
 func _test_weapon_controller() -> void:
 	var controller := FRONTLINEWeaponController.new()

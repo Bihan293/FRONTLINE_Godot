@@ -10,6 +10,7 @@ const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
 const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
 const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
+const PLAYER_HUD_SCENE = preload("res://scenes/PlayerHUD.tscn")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
 const SFX_EMPTY = preload("res://assets/audio/empty.ogg")
@@ -688,7 +689,7 @@ func _refresh_equipment_after_hud() -> void:
 	_refresh_equipment_icon()
 
 func _build_hud() -> void:
-	_player_hud = FRONTLINEPlayerHUD.new()
+	_player_hud = PLAYER_HUD_SCENE.instantiate() as FRONTLINEPlayerHUD
 	add_child(_player_hud)
 	_player_hud.setup(self)
 	_player_hud.pause_resumed.connect(_on_pause_resumed)

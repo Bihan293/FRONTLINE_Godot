@@ -1,0 +1,275 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/player/player_hud.gd" id="1_ipqub"]
+[ext_resource type="Shader" path="res://shaders/bodycam_vignette.gdshader" id="2_4fs35"]
+[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_mhckq"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_206cq"]
+shader = ExtResource("2_4fs35")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7gh25"]
+bg_color = Color(0.06, 0.09, 0.06, 0.85)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8gqok"]
+bg_color = Color(0.3, 0.85, 0.35, 0.95)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="PlayerHUD" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1_ipqub")
+
+[node name="BloodOverlay" type="ColorRect" parent="."]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.7, 0, 0, 0)
+
+[node name="BodycamVignette" type="ColorRect" parent="."]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_206cq")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="BodycamOSD" type="VBoxContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -440.0
+offset_top = 16.0
+offset_right = -120.0
+offset_bottom = 64.0
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="BodycamLine" type="HBoxContainer" parent="BodycamOSD"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="CamTitle" type="Label" parent="BodycamOSD/BodycamLine"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.92, 0.94, 0.96, 0.88)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+text = "AXON BODY 4   "
+
+[node name="RecDot" type="Label" parent="BodycamOSD/BodycamLine"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(1, 0.18, 0.15, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+text = "● REC"
+
+[node name="OsdLabel" type="Label" parent="BodycamOSD"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.85, 0.88, 0.9, 0.8)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+text = "2026-11-08 14:32:05Z   BAT 94%"
+
+[node name="Crosshair" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("3_mhckq")
+
+[node name="HealthBox" type="HBoxContainer" parent="."]
+offset_left = 28.0
+offset_top = 24.0
+offset_right = 260.0
+offset_bottom = 60.0
+theme_override_constants/separation = 10
+
+[node name="HealthLabel" type="Label" parent="HealthBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.9, 0.9, 1)
+text = "HP 100"
+
+[node name="HealthBar" type="ProgressBar" parent="HealthBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 22)
+layout_mode = 2
+size_flags_vertical = 4
+value = 100.0
+show_percentage = false
+
+[node name="HealProgressBar" type="ProgressBar" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -170.0
+offset_top = -150.0
+offset_right = 170.0
+offset_bottom = -134.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_7gh25")
+theme_override_styles/fill = SubResource("StyleBoxFlat_8gqok")
+show_percentage = false
+
+[node name="AmmoLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -390.0
+offset_top = -78.0
+offset_right = -24.0
+offset_bottom = -38.0
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(1, 1, 1, 0.95)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="EquipLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -640.0
+offset_top = -112.0
+offset_right = -24.0
+offset_bottom = -82.0
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.92, 0.82, 0.55, 1)
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="PickupLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_top = -92.0
+offset_right = 220.0
+offset_bottom = -54.0
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.97, 0.88, 0.55, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DamageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -90.0
+offset_top = -78.0
+offset_right = 90.0
+offset_bottom = -34.0
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(1, 0.16, 0.12, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0, 0, 0.95)
+theme_override_constants/outline_size = 7
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DeathScreen" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="DeathBackground" type="ColorRect" parent="DeathScreen"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.12, 0.02, 0.02, 0.75)
+
+[node name="DeathCenter" type="VBoxContainer" parent="DeathScreen"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -140.0
+offset_right = 220.0
+offset_bottom = 140.0
+theme_override_constants/separation = 16
+
+[node name="DeathTitle" type="Label" parent="DeathScreen/DeathCenter"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 42
+theme_override_colors/font_color = Color(1, 0.25, 0.2, 1)
+text = "ПОГИБ В БОЮ (K.I.A.)"
+horizontal_alignment = 1
+
+[node name="DeathInfoLabel" type="Label" parent="DeathScreen/DeathCenter"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+text = "Вы были сражены в бою"
+horizontal_alignment = 1
+
+[node name="DeployButton" type="Button" parent="DeathScreen/DeathCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 56)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "ТАКТИЧЕСКИЙ ДЕПЛОЙ (DEPLOY)"
+
+[node name="MenuButton" type="Button" parent="DeathScreen/DeathCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "В ГЛАВНОЕ МЕНЮ"
+
+[node name="PauseButton" type="Button" parent="."]
+unique_name_in_owner = true
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -108.0
+offset_top = 16.0
+offset_right = -20.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 18
+text = "II"
