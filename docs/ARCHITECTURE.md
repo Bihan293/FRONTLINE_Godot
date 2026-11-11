@@ -35,7 +35,7 @@
 | Фабрика контента (меши, layout) | без жёсткого лимита, но только данные/построение |
 | Функция | до 60–80 строк; больше — разбить |
 
-`player.gd` (~1300 строк), `soldier_bot.gd` (~800) и `battlefield.gd` (~700) —
+`player.gd` (~1200 строк), `soldier_bot.gd` (~800) и `battlefield.gd` (~700) —
 оставшийся технический долг. Новые фичи туда не добавляем без выделения компонента.
 
 ## 4. Направление зависимостей
@@ -89,8 +89,8 @@ HUD-кастомайзер — живут в `scenes/*.tscn`. Их скрипт�
    `PlayerHUD`, `BattlefieldHUD`, `PauseMenu`, `HUDCustomizer`.
    UI-слой закрыт.
 8. **Сделано:** `PlayerVault`, `PlayerHealing`, `PlayerDrone`, `PlayerAudio`,
-   `PlayerHealth`, `PlayerShovel`.
-   `player.gd` уменьшен с 1958 до 1324 строк.
+   `PlayerHealth`, `PlayerShovel`, `PlayerEquipment`.
+   `player.gd` уменьшен с 1958 до 1165 строк.
 9. Включить `gdlint` в CI после того, как долг опустится до нуля.
 
 Каждый этап — отдельный PR, игра остаётся запускаемой после каждого коммита.

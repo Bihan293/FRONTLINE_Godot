@@ -82,7 +82,10 @@ var cam_pitch := 0.0
 var cam_roll := 0.0
 var last_applied_yaw := 0.0
 var cam_shake_trauma := 0.0
-var _weapons := FRONTLINEWeaponController.new()
+var _equipment := FRONTLINEPlayerEquipment.new()
+var _weapons: FRONTLINEWeaponController:
+	get:
+		return _equipment.weapons
 var current_weapon_index: int:
 	get: return _weapons.current_index
 	set(value): _weapons.current_index = value
@@ -159,7 +162,11 @@ var heal_view_root: Node3D:
 	get:
 		return _healing.heal_view_root
 var throwable_cooldown := 0.0
-var player_role := "ASSAULT"
+var player_role: String:
+	get:
+		return _equipment.role
+	set(value):
+		_equipment.role = value
 var _drone := FRONTLINEPlayerDrone.new()
 var active_drone: CharacterBody3D:
 	get:
@@ -248,6 +255,7 @@ var sfx_kill: AudioStreamPlayer:
 func _ready() -> void:
 	add_to_group("player")
 	_health.setup(self, MAX_HEALTH)
+	_equipment.setup(self)
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(48.0)
 	respawn_position = position
@@ -256,7 +264,7 @@ func _ready() -> void:
 	_pickups.setup(self)
 	_grenades.equipment_changed.connect(_refresh_equipment)
 	_grenades.sound_requested.connect(_on_grenade_sound)
-	_init_weapon_inventory()
+	_equipment.init_inventory()
 	_build_player()
 	_healing.setup(self, camera, MAX_HEALTH)
 	_drone.setup(self, camera, audio_listener)
@@ -318,202 +326,35 @@ func _equip_weapon_visual() -> void:
 	var weapon_id := "entrenching_shovel" if is_shovel_equipped else str(_weapon_data().id)
 	_weapon_view.equip(weapon_id, is_shovel_equipped)
 
-func _init_weapon_inventory() -> void:
-	player_role = _normalize_role(MatchState.player_role)
-	_configure_role_loadout(player_role)
-
-	# Пресет снаряжения, выбранный на экране развёртывания.
-	match MatchState.loadout_preset:
-		"ASSAULT":
-			grenades += 1
-			medkits = maxi(1, medkits - 1)
-		"SURVIVAL":
-			grenades = maxi(0, grenades - 1)
-			medkits += 1
-
-	var chosen_primary := MatchState.primary_weapon_index
-	if chosen_primary >= 0 and chosen_primary < FRONTLINEWeaponCatalog.count():
-		_weapons.set_primary_slot(chosen_primary)
-	_weapons.select_primary(true)
-
-	var chosen_grenades := MatchState.grenades_override
-	if chosen_grenades >= 0:
-		grenades = chosen_grenades
-	var chosen_smoke := MatchState.smoke_override
-	if chosen_smoke >= 0:
-		smoke_grenades = chosen_smoke
-	var chosen_medkits := MatchState.medkits_override
-	if chosen_medkits >= 0:
-		medkits = chosen_medkits
-	var chosen_rockets := MatchState.rockets_override
-	if chosen_rockets >= 0:
-		_weapons.set_reserve_for(7, chosen_rockets)
-
-func _normalize_role(role: String) -> String:
-	match role:
-		"SNIPER", "ANTI_TANK", "MEDIC", "RADIO_OPERATOR":
-			return role
-		_:
-			return "ASSAULT"
-
-## Единственное место, где задаются роль и стартовое снаряжение.
-## Оружейные слоты и патроны живут в FRONTLINEWeaponController.
-func _configure_role_loadout(role: String) -> void:
-	player_role = _normalize_role(role)
-	_weapons.configure_role(player_role)
-	match player_role:
-		"SNIPER":
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-			_drone.charge_available = false
-		"ANTI_TANK":
-			grenades = 1
-			smoke_grenades = 1
-			medkits = 2
-			_drone.charge_available = false
-		"MEDIC":
-			grenades = 2
-			smoke_grenades = 2
-			medkits = 5
-			_drone.charge_available = false
-		"RADIO_OPERATOR":
-			grenades = 1
-			smoke_grenades = 2
-			medkits = 2
-			_drone.charge_available = true
-		_:
-			player_role = "ASSAULT"
-			grenades = 3
-			smoke_grenades = 2
-			medkits = 2
-			_drone.charge_available = false
-
-func _set_primary_slot(index: int) -> void:
-	_weapons.set_primary_slot(index)
+func _configure_role_loadout(role_name: String) -> void:
+	_equipment.configure_role(role_name)
 
 ## Публичный вход для экрана деплоя: роль и основное оружие переносятся
 ## между смертями, а не сбрасываются на ASSAULT.
-func apply_loadout(role: String, primary_index: int) -> void:
-	_configure_role_loadout(role)
-	if primary_index >= 0 and primary_index < FRONTLINEWeaponCatalog.count():
-		_weapons.set_primary_slot(primary_index)
-	_weapons.select_primary(true)
-	is_shovel_equipped = false
-	_equip_weapon_visual()
-	_refresh_ammo()
-	_refresh_equipment()
+func apply_loadout(role_name: String, primary_index: int) -> void:
+	_equipment.apply_loadout(role_name, primary_index)
 
 func _weapon_data() -> FRONTLINEWeaponDef:
-	return _weapons.current_def()
+	return _equipment.weapon_data()
 
 func _switch_weapon(index: int) -> void:
-	if is_dead or index < 0 or index >= FRONTLINEWeaponCatalog.count() or _grenades.is_busy():
-		return
-	if not role_weapon_indices.has(index):
-		return
-	var was_shovel_equipped := is_shovel_equipped
-	is_shovel_equipped = false
-	if index == current_weapon_index:
-		if was_shovel_equipped:
-			_equip_weapon_visual()
-			_refresh_ammo()
-		return
-	if not _weapons.switch_to(index):
-		return
-	_set_aiming(false)
-	if mobile_controls != null and mobile_controls.has_method("reset_aim"):
-		mobile_controls.call("reset_aim")
-	weapon_kick = 0.0
-	if weapon_mount != null:
-		weapon_mount.rotation = Vector3.ZERO
-	_equip_weapon_visual()
-	_refresh_ammo()
-	_play_sfx(sfx_ui, SFX_UI, -6.0, 1.0)
+	_equipment.switch_weapon(index)
 
 ## QA-fix TASK-0022: цикл снаряжения в руке — автомат → пистолет → лопата.
-## Вызывается стрелками «влево/вправо» у иконки оружия в HUD.
 func _cycle_equipment(direction: int) -> void:
-	if is_dead or input_locked or active_drone != null or mounted_vehicle != null:
-		return
-	if _grenades.is_busy():
-		return
-	var cur := "primary"
-	if is_shovel_equipped:
-		cur = "shovel"
-	elif current_weapon_index == SIDEARM_INDEX:
-		cur = "sidearm"
-	var order := ["primary", "sidearm", "shovel"]
-	var idx: int = order.find(cur)
-	idx = posmod(idx + direction, order.size())
-	match str(order[idx]):
-		"primary":
-			if is_shovel_equipped:
-				is_shovel_equipped = false
-				_equip_weapon_visual()
-				_refresh_ammo()
-			if current_weapon_index == SIDEARM_INDEX:
-				_switch_weapon(last_primary_weapon_index)
-		"sidearm":
-			if is_shovel_equipped:
-				is_shovel_equipped = false
-				_equip_weapon_visual()
-			if current_weapon_index != SIDEARM_INDEX:
-				_toggle_sidearm()
-		"shovel":
-			if not is_shovel_equipped:
-				_toggle_shovel()
-	_refresh_equipment_icon()
+	_equipment.cycle_equipment(direction)
 
 func _refresh_equipment_icon() -> void:
-	if mobile_controls == null or not is_instance_valid(mobile_controls):
-		return
-	if not mobile_controls.has_method("set_equipment_info"):
-		return
-	var icon_id := "rifle"
-	var label := "АВТОМАТ"
-	if is_shovel_equipped:
-		icon_id = "shovel"
-		label = "ЛОПАТА"
-	elif current_weapon_index == SIDEARM_INDEX:
-		icon_id = "sidearm"
-		label = "ПИСТОЛЕТ"
-	else:
-		var weapon := _weapon_data()
-		var wid := str(weapon.id)
-		if wid == "panzerfaust":
-			icon_id = "rpg"
-			label = "РПГ"
-		else:
-			label = str(weapon.display_name)
-	mobile_controls.call("set_equipment_info", icon_id, label)
+	_equipment.refresh_equipment_icon()
 
 func _cycle_weapon(direction: int) -> void:
-	if role_weapon_indices.is_empty():
-		return
-	var slot := role_weapon_indices.find(current_weapon_index)
-	if slot < 0:
-		slot = 0
-	slot = posmod(slot + direction, role_weapon_indices.size())
-	_switch_weapon(role_weapon_indices[slot])
-	_refresh_equipment_icon()
+	_equipment.cycle_weapon(direction)
 
 func _select_weapon_slot(slot: int) -> void:
-	if slot < 0 or slot >= role_weapon_indices.size():
-		return
-	_switch_weapon(role_weapon_indices[slot])
+	_equipment.select_weapon_slot(slot)
 
 func _toggle_sidearm() -> void:
-	if is_dead or input_locked or _grenades.is_busy():
-		return
-	if is_shovel_equipped:
-		is_shovel_equipped = false
-		_equip_weapon_visual()
-	if current_weapon_index == SIDEARM_INDEX:
-		_switch_weapon(last_primary_weapon_index)
-	else:
-		last_primary_weapon_index = current_weapon_index
-		_switch_weapon(SIDEARM_INDEX)
+	_equipment.toggle_sidearm()
 
 func _toggle_shovel() -> void:
 	_shovel.toggle()
