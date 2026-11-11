@@ -1,15 +1,12 @@
 extends CharacterBody3D
 
 const MOBILE_CONTROLS = preload("res://scripts/mobile_controls.gd")
-const WEAPON_MESHES = preload("res://scripts/weapon_meshes.gd")
 const PLAYER_BODY = preload("res://scripts/player_body.gd")
 const HIT_EFFECTS = preload("res://scripts/hit_effects.gd")
 const FIELD_PICKUP_SCRIPT = preload("res://scripts/field_pickup.gd")
 const ROCKET_PROJECTILE_SCRIPT = preload("res://scripts/rocket_projectile.gd")
 const BULLET_PROJECTILE_SCRIPT = preload("res://scripts/bullet_projectile.gd")
-const RADIO_DRONE_SCRIPT = preload("res://scripts/radio_drone.gd")
 const COMBAT_AUDIO = preload("res://scripts/combat_audio.gd")
-const WEAPON_SOUND = preload("res://scripts/weapon_sound_bank.gd")
 const PLAYER_HUD_SCENE = preload("res://scenes/PlayerHUD.tscn")
 
 const SFX_SHOT = preload("res://assets/audio/shot.wav")
@@ -42,8 +39,6 @@ const RAY_COLLISION_MASK := WORLD_LAYER_MASK | HITBOX_LAYER_MASK
 
 var camera: Camera3D
 var audio_listener: AudioListener3D
-var indoor_factor := 0.0
-var _acoustic_timer := 0.0
 var player_capsule: CapsuleShape3D
 var player_collision: CollisionShape3D
 var _weapon_view: FRONTLINEPlayerWeaponView
@@ -65,8 +60,6 @@ var muzzle_flash: MeshInstance3D:
 var muzzle_flash_time: float:
 	get: return _weapon_view.flash_timer if _weapon_view != null else 0.0
 	set(value): if _weapon_view != null: _weapon_view.flash_timer = value
-var drone_controller_anchor: Marker3D
-var drone_controller_view: Node3D
 var weapon_kick := 0.0
 var sprint_anim := 0.0
 var landing_anim := 0.0
@@ -140,27 +133,30 @@ var reload_timer: float:
 	set(value): _weapons.reload_timer = value
 
 # Снаряжение игрока
-var medkits := 2
-var is_healing := false
-var heal_timer := 0.0
-var heal_target: Node3D
-var heal_hold := false
-var heal_anim_time := 0.0
-var heal_view_root: Node3D
-var heal_bandage: Node3D
+var _healing := FRONTLINEPlayerHealing.new()
+var medkits: int:
+	get:
+		return _healing.medkits
+	set(value):
+		_healing.medkits = value
+var is_healing: bool:
+	get:
+		return _healing.is_healing
+var heal_view_root: Node3D:
+	get:
+		return _healing.heal_view_root
 var throwable_cooldown := 0.0
 var player_role := "ASSAULT"
-var active_drone: CharacterBody3D = null
-var drone_charge_available := true
-var drone_vertical_input := 0.0
+var _drone := FRONTLINEPlayerDrone.new()
+var active_drone: CharacterBody3D:
+	get:
+		return _drone.active_drone
 
 # Паркур / Преодоление препятствий (Parkour / Mantling / Vaulting)
-var is_vaulting := false
-var vault_timer := 0.0
-var vault_duration := 0.38
-var vault_start_pos := Vector3.ZERO
-var vault_peak_pos := Vector3.ZERO
-var vault_land_pos := Vector3.ZERO
+var _vault := FRONTLINEPlayerVault.new()
+var is_vaulting: bool:
+	get:
+		return _vault.is_vaulting
 
 # Гранаты: состояние и viewmodel живут в отдельном компоненте.
 var _grenades := FRONTLINEPlayerGrenades.new()
@@ -197,15 +193,31 @@ var sprint_hold := 0.0
 var pause_menu: FRONTLINEPauseMenu:
 	get: return _player_hud.pause_menu if _player_hud != null else null
 
-var sfx_shot: AudioStreamPlayer
-var sfx_empty: AudioStreamPlayer
-var sfx_reload_out: AudioStreamPlayer
-var sfx_reload_in: AudioStreamPlayer
-var sfx_ui: AudioStreamPlayer
-var sfx_footstep: AudioStreamPlayer
-var sfx_hit: AudioStreamPlayer
-var sfx_kill: AudioStreamPlayer
-var footstep_timer := 0.0
+var _audio := FRONTLINEPlayerAudio.new()
+var sfx_shot: AudioStreamPlayer:
+	get:
+		return _audio.sfx_shot
+var sfx_empty: AudioStreamPlayer:
+	get:
+		return _audio.sfx_empty
+var sfx_reload_out: AudioStreamPlayer:
+	get:
+		return _audio.sfx_reload_out
+var sfx_reload_in: AudioStreamPlayer:
+	get:
+		return _audio.sfx_reload_in
+var sfx_ui: AudioStreamPlayer:
+	get:
+		return _audio.sfx_ui
+var sfx_footstep: AudioStreamPlayer:
+	get:
+		return _audio.sfx_footstep
+var sfx_hit: AudioStreamPlayer:
+	get:
+		return _audio.sfx_hit
+var sfx_kill: AudioStreamPlayer:
+	get:
+		return _audio.sfx_kill
 
 func _ready() -> void:
 	add_to_group("player")
@@ -219,12 +231,15 @@ func _ready() -> void:
 	_grenades.sound_requested.connect(_on_grenade_sound)
 	_init_weapon_inventory()
 	_build_player()
+	_healing.setup(self, camera, MAX_HEALTH)
+	_drone.setup(self, camera, audio_listener)
 	_build_weapon()
 	add_child(_grenades)
 	_grenades.setup(self, camera, weapon_root)
 	_vehicles.setup(self)
+	_vault.setup(self, SPRINT_SPEED)
 	_build_body()
-	_build_audio()
+	_audio.setup(self)
 	_build_mobile_controls()
 	_build_hud()
 	if not OS.has_feature("mobile"):
@@ -257,10 +272,6 @@ func _build_player() -> void:
 	audio_listener.make_current()
 
 func _build_weapon() -> void:
-	drone_controller_anchor = Marker3D.new()
-	drone_controller_anchor.name = "DroneControllerAnchor"
-	drone_controller_anchor.position = Vector3(0.20, -0.14, -0.46)
-	camera.add_child(drone_controller_anchor)
 	_weapon_view = FRONTLINEPlayerWeaponView.new()
 	_weapon_view.name = "WeaponView"
 	camera.add_child(_weapon_view)
@@ -271,7 +282,7 @@ func _build_weapon() -> void:
 	_view_arms.setup(camera, weapon_root)
 	_weapon_view.attach_arms(_view_arms)
 	_equip_weapon_visual()
-	_build_heal_view()
+	_healing.build_view()
 
 func _equip_weapon_visual() -> void:
 	if _weapon_view == null:
@@ -327,28 +338,28 @@ func _configure_role_loadout(role: String) -> void:
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
-			drone_charge_available = false
+			_drone.charge_available = false
 		"ANTI_TANK":
 			grenades = 1
 			smoke_grenades = 1
 			medkits = 2
-			drone_charge_available = false
+			_drone.charge_available = false
 		"MEDIC":
 			grenades = 2
 			smoke_grenades = 2
 			medkits = 5
-			drone_charge_available = false
+			_drone.charge_available = false
 		"RADIO_OPERATOR":
 			grenades = 1
 			smoke_grenades = 2
 			medkits = 2
-			drone_charge_available = true
+			_drone.charge_available = true
 		_:
 			player_role = "ASSAULT"
 			grenades = 3
 			smoke_grenades = 2
 			medkits = 2
-			drone_charge_available = false
+			_drone.charge_available = false
 
 func _set_primary_slot(index: int) -> void:
 	_weapons.set_primary_slot(index)
@@ -503,25 +514,10 @@ func _build_body() -> void:
 	body.visible = false  # торс/ноги не должны закрывать обзор при взгляде вниз
 	player_body = body
 	if player_role == "RADIO_OPERATOR":
-		drone_controller_view = WEAPON_MESHES.make_weapon("drone_controller")
-		if drone_controller_view != null:
-			drone_controller_view.name = "RadioController"
-			drone_controller_view.position = Vector3(0.20, 1.36, -0.11)
-			drone_controller_view.visible = false
-			player_body.add_child(drone_controller_view)
+		_drone.build_controller_view(player_body)
 
 func set_drone_controller_feed(feed: Texture2D) -> void:
-	if drone_controller_view == null or not is_instance_valid(drone_controller_view):
-		return
-	var screen := drone_controller_view.get_node_or_null("Screen") as MeshInstance3D
-	if screen == null:
-		return
-	var material := StandardMaterial3D.new()
-	material.albedo_texture = feed
-	material.albedo_color = Color.WHITE
-	material.roughness = 0.35
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	screen.material_override = material
+	_drone.set_controller_feed(feed)
 
 func _update_view_arms() -> void:
 	if _view_arms == null:
@@ -591,53 +587,8 @@ func set_input_locked(locked: bool) -> void:
 		if _player_hud != null:
 			_player_hud.set_crosshair_visible(not aiming)
 
-func _build_audio() -> void:
-	sfx_shot = _make_sfx(COMBAT_AUDIO.BUS_COMBAT_DIRECT)
-	sfx_empty = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_reload_out = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_reload_in = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_ui = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_footstep = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_hit = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-	sfx_kill = _make_sfx(COMBAT_AUDIO.BUS_SFX)
-
-func _make_sfx(bus_name: StringName = &"SFX") -> AudioStreamPlayer:
-	var p := AudioStreamPlayer.new()
-	p.max_polyphony = 4
-	p.bus = bus_name
-	add_child(p)
-	return p
-
-func _update_acoustics(delta: float) -> void:
-	_acoustic_timer -= delta
-	if _acoustic_timer <= 0.0:
-		_acoustic_timer = 0.25 # 4 раза в секунду — оптимально для 60 FPS на мобилках
-		if camera != null and is_inside_tree():
-			var world_3d := get_world_3d()
-			var under_roof := COMBAT_AUDIO.is_indoors(world_3d, camera.global_position, 8.5)
-			var target_factor := 1.0 if under_roof else 0.0
-			indoor_factor = lerpf(indoor_factor, target_factor, 0.45)
-
-func _play_player_shot_sfx(wid: String, _default_pitch: float) -> void:
-	var prof: Dictionary = COMBAT_AUDIO.WEAPON_PROFILES.get(wid, {})
-	# Высота уже зашита в ресемплированный сэмпл банка; второй pitch-множитель
-	# делал звук мультяшным.
-	var pitch := randf_range(0.97, 1.03)
-	var vol: float = float(prof.get("vol", -2.0))
-	if indoor_factor > 0.35:
-		vol += indoor_factor * 1.5
-		sfx_shot.bus = COMBAT_AUDIO.BUS_INDOOR_REVERB
-	else:
-		sfx_shot.bus = COMBAT_AUDIO.BUS_COMBAT_DIRECT
-	_play_sfx(sfx_shot, WEAPON_SOUND.get_shot(wid), vol, pitch)
-
-func _play_sfx(player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
-	if player == null or stream == null:
-		return
-	player.stream = stream
-	player.volume_db = volume_db
-	player.pitch_scale = pitch
-	player.play()
+func _play_sfx(audio_player: AudioStreamPlayer, stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:
+	_audio.play(audio_player, stream, volume_db, pitch)
 
 func _touch_ui_enabled() -> bool:
 	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
@@ -704,9 +655,7 @@ func _on_move_changed(value: Vector2) -> void:
 func _on_look_delta(delta: Vector2) -> void:
 	if is_dead:
 		return
-	if active_drone != null and is_instance_valid(active_drone):
-		active_drone.drone_yaw -= delta.x * TOUCH_SENS * 1.5
-		active_drone.drone_pitch = clampf(active_drone.drone_pitch - delta.y * TOUCH_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
+	if _drone.look_delta(delta, TOUCH_SENS):
 		return
 	# QA-sweep bugfix: в технике взгляд идёт через тот же accumulate-путь —
 	# иначе на мобильных камера не вращалась после посадки. Чувствительность
@@ -734,8 +683,8 @@ func _on_fire_changed(pressed: bool) -> void:
 	mobile_fire = pressed
 	if pressed and is_healing:
 		_cancel_healing()
-	if pressed and active_drone != null and is_instance_valid(active_drone):
-		active_drone.detonate(active_drone.global_position)
+	if pressed:
+		_drone.detonate()
 
 func _on_mobile_peek_left(pressed: bool) -> void:
 	if pressed:
@@ -746,93 +695,10 @@ func _on_mobile_peek_right(pressed: bool) -> void:
 		lean_toggle = 0 if lean_toggle == 1 else 1
 
 func _on_drone_vertical_changed(direction: float, pressed: bool) -> void:
-	drone_vertical_input = direction if pressed else 0.0
-
-func _drone_tether_length() -> float:
-	match MatchState.map_name:
-		"VILLAGE":
-			return 105.0
-		"POLYGON":
-			return 55.0
-		_:
-			return 150.0
+	_drone.set_vertical_input(direction, pressed)
 
 func _launch_drone() -> void:
-	if is_dead or input_locked or player_role != "RADIO_OPERATOR":
-		return
-	if active_drone != null and is_instance_valid(active_drone):
-		active_drone.return_to_operator()
-		return
-	if not drone_charge_available or get_parent() == null:
-		return
-	drone_charge_available = false
-	var drone: CharacterBody3D = RADIO_DRONE_SCRIPT.new()
-	if drone == null:
-		return
-	get_parent().add_child(drone)
-	var spawn_pos := drone_controller_anchor.global_position + (-camera.global_transform.basis.z * 0.45) + Vector3.UP * 0.08
-	drone.launch(spawn_pos, yaw, self, _drone_tether_length())
-	drone.returned.connect(_on_drone_returned)
-	drone.detonated.connect(_on_drone_detonated)
-	active_drone = drone
-	# QA-fix TASK-0022: оператор остаётся видимым в мире, в своей позе.
-	# Раньше тело было скрыто (первый вид), и в FPV казалось, что персонаж пропал.
-	if player_body != null and is_instance_valid(player_body):
-		player_body.visible = true
-		if player_body.has_method("set_external_view"):
-			player_body.call("set_external_view", true)
-		if player_body.has_method("set_motion"):
-			player_body.call("set_motion", 0.0, false)
-		if player_body.has_method("set_stance"):
-			player_body.call("set_stance", stance)
-	camera.current = false
-	if drone != null and drone.has_node("DroneCamera/DroneListener"):
-		(drone.get_node("DroneCamera/DroneListener") as AudioListener3D).make_current()
-	if drone_controller_view != null:
-		drone_controller_view.visible = true
-	if mobile_controls != null:
-		mobile_controls.set_drone_mode(true)
-	if not OS.has_feature("mobile"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_refresh_equipment()
-
-func _on_drone_returned() -> void:
-	_end_drone_control()
-
-func _on_drone_detonated(_position: Vector3) -> void:
-	_end_drone_control()
-
-func _end_drone_control() -> void:
-	active_drone = null
-	drone_vertical_input = 0.0
-	if drone_controller_view != null and is_instance_valid(drone_controller_view):
-		drone_controller_view.visible = false
-	if camera != null and is_instance_valid(camera):
-		camera.current = true
-		if audio_listener != null and is_instance_valid(audio_listener):
-			audio_listener.make_current()
-	if mobile_controls != null:
-		mobile_controls.set_drone_mode(false)
-	# Возврат к первому виду: тело снова скрыто, чтобы не закрывать обзор.
-	if player_body != null and is_instance_valid(player_body) and not is_dead:
-		if player_body.has_method("set_external_view"):
-			player_body.call("set_external_view", false)
-		player_body.visible = false
-	if not OS.has_feature("mobile") and not is_dead:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_refresh_equipment()
-
-func _update_drone_controls() -> void:
-	if active_drone == null or not is_instance_valid(active_drone):
-		return
-	var move_x := mobile_move.x
-	var move_y := mobile_move.y
-	move_x += float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
-	move_y += float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
-	active_drone.move_input = Vector2(move_x, move_y).limit_length(1.0)
-	var vertical := drone_vertical_input
-	vertical += float(Input.is_key_pressed(KEY_SPACE)) - float(Input.is_key_pressed(KEY_CTRL))
-	active_drone.vertical_input = clampf(vertical, -1.0, 1.0)
+	_drone.toggle_launch()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_dead or input_locked:
@@ -856,25 +722,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _vehicles.vehicle != null and not is_instance_valid(_vehicles.vehicle):
 		_vehicles.vehicle = null
 	if event is InputEventKey and not event.pressed and event.keycode == KEY_H:
-		heal_hold = false
-		if is_healing:
-			_cancel_healing()
+		_healing.release_hold()
 		return
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V and player_role == "RADIO_OPERATOR":
-		_launch_drone()
-		return
-	if active_drone != null and is_instance_valid(active_drone):
-		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			active_drone.drone_yaw -= event.relative.x * MOUSE_SENS * 1.5
-			active_drone.drone_pitch = clampf(active_drone.drone_pitch - event.relative.y * MOUSE_SENS * 1.5, deg_to_rad(-45.0), deg_to_rad(45.0))
-		elif event is InputEventKey and event.pressed and not event.echo:
-			if event.keycode == KEY_ESCAPE:
-				active_drone.return_to_operator()
-			elif event.keycode == KEY_ENTER:
-				active_drone.detonate(active_drone.global_position)
-		elif event is InputEventMouseButton and event.pressed:
-			if event.button_index == MOUSE_BUTTON_LEFT:
-				active_drone.detonate(active_drone.global_position)
+	if _drone.handle_input(event):
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var zoom_factor := (camera.fov / GameSettings.fov) if camera != null else 1.0
@@ -933,13 +783,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
-		is_vaulting = false
+		_vault.cancel()
 		if not is_on_floor():
 			velocity.y -= 18.0 * delta
 			move_and_slide()
 		return
 	if input_locked:
-		is_vaulting = false
+		_vault.cancel()
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
@@ -951,11 +801,11 @@ func _physics_process(delta: float) -> void:
 		_apply_look(delta)
 		_vehicles.process(delta)
 		return
-	if is_vaulting:
-		_process_vault(delta)
+	if _vault.is_vaulting:
+		_vault.process(delta)
 		return
-	if active_drone != null and is_instance_valid(active_drone):
-		_update_drone_controls()
+	if _drone.is_active():
+		_drone.update_controls()
 		velocity.x = move_toward(velocity.x, 0.0, 22.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, 22.0 * delta)
 		if not is_on_floor():
@@ -969,7 +819,7 @@ func _physics_process(delta: float) -> void:
 	if _prompt_timer <= 0.0:
 		_prompt_timer = 0.2
 		_refresh_pickup_prompt()
-	_update_acoustics(delta)
+	_audio.update_acoustics(delta)
 	COMBAT_AUDIO.listener_pos = camera.global_position
 	COMBAT_AUDIO.listener_valid = true
 
@@ -988,37 +838,12 @@ func _physics_process(delta: float) -> void:
 	var planar_speed := Vector2(velocity.x, velocity.z).length()
 	if planar_speed > 0.4 and is_on_floor():
 		bob_time += delta * (11.0 if planar_speed > SPEED + 0.5 else 7.5)
-		footstep_timer -= delta
-		if footstep_timer <= 0.0:
-			footstep_timer = 0.32 if planar_speed > SPEED + 0.5 else 0.48
-			var sfx: AudioStream = SFX_FOOTSTEPS[randi() % SFX_FOOTSTEPS.size()]
-			_play_sfx(sfx_footstep, sfx, -14.0, randf_range(0.92, 1.08))
+		_audio.update_footsteps(delta, planar_speed, true, SPEED)
 	else:
 		bob_time = fposmod(bob_time, TAU)
 		breathing_time += delta
 
-	# Таймер лечения (TASK-0022: удержание кнопки + анимация перевязки)
-	if is_healing:
-		var moving_to_cancel := mobile_move.length() > 0.15 or Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D)
-		# Отпустил кнопку — перевязка прерывается (флаг един для тача и клавиши).
-		var hold_released := not heal_hold
-		if moving_to_cancel or hold_released:
-			_cancel_healing()
-		else:
-			_update_heal_visual(delta)
-			heal_timer -= delta
-			if heal_timer <= 0.0:
-				if heal_target != null and is_instance_valid(heal_target) and not bool(heal_target.get("is_dead")):
-					heal_target.set("health", minf(MAX_HEALTH, float(heal_target.get("health")) + 40.0))
-				else:
-					health = minf(MAX_HEALTH, health + 45.0)
-				is_healing = false
-				heal_target = null
-				medkits = maxi(0, medkits - 1)
-				_finish_heal_visual()
-				_refresh_health()
-				_refresh_equipment()
-				_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -2.0, 1.1)
+	_healing.tick(delta)
 
 	# Визуал оружия обновляется отдельным компонентом.
 	look_sway = look_sway.lerp(Vector2.ZERO, clampf(delta * 9.0, 0.0, 1.0))
@@ -1083,7 +908,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= 18.0 * delta
 	var fall_speed := velocity.y
 	move_and_slide()
-	_try_step_up()
+	_vault.try_step_up()
 
 	var on_floor := is_on_floor()
 	if on_floor and not _was_on_floor and fall_speed < -3.0:
@@ -1235,7 +1060,7 @@ func _shoot() -> void:
 	if not _weapons.consume_round():
 		return
 	fire_cooldown = float(weapon.fire_interval)
-	_play_player_shot_sfx(str(weapon.id), float(weapon.sound_pitch))
+	_audio.play_shot(str(weapon.id))
 
 	# QA-fix TASK-0022: попадание считается ДО отдачи. Раньше recoil успевал
 	# повернуть камеру на ~1.5-2°, и снайперская пуля в прицеле уходила выше
@@ -1422,99 +1247,6 @@ func _on_weapon_reload_finished() -> void:
 func _on_grenade_sound(stream: AudioStream, volume_db: float, pitch: float) -> void:
 	_play_sfx(sfx_reload_in, stream, volume_db, pitch)
 
-## QA-fix TASK-0022: нательная анимация перевязки — бинт в руке перед камерой.
-func _build_heal_view() -> void:
-	if heal_view_root != null and is_instance_valid(heal_view_root):
-		return
-	var root := Node3D.new()
-	root.name = "HealView"
-	root.visible = false
-	camera.add_child(root)
-
-	var sleeve := StandardMaterial3D.new()
-	sleeve.albedo_color = Color(0.24, 0.25, 0.19)
-	sleeve.roughness = 0.95
-	var glove_mat := StandardMaterial3D.new()
-	glove_mat.albedo_color = Color(0.33, 0.26, 0.19)
-	glove_mat.roughness = 0.9
-
-	# Предплечье, которое перевязываем.
-	var forearm := MeshInstance3D.new()
-	var f_mesh := CylinderMesh.new()
-	f_mesh.top_radius = 0.044
-	f_mesh.bottom_radius = 0.052
-	f_mesh.height = 0.44
-	f_mesh.radial_segments = 8
-	forearm.mesh = f_mesh
-	forearm.material_override = sleeve
-	forearm.position = Vector3(-0.16, -0.24, -0.42)
-	forearm.rotation = Vector3(deg_to_rad(74.0), 0.0, deg_to_rad(-24.0))
-	forearm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(forearm)
-
-	# Рулон бинта (двигается вокруг предплечья).
-	var bandage := Node3D.new()
-	bandage.name = "Bandage"
-	var roll := MeshInstance3D.new()
-	var r_mesh := CylinderMesh.new()
-	r_mesh.top_radius = 0.056
-	r_mesh.bottom_radius = 0.056
-	r_mesh.height = 0.095
-	r_mesh.radial_segments = 10
-	roll.mesh = r_mesh
-	var bandage_mat := StandardMaterial3D.new()
-	bandage_mat.albedo_color = Color(0.88, 0.85, 0.74)
-	bandage_mat.roughness = 1.0
-	roll.material_override = bandage_mat
-	roll.rotation = Vector3(deg_to_rad(90.0), 0.0, 0.0)
-	roll.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	bandage.add_child(roll)
-	bandage.position = Vector3(0.02, -0.18, -0.42)
-	root.add_child(bandage)
-	heal_bandage = bandage
-
-	# Кисть, держащая бинт.
-	var hand := MeshInstance3D.new()
-	var h_mesh := BoxMesh.new()
-	h_mesh.size = Vector3(0.06, 0.034, 0.095)
-	hand.mesh = h_mesh
-	hand.material_override = glove_mat
-	hand.position = Vector3(0.09, -0.20, -0.40)
-	hand.rotation = Vector3(deg_to_rad(18.0), deg_to_rad(-12.0), 0.0)
-	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(hand)
-
-	heal_view_root = root
-
-func _update_heal_visual(delta: float) -> void:
-	if not is_healing:
-		return
-	heal_anim_time += delta
-	if heal_view_root != null and is_instance_valid(heal_view_root):
-		heal_view_root.visible = true
-	if weapon_root != null:
-		weapon_root.visible = false
-	if heal_bandage != null and is_instance_valid(heal_bandage):
-		var t := heal_anim_time
-		# Бинт наматывается по кругу вокруг предплечья.
-		heal_bandage.position = Vector3(
-			0.03 + sin(t * 7.5) * 0.055,
-			-0.185 + cos(t * 6.0) * 0.05,
-			-0.42 + cos(t * 7.5) * 0.02
-		)
-		heal_bandage.rotation = Vector3(t * 2.4, t * 1.7, t * 2.1)
-	if _player_hud != null:
-		_player_hud.set_heal_progress(clampf(1.0 - heal_timer / 2.2, 0.0, 1.0))
-
-func _finish_heal_visual() -> void:
-	heal_anim_time = 0.0
-	if heal_view_root != null and is_instance_valid(heal_view_root):
-		heal_view_root.visible = false
-	if _player_hud != null:
-		_player_hud.set_heal_progress(-1.0)
-	if weapon_root != null and not is_dead and not is_shovel_equipped and not _grenades.is_busy():
-		weapon_root.visible = true
-
 func _on_mobile_grenade_changed(pressed: bool) -> void:
 	if pressed:
 		_grenades.start_hold()
@@ -1522,9 +1254,7 @@ func _on_mobile_grenade_changed(pressed: bool) -> void:
 		_grenades.release_throw()
 
 func _on_heal_released() -> void:
-	heal_hold = false
-	if is_healing:
-		_cancel_healing()
+	_healing.release_hold()
 
 func _start_grenade_hold(payload: String = "frag") -> void:
 	_grenades.start_hold(payload)
@@ -1539,195 +1269,19 @@ func _update_grenade_animation(delta: float) -> void:
 	_grenades.tick(delta)
 
 func _try_step_up() -> void:
-	if is_vaulting or stance != 0 or not is_on_floor():
-		return
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
-	if horizontal.length_squared() < 0.30:
-		return
-	var dir := horizontal.normalized()
-	var feet := global_position
-	var space := get_world_3d().direct_space_state
-	var low_from := feet + Vector3.UP * 0.08 + dir * 0.28
-	var low_q := PhysicsRayQueryParameters3D.create(low_from, low_from + dir * 0.36)
-	low_q.collision_mask = WORLD_LAYER_MASK
-	low_q.exclude = [get_rid()]
-	low_q.collide_with_areas = false
-	var low_hit := space.intersect_ray(low_q)
-	if low_hit.is_empty():
-		return
-	var top_from: Vector3 = low_hit.position + Vector3.UP * 0.70
-	var top_q := PhysicsRayQueryParameters3D.create(top_from, top_from + Vector3.DOWN * 0.85)
-	top_q.collision_mask = WORLD_LAYER_MASK
-	top_q.exclude = [get_rid()]
-	top_q.collide_with_areas = false
-	var top_hit := space.intersect_ray(top_q)
-	if top_hit.is_empty():
-		return
-	var rise: float = float(top_hit.position.y) - feet.y
-	if rise < 0.03 or rise > 0.55:
-		return
-	if float(top_hit.get("normal", Vector3.UP).y) < 0.55:
-		return
-	var clearance := PhysicsShapeQueryParameters3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.33
-	capsule.height = 1.15
-	clearance.shape = capsule
-	clearance.transform = Transform3D(Basis(), feet + Vector3.UP * (rise + 0.65) + dir * 0.30)
-	clearance.collision_mask = WORLD_LAYER_MASK
-	clearance.exclude = [get_rid()]
-	clearance.collide_with_areas = false
-	if not space.intersect_shape(clearance, 1).is_empty():
-		return
-	global_position = feet + Vector3.UP * (rise + 0.03)
-	velocity.y = maxf(velocity.y, 0.0)
+	_vault.try_step_up()
 
 func _try_vault() -> bool:
-	if is_dead or input_locked or is_vaulting or active_drone != null or _grenades.is_busy():
-		return false
-	var space_state := get_world_3d().direct_space_state
-	if space_state == null:
-		return false
-
-	var fwd := -camera.global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length_squared() < 0.01:
-		fwd = -global_transform.basis.z
-	fwd = fwd.normalized()
-
-	# 1. Луч на уровне пояса (0.65 м)
-	var waist_from := global_position + Vector3(0.0, 0.65, 0.0)
-	var waist_to := waist_from + fwd * 1.35
-	var q_waist := PhysicsRayQueryParameters3D.create(waist_from, waist_to)
-	q_waist.collision_mask = WORLD_LAYER_MASK
-	q_waist.exclude = [get_rid()]
-	q_waist.collide_with_areas = false
-	var waist_hit := space_state.intersect_ray(q_waist)
-	if waist_hit.is_empty():
-		return false
-
-	var hit_pos: Vector3 = waist_hit.position
-
-	# 2. Поиск верхней кромки уступа/подоконника
-	var over_pos := hit_pos + fwd * 0.32 + Vector3(0.0, 1.40, 0.0)
-	var down_to := over_pos + Vector3(0.0, -1.90, 0.0)
-	var q_down := PhysicsRayQueryParameters3D.create(over_pos, down_to)
-	q_down.collision_mask = WORLD_LAYER_MASK
-	q_down.exclude = [get_rid()]
-	q_down.collide_with_areas = false
-	var top_hit := space_state.intersect_ray(q_down)
-	if top_hit.is_empty():
-		return false
-
-	var ledge_y: float = top_hit.position.y
-	var ledge_height: float = ledge_y - global_position.y
-	if ledge_height < 0.40 or ledge_height > 1.55:
-		return false
-
-	# 3. Проверка свободного пространства сверху (для окна/забора)
-	var head_from := hit_pos + Vector3(0.0, (ledge_y - hit_pos.y) + 0.15, 0.0)
-	var head_to := head_from + Vector3(0.0, 1.15, 0.0)
-	var q_head := PhysicsRayQueryParameters3D.create(head_from, head_to)
-	q_head.collision_mask = WORLD_LAYER_MASK
-	q_head.exclude = [get_rid()]
-	var head_hit := space_state.intersect_ray(q_head)
-	if not head_hit.is_empty():
-		return false
-
-	# 4. Проверка точки приземления
-	var land_pos := hit_pos + fwd * 0.95
-	var land_from := land_pos + Vector3(0.0, 1.0, 0.0)
-	var land_to := land_from + Vector3(0.0, -2.6, 0.0)
-	var q_land := PhysicsRayQueryParameters3D.create(land_from, land_to)
-	q_land.collision_mask = WORLD_LAYER_MASK
-	q_land.exclude = [get_rid()]
-	var land_hit := space_state.intersect_ray(q_land)
-	if not land_hit.is_empty():
-		land_pos.y = land_hit.position.y
-	else:
-		land_pos.y = global_position.y
-
-	is_vaulting = true
-	vault_timer = 0.0
-	vault_duration = 0.38
-	vault_start_pos = global_position
-	vault_peak_pos = Vector3(hit_pos.x, maxf(ledge_y + 0.28, global_position.y + 0.75), hit_pos.z)
-	vault_land_pos = land_pos
-	player_capsule.height = 1.15
-	_play_sfx(sfx_footstep, SFX_FOOTSTEPS[0], -6.0, 1.25)
-	return true
-
-func _process_vault(delta: float) -> void:
-	vault_timer += delta
-	var t := clampf(vault_timer / maxf(0.01, vault_duration), 0.0, 1.0)
-	var ease_t := smoothstep(0.0, 1.0, t)
-	var target_horiz := vault_start_pos.lerp(vault_land_pos, ease_t)
-	var arc := sin(t * PI) * (vault_peak_pos.y - minf(vault_start_pos.y, vault_land_pos.y) + 0.12)
-	var target_y := lerpf(vault_start_pos.y, vault_land_pos.y, ease_t) + arc
-	global_position = Vector3(target_horiz.x, target_y, target_horiz.z)
-
-	var cam_dip := -sin(t * PI) * deg_to_rad(6.5)
-	camera.rotation.x = clampf(pitch + recoil.y + cam_dip, -1.45, 1.45)
-	if weapon_root != null:
-		weapon_root.position.y = lerpf(weapon_root.position.y, weapon_base.y - 0.14 * sin(t * PI), delta * 24.0)
-		weapon_root.rotation.z = lerpf(weapon_root.rotation.z, -deg_to_rad(15.0) * sin(t * PI), delta * 24.0)
-
-	if t >= 1.0:
-		is_vaulting = false
-		global_position = vault_land_pos
-		var fwd := (vault_land_pos - vault_start_pos)
-		fwd.y = 0.0
-		velocity = fwd.normalized() * SPRINT_SPEED
-		velocity.y = -0.5
-		landing_anim = 0.5
-		player_capsule.height = 1.95 if stance == 0 else (1.35 if stance == 1 else 0.70)
-		move_and_slide()
+	return _vault.try_vault()
 
 func _throw_smoke() -> void:
 	_grenades.throw_smoke()
 
 func _use_heal() -> void:
-	if medkits <= 0 or is_dead or is_healing:
-		return
-	heal_target = null
-	if player_role == "MEDIC":
-		var player_team := MatchState.player_team
-		var nearest_dist := 6.5
-		for bot in get_tree().get_nodes_in_group("bots"):
-			if bot == null or not is_instance_valid(bot) or bool(bot.get("is_dead")):
-				continue
-			if str(bot.get("team_name")) != player_team or not ("health" in bot):
-				continue
-			var distance := global_position.distance_to((bot as Node3D).global_position)
-			if float(bot.get("health")) < MAX_HEALTH and distance < nearest_dist:
-				nearest_dist = distance
-				heal_target = bot as Node3D
-		if heal_target != null:
-			var start := global_position + Vector3.UP * 1.1
-			var finish := heal_target.global_position + Vector3.UP * 0.9
-			var query := PhysicsRayQueryParameters3D.create(start, finish)
-			query.collision_mask = WORLD_LAYER_MASK
-			query.exclude = [get_rid()]
-			if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
-				heal_target = null
-	if heal_target == null and health >= MAX_HEALTH:
-		return
-	is_healing = true
-	heal_hold = true
-	heal_anim_time = 0.0
-	heal_timer = 2.2
-	_play_sfx(sfx_reload_in, SFX_RELOAD_IN, -4.0, 1.0)
-	_refresh_equipment()
+	_healing.use()
 
 func _cancel_healing() -> void:
-	if not is_healing:
-		return
-	is_healing = false
-	heal_target = null
-	heal_timer = 0.0
-	heal_hold = false
-	_finish_heal_visual()
-	_refresh_equipment()
+	_healing.cancel()
 
 func _refresh_ammo() -> void:
 	if _player_hud == null:
@@ -1748,7 +1302,7 @@ func _refresh_equipment() -> void:
 		return
 	var role_names := {"ASSAULT": "ШТУРМ", "MEDIC": "МЕДИК", "SNIPER": "СНАЙПЕР", "ANTI_TANK": "ПТ", "RADIO_OPERATOR": "РАДИСТ"}
 	var role_text := str(role_names.get(player_role, "ШТУРМ"))
-	var drone_text := " • FPV ГОТОВ" if player_role == "RADIO_OPERATOR" and drone_charge_available else (" • FPV ИСПОЛЬЗОВАН" if player_role == "RADIO_OPERATOR" else "")
+	var drone_text := " • FPV ГОТОВ" if player_role == "RADIO_OPERATOR" and _drone.charge_available else (" • FPV ИСПОЛЬЗОВАН" if player_role == "RADIO_OPERATOR" else "")
 	var soil_text := " • ГРУНТ:%d" % carried_soil if carried_soil > 0 else ""
 	_player_hud.set_equipment_text("%s • ГР:%d • ДЫМ:%d • БИНТ:%d%s%s" % [role_text, grenades, smoke_grenades, medkits, drone_text, soil_text])
 
@@ -1844,8 +1398,7 @@ func receive_hit(damage: int, attacker_pos: Vector3, region: String = "chest", a
 		_die(attacker_name, attacker_pos, region)
 
 func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: String = "chest") -> void:
-	if active_drone != null and is_instance_valid(active_drone):
-		active_drone.return_to_operator()
+	_drone.return_to_operator()
 	if mounted_vehicle != null and is_instance_valid(mounted_vehicle):
 		_exit_vehicle()
 	_cancel_healing()
@@ -1855,7 +1408,7 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 		mobile_controls.set_drone_mode(false)
 
 	is_dead = true
-	is_vaulting = false
+	_vault.cancel()
 	_grenades.drop_on_death()
 	health = 0.0
 	velocity = Vector3.ZERO
@@ -1894,13 +1447,12 @@ func _die(killer_name: String, attacker_pos: Vector3 = Vector3.ZERO, region: Str
 		)
 
 func respawn() -> void:
-	if active_drone != null and is_instance_valid(active_drone):
-		active_drone.return_to_operator()
+	_drone.return_to_operator()
 	if camera != null:
 		camera.current = true
 
 	is_dead = false
-	is_vaulting = false
+	_vault.cancel()
 	_grenades.reset()
 	collision_layer = WORLD_LAYER_MASK
 	health = MAX_HEALTH
@@ -1926,9 +1478,8 @@ func respawn() -> void:
 	shovel_action_cooldown = 0.0
 	_equip_weapon_visual()
 
-	is_healing = false
-	heal_target = null
-	drone_vertical_input = 0.0
+	_healing.reset()
+	_drone.vertical_input = 0.0
 	aiming = false
 	aim_blend = 0.0
 	camera.fov = GameSettings.fov
